@@ -1,4 +1,5 @@
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <charconv>
 #include <cmath>
@@ -45,14 +46,14 @@ public:
 	{
 		if (!value(out, 0)) { error = error_; return false; }
 		space();
-		if (i_ != s_.size()) { error = "text after the end at byte " + std::to_string(i_); return false; }
+		if (i_ != s_.size()) { error = tr("json.text_after_end", {std::to_string(i_)}); return false; }
 		return true;
 	}
 
 private:
 	bool fail(const std::string &what)
 	{
-		if (error_.empty()) error_ = what + " at byte " + std::to_string(i_);
+		if (error_.empty()) error_ = tr("json.at_byte", {what, std::to_string(i_)});
 		return false;
 	}
 
@@ -63,7 +64,7 @@ private:
 
 	bool literal(std::string_view word)
 	{
-		if (s_.substr(i_, word.size()) != word) return fail("unknown word");
+		if (s_.substr(i_, word.size()) != word) return fail(tr("json.unknown_word"));
 		i_ += word.size();
 		return true;
 	}
@@ -137,17 +138,17 @@ private:
 				utf8(out, c1);
 				break;
 			}
-			default: return fail("bad escape");
+			default: return fail(tr("json.bad_escape"));
 			}
 		}
-		return fail("unfinished string");
+		return fail(tr("json.unfinished_string"));
 	}
 
 	bool value(Json &out, int depth)
 	{
-		if (depth > 64) return fail("nested too deep");
+		if (depth > 64) return fail(tr("json.too_deep"));
 		space();
-		if (i_ >= s_.size()) return fail("unexpected end");
+		if (i_ >= s_.size()) return fail(tr("json.unexpected_end"));
 		const char c = s_[i_];
 		if (c == '{')
 		{
@@ -158,7 +159,7 @@ private:
 			for (;;)
 			{
 				space();
-				if (i_ >= s_.size() || s_[i_] != '"') return fail("expected a name");
+				if (i_ >= s_.size() || s_[i_] != '"') return fail(tr("json.expected_name"));
 				std::string name;
 				if (!string(name)) return false;
 				space();
@@ -200,10 +201,10 @@ private:
 			while (i_ < s_.size() && (s_[i_] == '-' || s_[i_] == '+' || s_[i_] == '.' || s_[i_] == 'e' || s_[i_] == 'E' || (s_[i_] >= '0' && s_[i_] <= '9')))
 				out.text += s_[i_++];
 			/* JSON's grammar, not just its characters: "-" and "1-2" were taken */
-			if (!wellFormedNumber(out.text)) return fail("bad number " + out.text);
+			if (!wellFormedNumber(out.text)) return fail(tr("json.bad_number", {out.text}));
 			return true;
 		}
-		return fail("unexpected character");
+		return fail(tr("json.unexpected_character"));
 	}
 
 	std::string_view s_;

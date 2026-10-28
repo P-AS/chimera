@@ -1,4 +1,5 @@
 #include "chimera/vm/settings_form.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -259,7 +260,7 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 	const Json *d = declared(name);
 	if (d == nullptr)
 	{
-		error = "no setting " + name + " applies here";
+		error = tr("settings.not_here", {name});
 		return false;
 	}
 	const std::string type = typeOf(*d);
@@ -269,7 +270,7 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 		bool b = false;
 		if (!fromValue(value, b))
 		{
-			error = name + " is true or false";
+			error = tr("settings.boolean", {name});
 			return false;
 		}
 		v = Json::boolean_(b);
@@ -289,13 +290,13 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 				n = wholeOf(value);
 			if (!n)
 			{
-				error = name + " is a date and time, written as 2000-01-01 00:00:00 (UTC)";
+				error = tr("settings.datetime", {name});
 				return false;
 			}
 		}
 		else if (!(n = wholeOf(value)))
 		{
-			error = name + " is a whole number";
+			error = tr("settings.whole", {name});
 			return false;
 		}
 		Whole lo = 0, hi = 0;
@@ -306,8 +307,8 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 			if (const std::optional<Whole> m = wholeOfText(mx->text)) hi = std::min(hi, *m);
 		if (*n < lo || *n > hi)
 		{
-			error = name + " goes from " + (type == "datetime" ? dateText(static_cast<int64_t>(lo)) : wholeText(lo)) + " to " +
-				(type == "datetime" ? dateText(static_cast<int64_t>(hi)) : wholeText(hi));
+			error = tr("piano_roll.axis_range", {name, type == "datetime" ? dateText(static_cast<int64_t>(lo)) : wholeText(lo),
+				type == "datetime" ? dateText(static_cast<int64_t>(hi)) : wholeText(hi)});
 			return false;
 		}
 		v.kind = Json::Kind::Number;
@@ -318,7 +319,7 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 		double f = 0;
 		if (!fromValue(value, f))
 		{
-			error = name + " is a number";
+			error = tr("settings.number", {name});
 			return false;
 		}
 		v = Json::number(f);
@@ -328,7 +329,7 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 		std::string s;
 		if (!fromValue(value, s))
 		{
-			error = name + " is text";
+			error = tr("settings.text", {name});
 			return false;
 		}
 		if (type == "enum")
@@ -338,7 +339,7 @@ bool SettingsForm::set(const std::string &name, const Value &value, std::string 
 				for (const Json &opt : o->items) known = known || opt.text == s;
 			if (!known)
 			{
-				error = s + " is not one of " + name + "'s options";
+				error = tr("settings.not_option", {s, name});
 				return false;
 			}
 		}
@@ -547,7 +548,7 @@ bool SettingsForm::applyPreset(const std::string &id, std::string &label, std::v
 		if (const Json *i = p->find("id"); i != nullptr && i->text == id) preset = p;
 	if (preset == nullptr)
 	{
-		error = "no preset " + id + " for this machine";
+		error = tr("settings.no_preset", {id});
 		return false;
 	}
 	const Json *l = preset->find("label");

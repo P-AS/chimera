@@ -1,4 +1,5 @@
 #include "chimera/vm/new_project_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/vm/compiled_code.hpp"
 
@@ -50,11 +51,11 @@ bool readsOnlySettings(const Json &c)
 /* how many files a slot takes, in Chimera's words */
 std::string cardinalityOf(int64_t min, int64_t max)
 {
-	if (min == 1 && max == 1) return "exactly one";
-	if (min == 0 && max == 1) return "at most one";
-	if (min == 0 && max == -1) return "any number";
-	if (max == -1) return "at least " + std::to_string(min);
-	return std::to_string(min) + " to " + std::to_string(max);
+	if (min == 1 && max == 1) return tr("new_project.exactly_one");
+	if (min == 0 && max == 1) return tr("new_project.at_most_one");
+	if (min == 0 && max == -1) return tr("new_project.any_number");
+	if (max == -1) return tr("new_project.at_least", {std::to_string(min)});
+	return tr("new_project.from_to", {std::to_string(min), std::to_string(max)});
 }
 
 std::string lower(std::string s)
@@ -75,10 +76,11 @@ std::string kindOf(const std::string &name)
 	return lower(ext.empty() ? ext : ext.substr(1));
 }
 
+/* a declaration of the package, its texts in the language in use */
 std::string entryText(ce_package *p, const char *name)
 {
 	uint64_t len = 0;
-	const uint8_t *d = ce_package_entry(p, name, &len);
+	const uint8_t *d = ce_package_entry_texts(p, name, &len);
 	return d != nullptr ? std::string(reinterpret_cast<const char *>(d), static_cast<size_t>(len)) : std::string();
 }
 
@@ -116,17 +118,17 @@ struct NewProjectViewModel::CompileJob
 	{
 		switch (code)
 		{
-		case 137: return "killed by the system (out of memory)";
-		case 139: return "crashed (segmentation fault)";
+		case 137: return tr("compile.killed_oom");
+		case 139: return tr("compile.crashed_segv");
 		case 134: return "aborted";
-		case 132: return "crashed (illegal instruction)";
-		case -1073741819: return "crashed (access violation)";
-		case -1073741801: return "out of memory";
-		case -1073740791: return "crashed (stack buffer overrun)";
-		case -1073741571: return "crashed (ran out of stack)";
-		case -1073741795: return "crashed (illegal instruction)";
-		case -529697949: return "crashed (an error raised and never caught, as a graphics driver can)";
-		default: return "exit code " + std::to_string(code);
+		case 132: return tr("compile.crashed_illegal");
+		case -1073741819: return tr("compile.crashed_access");
+		case -1073741801: return tr("compile.out_of_memory");
+		case -1073740791: return tr("compile.crashed_overrun");
+		case -1073741571: return tr("compile.crashed_stack");
+		case -1073741795: return tr("compile.crashed_illegal");
+		case -529697949: return tr("compile.crashed_uncaught");
+		default: return tr("compile.exit_code", {std::to_string(code)});
 		}
 	}
 	/* the codes the system gives for running out of memory */
@@ -137,15 +139,11 @@ struct NewProjectViewModel::CompileJob
 		const double each = static_cast<double>(sessionBytes != 0 ? sessionBytes : ce_compile_session_bytes()) / (1024.0 * 1024 * 1024);
 		char gb[32];
 		std::snprintf(gb, sizeof gb, "%.0f", each);
-		const std::string what = std::string("The computer ran out of memory while compiling. A compile session needs about ") + gb + " GB" +
-			(sessions > 1 ? ", and " + std::to_string(sessions) + " ran at once." : std::string("."));
+		const std::string what = sessions > 1 ? tr("compile.out_of_memory_sessions", {gb, std::to_string(sessions)}) : tr("compile.out_of_memory_session", {gb});
 #ifdef _WIN32
-		return what + " When Windows runs short of memory it makes its page file bigger, and that file is on the system drive"
-			" (usually C:) wherever Chimera keeps its data, so free space there falls while a compile runs."
-			" Close other programs, or free some space on the system drive, and compile again."
-			" Tools > Pre-Compiled Modules sets how much memory a session is counted at.";
+		return what + " " + tr("compile.out_of_memory_windows");
 #else
-		return what + " Close other programs and compile again. Tools > Pre-Compiled Modules sets how much memory a session is counted at.";
+		return what + " " + tr("compile.out_of_memory_advice");
 #endif
 	}
 
@@ -192,7 +190,7 @@ struct NewProjectViewModel::CompileJob
 				std::string why;
 				if (!p->start(runner, a, why))
 				{
-					failure = "The compile could not start: " + why;
+					failure = tr("compile.not_started", {why});
 					break;
 				}
 				sessions.push_back(std::move(p));
@@ -221,7 +219,7 @@ struct NewProjectViewModel::CompileJob
 			if (!failure.empty()) break;
 			if (stopped)
 			{
-				failure = "Stopped: what was compiled stays, and Compile goes on from there.";
+				failure = tr("compile.stopped");
 				break;
 			}
 			/* the sessions that died, and in what words; one's own last line is worth more than its code */
@@ -256,12 +254,10 @@ struct NewProjectViewModel::CompileJob
 				continue;
 			}
 			if (wantOfMemory)
-				failure = outOfMemoryMessage(static_cast<int>(sessions.size())) + (allForMemory ? "" : " The sessions ended: " + why + ".");
+				failure = outOfMemoryMessage(static_cast<int>(sessions.size())) + (allForMemory ? "" : " " + tr("compile.sessions_ended", {why}));
 			else
-				failure = std::to_string(dead.size()) + " of " + std::to_string(sessions.size()) + " compile sessions failed: " + why +
-					(said.empty() ? std::string() : " (" + said + ")") + "." +
-					(workers > 1 ? " Closing other programs, or a machine with more memory, would let it run fewer at once."
-								 : " This ran one session at a time already, so memory is unlikely to be the reason.");
+				failure = tr("compile.sessions_failed", {std::to_string(dead.size()), std::to_string(sessions.size()), said.empty() ? why : why + " (" + said + ")"})
+					+ " " + tr(workers > 1 ? "compile.fewer_at_once" : "compile.one_at_a_time");
 			break;
 		}
 		std::error_code ec;
@@ -291,7 +287,7 @@ struct NewProjectViewModel::CompileJob
 			}
 			manifest.members.emplace_back("files", std::move(files));
 			std::ofstream(fs::path(dir) / "manifest.json", std::ios::binary) << json::write(manifest);
-			if (found.empty()) failure = "The compile sessions stored nothing.";
+			if (found.empty()) failure = tr("compile.stored_nothing");
 		}
 		post([finished, failure] { finished(failure); });
 	}
@@ -350,15 +346,10 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		int64_t applied = 0;
 		if (!form_.applyPreset(id, label, skipped, error, &applied)) return {};
 		/* in Chimera's words */
-		std::string note = "Applied \"" + label + "\": " + std::to_string(applied) + (applied == 1 ? " setting" : " settings");
-		if (skipped.empty())
-			note += ".";
-		else
-		{
-			note += "; this machine has no setting named ";
-			for (size_t i = 0; i < skipped.size(); i++) note += (i == 0 ? "" : ", ") + skipped[i];
-			note += ".";
-		}
+		std::string none;
+		for (size_t i = 0; i < skipped.size(); i++) none += (i == 0 ? "" : ", ") + skipped[i];
+		const std::string note = skipped.empty() ? tr("new_project.preset_applied", applied, {label})
+												 : tr("new_project.preset_applied_skipped", applied, {label, none});
 		status.set(note);
 		evaluate();
 		return {};
@@ -377,18 +368,18 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		[this](const Args &, std::string &error) -> Value {
 			if (!compileAsked.get())
 			{
-				error = "this core compiles nothing before a project is made";
+				error = tr("compile.nothing_to_compile");
 				return {};
 			}
 			if (compiling.get())
 			{
-				error = "already compiling";
+				error = tr("compile.already");
 				return {};
 			}
 			const std::string game = compileGame(), dir = compileDirOf(game);
 			if (dir.empty() || compileRunner.get().empty())
 			{
-				error = dir.empty() ? "there is no folder for compiled code" : "there is no runner for compile sessions";
+				error = tr(dir.empty() ? "compile.no_folder" : "compile.no_runner");
 				return {};
 			}
 			/* the folder made this build's: code another build compiled is
@@ -423,7 +414,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			std::string why;
 			if (!saveAskingProject(package_, picked, json::write(form_.recorded()), job->projectFile, dirs, why))
 			{
-				error = "the compile sessions' project could not be made: " + why;
+				error = tr("compile.no_project", {why});
 				return {};
 			}
 			std::vector<std::string> common = {"--project", job->projectFile, package_, "--cache-dir", dir};
@@ -439,7 +430,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			compileReady.set(false);
 			compileDone.set(0);
 			compileTotal.set(0);
-			compileStatus.set("Compiling...");
+			compileStatus.set(tr("compile.compiling"));
 			std::thread([this, job] {
 				job->run([this](std::function<void()> fn) { later(std::move(fn)); }, [this](const std::string &name, const std::string &sha1) {
 					modules_.push_back({name, sha1, true});
@@ -447,7 +438,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				}, [this](uint32_t done, uint32_t total) {
 					compileDone.set(done);
 					compileTotal.set(total);
-					compileStatus.set("Compiling " + std::to_string(done) + " of " + std::to_string(total) + " modules...");
+					compileStatus.set(tr("compile.progress", {std::to_string(done), std::to_string(total)}));
 				}, [this](const std::string &failure) {
 					compiling.set(false);
 					compileFolder.set("");
@@ -478,6 +469,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 	expose("importMovie", "the movie picked to import", importMovie);
 	expose("importNotes", "the notes of the core's answer, a line each", importNotes);
 	expose("imported", "the project will take the imported movie's inputs", imported);
+	expose("clockWrong", "the last create was refused for the clock's start, which is not a time Chimera reads", clockWrong);
 	expose("importFailure", "why the last import was not taken (\"\" when it was), in Chimera's words", importFailure);
 	expose("importSummary", "what the core said of the movie taken, when it noted anything (Chimera's message)", importSummary);
 	expose("importsTaken", "goes up with each import taken", importsTaken);
@@ -489,7 +481,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		std::error_code ec;
 		if (import_.kind != Json::Kind::Object || !fs::is_regular_file(path, ec))
 		{
-			error = import_.kind != Json::Kind::Object ? "this core imports no movies" : path + " is not a file";
+			error = import_.kind != Json::Kind::Object ? tr("import.no_import") : tr("new_project.not_a_file", {path});
 			return {};
 		}
 		importMovie.set(path);
@@ -503,7 +495,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			std::error_code ec;
 			if (input == nullptr || !fs::is_regular_file(path, ec))
 			{
-				error = input == nullptr ? "the import has no input " + option : path + " is not a file";
+				error = input == nullptr ? tr("import.no_input", {option}) : tr("new_project.not_a_file", {path});
 				return {};
 			}
 			const Json *many = input->find("multiple");
@@ -516,7 +508,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 					if (lower(baseName(p)) == name)
 					{
 						importFileRows_.reset.emit();
-						error = "Two files named " + baseName(path) + ": each file is read under its own name, so rename one.";
+						error = tr("new_project.two_files_named", {baseName(path)});
 						return {};
 					}
 			list.push_back(path);
@@ -531,7 +523,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			auto it = importPicked_.find(option);
 			if (it == importPicked_.end() || i < 0 || i >= static_cast<int64_t>(it->second.size()))
 			{
-				error = "no such file";
+				error = tr("session.no_such_file");
 				return {};
 			}
 			it->second.erase(it->second.begin() + static_cast<long>(i));
@@ -547,7 +539,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const int64_t n = it == importPicked_.end() ? 0 : static_cast<int64_t>(it->second.size());
 			if (from < 0 || from >= n || to < 0 || to >= n)
 			{
-				error = "no such file";
+				error = tr("session.no_such_file");
 				return {};
 			}
 			std::string moved = it->second[static_cast<size_t>(from)];
@@ -568,13 +560,13 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		[this](const Args &, std::string &error) -> Value {
 			if (import_.kind != Json::Kind::Object)
 			{
-				error = "this core imports no movies";
+				error = tr("import.no_import");
 				return {};
 			}
 			/* what is missing, in Chimera's words */
 			if (importMovie.get().empty())
 			{
-				error = "Choose the " + lower(importMovieLabel.get().empty() ? std::string("movie") : importMovieLabel.get()) + " to import.";
+				error = importMovieLabel.get().empty() ? tr("import.choose_movie") : tr("import.choose_named", {lower(importMovieLabel.get())});
 				importFailure.set(error);
 				return {};
 			}
@@ -600,7 +592,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 						if (const Json *req = f.find("required"); req != nullptr && req->boolean)
 						{
 							const Json *label = f.find("label");
-							error = "Choose the " + (label != nullptr ? label->text : option) + ".";
+							error = tr("import.choose_input", {label != nullptr ? label->text : option});
 							importFailure.set(error);
 							return {};
 						}
@@ -618,7 +610,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				}
 			for (const auto &[name, on] : importOptions_)
 				if (on) setMember(settings, name, Json::boolean_(true));
-			status.set("Asking " + core.get() + " about " + baseName(importMovie.get()) + "...");
+			status.set(tr("import.asking", {core.get(), baseName(importMovie.get())}));
 			importFailure.set("");
 			/* an answer to a question since withdrawn (the dialog closed, another
 			 * core chosen, another import asked) is no answer */
@@ -627,8 +619,8 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				if (ticket != importTicket_) return;
 				if (answer.empty())
 				{
-					status.set("Not imported: " + (why.empty() ? core.get() + " gave no answer" : why));
-					importFailure.set(why.empty() ? std::string("The core did not answer.") : why);
+					status.set(tr("import.not_imported", {why.empty() ? tr("import.core_gave_no_answer", {core.get()}) : why}));
+					importFailure.set(why.empty() ? tr("import.no_answer") : why);
 					return;
 				}
 				applyImport(answer);
@@ -684,7 +676,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			if (!arg(a, 0, k, error)) return {};
 			if (k != "emulators" && k != "games")
 			{
-				error = "a kind is \"emulators\" or \"games\"";
+				error = tr("new_project.kind_values");
 				return {};
 			}
 			kind.set(k);
@@ -698,7 +690,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		const int64_t count = options != nullptr && !options->items.empty() ? static_cast<int64_t>(options->items.size()) : 1;
 		if (i < 0 || i >= count)
 		{
-			error = "no renderer " + std::to_string(i);
+			error = tr("new_project.no_renderer", {std::to_string(i)});
 			return {};
 		}
 		if (options != nullptr && !options->items.empty())
@@ -716,7 +708,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			if (!arg(a, 0, i, error)) return {};
 			if (i < 0 || i >= static_cast<int64_t>(shown_.size()))
 			{
-				error = "no line " + std::to_string(i);
+				error = tr("new_project.no_line", {std::to_string(i)});
 				return {};
 			}
 			const CoresViewModel::Package chosen = shown_[static_cast<size_t>(i)];
@@ -736,7 +728,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const Json *list = cfg_.find("machines");
 			if (list == nullptr || i < 0 || i >= static_cast<int64_t>(list->items.size()))
 			{
-				error = "no machine " + std::to_string(i);
+				error = tr("new_project.no_machine", {std::to_string(i)});
 				return {};
 			}
 			const Json &m = list->items[static_cast<size_t>(i)];
@@ -756,12 +748,12 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		const Slot *s = slot(id);
 		if (s == nullptr)
 		{
-			error = core.get().empty() ? "choose a core first" : "the package has no slot " + id;
+			error = core.get().empty() ? tr("new_project.choose_core_first") : tr("new_project.no_slot", {id});
 			return {};
 		}
 		if (!s->exposed)
 		{
-			error = s->title + " does not go with the files or the machine chosen";
+			error = tr("new_project.slot_not_with_choice", {s->title});
 			return {};
 		}
 		const std::string name = baseName(path), kind = kindOf(name);
@@ -789,14 +781,14 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		std::error_code ec;
 		if (!fs::is_regular_file(path, ec))
 		{
-			error = path + " is not a file";
+			error = tr("new_project.not_a_file", {path});
 			return {};
 		}
 		for (const auto &[other, picked] : files_)
 			for (const Picked &f : picked)
 				if (f.name == name)
 				{
-					error = "a file called " + name + " is already in the project";
+					error = tr("new_project.file_already_in", {name});
 					return {};
 				}
 		/* a cue's tracks are taken from beside it when the project is made:
@@ -813,7 +805,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				for (const Json &t : tracks.items)
 					if (!fs::is_regular_file(fs::path(path).parent_path() / t.text, ec))
 					{
-						error = name + " references " + t.text + ", which is not next to it - a cue's files are added together";
+						error = tr("new_project.cue_reference_missing", {name, t.text});
 						return {};
 					}
 		}
@@ -822,9 +814,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		 * file of another kind is said, not refused, as Chimera's. More files
 		 * than a slot takes are said when the files page goes on. */
 		std::string formatsText;
-		for (const std::string &f : formats) formatsText += (formatsText.empty() ? "" : ", ") + (f.empty() ? std::string("no extension") : "." + f);
+		for (const std::string &f : formats) formatsText += (formatsText.empty() ? "" : ", ") + (f.empty() ? tr("new_project.no_extension") : "." + f);
 		const bool expected = formats.empty() || std::find(formats.begin(), formats.end(), kind) != formats.end();
-		status.set(expected ? std::string() : name + " is not one of the formats this slot expects (" + formatsText + ")");
+		status.set(expected ? std::string() : tr("new_project.unexpected_format", {name, formatsText}));
 		evaluate();
 		return {};
 	});
@@ -835,7 +827,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		auto it = files_.find(id);
 		if (it == files_.end() || i < 0 || i >= static_cast<int64_t>(it->second.size()))
 		{
-			error = "no file " + std::to_string(i) + " in " + id;
+			error = tr("new_project.no_file_in", {std::to_string(i), id});
 			return {};
 		}
 		it->second.erase(it->second.begin() + static_cast<long>(i));
@@ -851,7 +843,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const int64_t n = it == files_.end() ? 0 : static_cast<int64_t>(it->second.size());
 			if (from < 0 || from >= n || to < 0 || to >= n)
 			{
-				error = "no such place in " + id;
+				error = tr("new_project.no_place_in", {id});
 				return {};
 			}
 			Picked f = it->second[static_cast<size_t>(from)];
@@ -865,7 +857,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 		if (!arg(a, 0, name, error)) return {};
 		if (a.size() < 2)
 		{
-			error = "argument 2 is missing";
+			error = tr("new_project.argument_missing", {"2"});
 			return {};
 		}
 		if (!form_.set(name, a[1], error)) return {};
@@ -879,14 +871,14 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const auto need = std::find_if(needs_.begin(), needs_.end(), [&](const Need &n) { return n.id == id; });
 			if (need == needs_.end())
 			{
-				error = "the machine needs no firmware " + id;
+				error = tr("new_project.no_firmware_need", {id});
 				return {};
 			}
 			char sha[41];
 			uint64_t len = 0;
 			if (ce_sha1_file(path.c_str(), sha, &len) != 1)
 			{
-				error = "cannot read " + path;
+				error = tr("new_project.cannot_read", {path});
 				return {};
 			}
 			/* an entry with a hash names one exact file; a game core takes a
@@ -900,13 +892,12 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const bool gameCore = kind != nullptr && lower(kind->text) == "game";
 			if (custom && !gameCore)
 			{
-				error = baseName(path) + " is not this file: its hash is " + sha + ", the requirement is " + declared;
+				error = tr("new_project.not_this_file", {baseName(path), sha, declared});
 				return {};
 			}
 			chosenFirmware_[id] = {path, sha};
 			clearedFirmware_.erase(std::remove(clearedFirmware_.begin(), clearedFirmware_.end(), id), clearedFirmware_.end());
-			status.set(custom ? baseName(path) + " is a file of your own, not the original " + id + ": the project pins its hash (" + sha + ")"
-							  : std::string());
+			status.set(custom ? tr("new_project.own_firmware", {baseName(path), id, sha}) : std::string());
 			evaluate();
 			return {};
 		});
@@ -921,7 +912,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			std::error_code ec;
 			if (!fs::is_directory(folder, ec))
 			{
-				error = folder + " is not a folder";
+				error = tr("new_project.not_a_folder", {folder});
 				return {};
 			}
 			const std::vector<FirmwareFile> found = indexFirmware({folder}, recurse, 10000);
@@ -975,11 +966,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				}
 			}
 			evaluate();
-			const std::string files = std::to_string(found.size()) + (found.size() == 1 ? " file" : " files");
 			/* in Chimera's words */
-			status.set(filled == 0 ? "scanned " + std::to_string(found.size()) + " files; nothing new matched"
-								   : "scanned " + std::to_string(found.size()) + " files; " + std::to_string(filled) +
-										 (filled == 1 ? " requirement" : " requirements") + " resolved");
+			const std::string scanned = tr("new_project.scanned", static_cast<int64_t>(found.size()));
+			status.set(filled == 0 ? tr("new_project.scan_nothing", {scanned}) : tr("new_project.scan_resolved", filled, {scanned}));
 			return filled;
 		});
 	command("forgetFirmware", "a firmware chosen by hand goes back to the one found", {"id"},
@@ -1000,7 +989,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const auto cores = cores_.coresFor(kind);
 			if (cores.empty())
 			{
-				error = "no installed core takes ." + kind + " files";
+				error = tr("new_project.no_core_takes", {kind});
 				return false;
 			}
 			const auto &[name, package] = cores.front();
@@ -1018,7 +1007,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			if (into == nullptr && !slots_.empty()) into = &slots_.front();
 			if (into == nullptr)
 			{
-				error = core.get() + " declares no slot for a file";
+				error = tr("new_project.no_file_slot", {core.get()});
 				return false;
 			}
 			const std::string slotId = into->id;
@@ -1037,7 +1026,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			const SessionViewModel::ProjectAnswers &last = session_.lastAnswers();
 			if (last.coreName.empty())
 			{
-				error = "no project has been opened";
+				error = tr("new_project.none_opened");
 				return false;
 			}
 			if (!chooseCore(last.coreName, error, last.package)) return false;
@@ -1069,7 +1058,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			}
 			seeding_ = false;
 			evaluate();
-			status.set("The last project's answers: change what is to change");
+			status.set(tr("new_project.last_answers"));
 			return true;
 		});
 	command("create", "makes the project and opens it, as Chimera does: written nowhere until it is first saved, which "
@@ -1081,23 +1070,24 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			if (a.size() > 1 && !arg(a, 1, open, error)) return {};
 			if (path.empty() && !open)
 			{
-				error = "a project written nowhere has to be opened";
+				error = tr("new_project.must_open");
 				return {};
 			}
 			if (!ready.get())
 			{
-				error = "not yet: " + problems.get();
+				error = tr("new_project.not_yet", {problems.get()});
 				return {};
 			}
 			if (compileAsked.get() && !compileReady.get())
 			{
-				error = "Compile this game's code first.";
+				error = tr("compile.first");
 				return {};
 			}
 			const std::optional<int64_t> clock = parseClockText(clockStart.get());
+			clockWrong.set(!clock);
 			if (!clock)
 			{
-				error = "the machine's clock start is not a time written as 2017-05-27 12:44:28, between 1970 and 2200 (UTC)";
+				error = tr("new_project.clock_format");
 				return {};
 			}
 			/* everything the project is, taken now: making it runs on the
@@ -1150,7 +1140,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			 * when it opens - now, before the open looks */
 			for (const Need &n : needs_)
 				if (n.how == "chosen" || n.how == "your own") cores_.rememberFirmware(coreName, n.id, n.path);
-			status.set(path.empty() ? std::string("Making the project...") : "Making " + path + "...");
+			status.set(path.empty() ? tr("new_project.making") : tr("new_project.making_at", {path}));
 			session_.onMachine([=, this](ce_session *) {
 				ce_project *p = ce_project_new();
 				ce_project_set_core(p, coreName.c_str(), version.c_str(), sha.c_str());
@@ -1160,36 +1150,36 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 				for (const auto &[slotId, f] : files)
 					if (ce_project_file_add(p, f.name.c_str(), slotId.c_str(), f.path.c_str(), &err) != 0)
 					{
-						why = f.name + ": " + (err != nullptr ? err : "it could not be added");
+						why = tr("session.named_reason", {f.name, err != nullptr ? err : tr("new_project.not_added")});
 						break;
 					}
 				if (why.empty() && ce_project_set_settings_text(p, settings.c_str(), &err) != 0) why = err != nullptr ? err : "settings";
 				if (why.empty() && firmware != "[]" && ce_project_set_firmware_text(p, firmware.c_str(), &err) != 0) why = err != nullptr ? err : "firmware";
 				if (why.empty() && !coreCache.empty() && ce_project_set_core_cache_text(p, coreCache.c_str(), &err) != 0)
-					why = err != nullptr ? err : "the compiled modules' list";
+					why = err != nullptr ? err : tr("new_project.modules_list");
 				ce_project_set_title(p, name.c_str());
 				ce_project_set_clock_start(p, *clock);
 				/* an imported movie's inputs are the project's */
 				if (!input.empty()) ce_project_set_log_text(p, input.data(), input.size());
 				if (why.empty() && !slotsText.empty() && ce_project_validate(p, slotsText.data(), slotsText.size(), &err) != 0)
-					why = err != nullptr ? err : "the files do not fit the package's slots";
+					why = err != nullptr ? err : tr("new_project.files_do_not_fit");
 				if (why.empty() && path.empty())
 				{
 					/* written nowhere: it opens as it is, and its first save
 					 * asks where it goes */
-					later([this] { status.set("Made a new project: it is written when it is first saved"); });
+					later([this] { status.set(tr("new_project.made_unsaved")); });
 					session_.openMadeProjectOnMachine(p, package);
 					return;
 				}
-				if (why.empty() && ce_project_save(p, path.c_str(), &err) != 0) why = err != nullptr ? err : "it could not be written";
+				if (why.empty() && ce_project_save(p, path.c_str(), &err) != 0) why = err != nullptr ? err : tr("session.not_written");
 				ce_project_free(p);
 				later([this, why, path, package, open] {
 					if (!why.empty())
 					{
-						status.set("Not made: " + why);
+						status.set(tr("new_project.not_made", {why}));
 						return;
 					}
-					status.set("Made " + path);
+					status.set(tr("new_project.made", {path}));
 					std::string e;
 					if (open) session_.run("openProject", {path, package}, e);
 				});
@@ -1250,7 +1240,7 @@ void NewProjectViewModel::completeForAgent(const AgentRequest &request, std::fun
 	});
 	std::string error;
 	if (named == all.end() || !chooseCore(named->name, error, named->path))
-		return refused("There is no core called '" + request.core + "' in the cores folder. list_cores names them.");
+		return refused(tr("agent.no_core", {request.core}));
 	const std::string coreName = core.get();
 
 	/* the machine the agent named: its id, its label, or a value of its setting */
@@ -1282,7 +1272,7 @@ void NewProjectViewModel::completeForAgent(const AgentRequest &request, std::fun
 					const Json *id = m.find("id");
 					names += (names.empty() ? "" : ", ") + (label != nullptr ? label->text : id != nullptr ? id->text : std::string());
 				}
-				return refused(coreName + " has no machine called '" + request.system + "'. It has: " + names + ".");
+				return refused(tr("agent.no_machine", {coreName, request.system, names}));
 			}
 		}
 		else
@@ -1290,7 +1280,7 @@ void NewProjectViewModel::completeForAgent(const AgentRequest &request, std::fun
 			bool known = false;
 			for (const auto &[id, word] : CoresViewModel::systemPairs(cfg_))
 				known = known || lower(id) == lower(request.system) || lower(word) == lower(request.system);
-			if (!known) return refused(coreName + " is a " + CoresViewModel::systemsOf(cfg_) + ", not a '" + request.system + "'.");
+			if (!known) return refused(tr("agent.wrong_system", {coreName, CoresViewModel::systemsOf(cfg_), request.system}));
 		}
 	}
 
@@ -1301,7 +1291,7 @@ void NewProjectViewModel::completeForAgent(const AgentRequest &request, std::fun
 	paths.insert(paths.end(), request.games.begin(), request.games.end());
 	for (const auto &[id, path] : request.firmware) paths.push_back(path);
 	for (const std::string &path : paths)
-		if (!fs::is_regular_file(path, ec)) return refused("There is no file at '" + path + "'.");
+		if (!fs::is_regular_file(path, ec)) return refused(tr("agent.no_file", {path}));
 
 	/* the machine, then the agent's settings as a reopened project's go in,
 	 * which decide which slots the files can go in */
@@ -1344,16 +1334,16 @@ void NewProjectViewModel::completeForAgent(const AgentRequest &request, std::fun
 		{
 			std::string ids;
 			for (const Slot &sl : slots_) ids += (ids.empty() ? "" : ", ") + sl.id;
-			return refused(coreName + " has no slot '" + slotId + "'. Its slots: " + ids + ".");
+			return refused(tr("agent.no_slot", {coreName, slotId, ids}));
 		}
 		if (!run("addFile", {slotId, path}, error))
-			return refused(!error.empty() ? error : "'" + path + "' was not taken into the slot '" + slotId + "'.");
+			return refused(!error.empty() ? error : tr("agent.not_taken", {path, slotId}));
 	}
 	if (!filesComplaint.get().empty()) return refused(filesComplaint.get());
 
 	/* the core's suggestions for the game, as on arriving at the settings
 	 * page: asked when the game came in, waited for when not yet answered */
-	if (suggestion.get() == "Looking this game up...")
+	if (suggestion.get() == tr("new_project.looking_up"))
 	{
 		auto waited = std::make_shared<bool>(false);
 		agentWait_ = suggestion.changed.connect([this, request, done, waited] {
@@ -1386,7 +1376,7 @@ void NewProjectViewModel::finishForAgent(const AgentRequest &request, const std:
 				const Json *n = d.find("name");
 				return n != nullptr && n->text == name;
 			});
-			if (!declared) return refused(coreName + " has no setting called '" + name + "'. describe_core lists its settings.");
+			if (!declared) return refused(tr("agent.no_setting", {coreName, name}));
 			if (!form_.set(name, valueOfJson(value), error)) return refused(error);
 		}
 	evaluate();
@@ -1433,14 +1423,12 @@ void NewProjectViewModel::finishForAgent(const AgentRequest &request, const std:
 		o.searched.kind = Json::Kind::Array;
 		for (const std::string &folder : cores_.firmwareFolders()) o.searched.items.push_back(Json::string(folder));
 		if (!request.firmwareFolder.empty()) o.searched.items.push_back(Json::string(request.firmwareFolder));
-		o.refusal = "Firmware the project needs was not found: " + names + ".";
+		o.refusal = tr("agent.firmware_not_found", {names});
 		done(std::move(o));
 		return;
 	}
 	if (compileAsked.get() && !compileReady.get())
-		return refused(coreName + " compiles a game's code before the game's first run, which the New Project window does on its "
-			"last page, and this game's has not been compiled yet. Make this game's first project there; the compiled code "
-			"is kept for the next.");
+		return refused(tr("agent.compile_first", {coreName}));
 	if (!ready.get()) return refused(problems.get());
 	/* the firmware found is remembered, as Chimera's wizard remembers it: one
 	 * in the agent's own folder is then found when the project opens */
@@ -1533,7 +1521,7 @@ void NewProjectViewModel::refreshCompile()
 		if (const std::optional<compiled::Build> build = compiled::buildOf(package_); build && !dir.empty() && !compiled::belongsTo(dir, *build))
 		{
 			const std::optional<compiled::Build> owner = compiled::ownerOf(dir);
-			otherBuild = owner ? owner->core + " " + owner->version : std::string("a build of the core that did not say which");
+			otherBuild = owner ? owner->core + " " + owner->version : tr("compile.unnamed_build");
 		}
 		std::ifstream in(fs::path(dir) / "manifest.json", std::ios::binary);
 		const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -1561,10 +1549,10 @@ void NewProjectViewModel::refreshCompile()
 	compileReady.set(ready);
 	const size_t there = static_cast<size_t>(std::count_if(modules_.begin(), modules_.end(), [](const Module &mod) { return mod.present; }));
 	compileStatus.set(game.empty() ? std::string()
-		: !otherBuild.empty() ? "This game's code was compiled by " + otherBuild + ", not by this build of the core: Compile does it again."
-		: ready ? "All " + std::to_string(modules_.size()) + " modules are compiled."
-		: modules_.empty() ? std::string("This game's code is not compiled yet: Compile does it.")
-						   : std::to_string(there) + " of " + std::to_string(modules_.size()) + " modules are there: Compile does the rest.");
+		: !otherBuild.empty() ? tr("compile.other_build", {otherBuild})
+		: ready ? tr("compile.all_compiled", static_cast<int64_t>(modules_.size()))
+		: modules_.empty() ? tr("compile.not_compiled")
+						   : tr("compile.some_there", {std::to_string(there), std::to_string(modules_.size())}));
 }
 
 std::string NewProjectViewModel::clockText(int64_t unixSeconds)
@@ -1625,14 +1613,14 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	}
 	if (package.empty())
 	{
-		error = "no " + name + " core is installed";
+		error = tr("new_project.core_not_installed", {name});
 		return false;
 	}
 	const char *perr = nullptr;
 	ce_package *p = ce_package_open(package.c_str(), &perr);
 	if (p == nullptr)
 	{
-		error = package + " cannot be read" + (perr != nullptr ? std::string(": ") + perr : "");
+		error = perr != nullptr ? tr("new_project.package_unreadable_why", {package, perr}) : tr("new_project.package_unreadable", {package});
 		return false;
 	}
 	const std::string config = entryText(p, "waterbox.config");
@@ -1643,7 +1631,7 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	cfg_ = Json();
 	if (!json::parse(config, cfg_, jerr))
 	{
-		error = package + ": its waterbox.config does not read (" + jerr + ")";
+		error = tr("new_project.config_unreadable", {package, jerr});
 		return false;
 	}
 	package_ = package;
@@ -1695,7 +1683,7 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 		slotsText_.clear();
 		Slot s;
 		s.id = "rom";
-		s.title = "Game";
+		s.title = tr("new_project.slot_game");
 		s.min = 1;
 		s.max = 1;
 		if (const Json *ext = cfg_.find("extensions"))
@@ -1734,7 +1722,7 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 				for (const Json &e : ex->items) filter += (filter.empty() ? "" : " ") + std::string("*.") + lower(e.text[0] == '.' ? e.text.substr(1) : e.text);
 			importMovieFilter.set(filter.empty() ? "*" : filter);
 		}
-		if (importMenu.get().empty()) importMenu.set("Import Movie...");
+		if (importMenu.get().empty()) importMenu.set(tr("import.menu"));
 	}
 	importFileRows_.reset.emit();
 	importOptionRows_.reset.emit();
@@ -1790,7 +1778,7 @@ bool NewProjectViewModel::chooseCore(const std::string &name, std::string &error
 	rememberedSha_.clear();
 	core.set(name);
 	title.set("");
-	status.set("A new " + name + " project");
+	status.set(tr("new_project.a_new", {name}));
 	if (chosen >= 0)
 	{
 		std::string e;
@@ -1844,7 +1832,7 @@ void NewProjectViewModel::suggestFor(const std::string &game)
 		ownNames_.clear();
 	}
 	suggestedFor_ = game;
-	suggestion.set(game.empty() ? "" : "Looking this game up...");
+	suggestion.set(game.empty() ? "" : tr("new_project.looking_up"));
 	if (game.empty()) return;
 	auto ask = [this, game] {
 		/* an answer for a game no longer chosen, or to a question asked
@@ -1984,9 +1972,7 @@ void NewProjectViewModel::refreshRenderers()
 	renderer.set(chosen);
 	/* said where the choice is made, and only for a hardware one, as Chimera says it */
 	rendererCaveat.set(value.size() > 3 && value.compare(value.size() - 3, 3, "-hw") == 0
-			? "Hardware renderers use your PC's GPU: fast, but the picture is drawn outside the savestate, so video "
-			  "can differ on another PC. The greenzone is kept between sessions, unless Chimera closed unexpectedly - "
-			  "then it replays."
+			? tr("new_project.hardware_renderer")
 			: "");
 }
 
@@ -2014,7 +2000,7 @@ void NewProjectViewModel::applySuggestion(const std::string &text, const std::st
 	std::string jerr;
 	if (text.empty() || !json::parse(text, answer, jerr) || answer.kind != Json::Kind::Object)
 	{
-		suggestion.set("No suggested settings: " + (!why.empty() ? why : text.empty() ? std::string("the core gave none") : "its answer does not read"));
+		suggestion.set(tr("new_project.no_suggestion", {!why.empty() ? why : tr(text.empty() ? "new_project.core_gave_none" : "new_project.answer_unreadable")}));
 		return;
 	}
 	/* what the game has of its own: settings after the package's, and, for
@@ -2055,8 +2041,8 @@ void NewProjectViewModel::applySuggestion(const std::string &text, const std::st
 	}
 	const Json *note = answer.find("note");
 	std::string out = note != nullptr ? note->text : std::string();
-	if (!applied.empty()) out += (out.empty() ? "" : "\n") + std::string("Applied below: ") + applied + ".";
-	else if (kept) out += (out.empty() ? "" : "\n") + std::string("This project's own settings are kept.");
+	if (!applied.empty()) out += (out.empty() ? "" : "\n") + tr("new_project.applied_below", {applied});
+	else if (kept) out += (out.empty() ? "" : "\n") + tr("new_project.own_settings_kept");
 	suggestion.set(out);
 	evaluate();
 }
@@ -2075,13 +2061,13 @@ void NewProjectViewModel::applyImport(const std::string &text)
 	std::string why;
 	if (!json::parse(text, answer, why) || answer.kind != Json::Kind::Object)
 	{
-		status.set("Not imported: the core's answer does not read (" + why + ")");
-		importFailure.set("The core did not answer.");
+		status.set(tr("import.answer_unreadable", {why}));
+		importFailure.set(tr("import.no_answer"));
 		return;
 	}
 	if (const Json *refused = answer.find("error"))
 	{
-		status.set("Not imported: " + refused->text);
+		status.set(tr("import.not_imported", {refused->text}));
 		importFailure.set(refused->text);
 		return;
 	}
@@ -2114,7 +2100,7 @@ void NewProjectViewModel::applyImport(const std::string &text)
 			}
 			form_.evaluate();
 			std::string e;
-			if (!form_.set(name, v, e)) notes.push_back("Setting " + name + " not taken: " + e);
+			if (!form_.set(name, v, e)) notes.push_back(tr("import.setting_not_taken", {name, e}));
 		}
 	/* the files, in the answer's order: the ones picked for the import */
 	files_.clear();
@@ -2138,7 +2124,7 @@ void NewProjectViewModel::applyImport(const std::string &text)
 					}
 			if (path.empty())
 			{
-				notes.push_back(name->text + ": not among the files picked");
+				notes.push_back(tr("import.not_among_files", {name->text}));
 				continue;
 			}
 			std::string e;
@@ -2201,14 +2187,13 @@ void NewProjectViewModel::applyImport(const std::string &text)
 	if (title.get().empty()) title.set(fs::path(importMovie.get()).stem().string());
 	evaluate();
 	const Json *frames = answer.find("frames");
-	status.set("Imported " + baseName(importMovie.get()) + (frames != nullptr ? " (" + frames->text + " frames)" : std::string()));
+	status.set(frames != nullptr ? tr("import.imported_frames", {baseName(importMovie.get()), frames->text}) : tr("import.imported", {baseName(importMovie.get())}));
 	/* what Chimera says of it when there are notes */
 	std::string summary;
 	if (!notes.empty())
 	{
 		const Json *format = answer.find("format");
-		summary = core.get() + " read a " + (format != nullptr ? format->text : std::string()) + " movie of " +
-				  (frames != nullptr ? frames->text : std::string("0")) + " frames, and notes:\n";
+		summary = tr("import.summary", {core.get(), format != nullptr ? format->text : std::string(), frames != nullptr ? frames->text : std::string("0")}) + "\n";
 		for (const std::string &n : notes) summary += "\n- " + n + "\n";
 		while (!summary.empty() && summary.back() == '\n') summary.pop_back();
 	}
@@ -2392,18 +2377,18 @@ void NewProjectViewModel::evaluate()
 	/* what is missing */
 	std::string lines;
 	auto say = [&lines](const std::string &line) { lines += (lines.empty() ? "" : "\n") + line; };
-	if (core.get().empty()) say("Choose a core");
+	if (core.get().empty()) say(tr("new_project.choose_core"));
 	for (const Slot &s : slots_)
 	{
 		const auto it = files_.find(s.id);
 		const int64_t n = it == files_.end() ? 0 : static_cast<int64_t>(it->second.size());
 		if (!s.exposed)
 		{
-			if (n > 0) say(s.title + " does not go with the files or the machine chosen: take its files out");
+			if (n > 0) say(tr("new_project.take_files_out", {s.title}));
 			continue;
 		}
-		if (n < s.min) say(s.title + ": " + (s.min == 1 ? std::string("a file is needed") : std::to_string(s.min) + " files are needed"));
-		if (s.max >= 0 && n > s.max) say(s.title + ": " + std::to_string(s.max) + " at most");
+		if (n < s.min) say(tr("new_project.files_needed", s.min, {s.title}));
+		if (s.max >= 0 && n > s.max) say(tr("new_project.at_most", {s.title, std::to_string(s.max)}));
 	}
 	for (const std::vector<std::string> &group : atLeastOneOf_)
 	{
@@ -2414,10 +2399,10 @@ void NewProjectViewModel::evaluate()
 			if (const auto it = files_.find(id); it != files_.end()) n += static_cast<int64_t>(it->second.size());
 			if (const Slot *s = slot(id); s != nullptr && s->exposed) titles += (titles.empty() ? "" : ", ") + s->title;
 		}
-		if (n == 0 && !titles.empty()) say("One of these is needed: " + titles);
+		if (n == 0 && !titles.empty()) say(tr("new_project.one_of_these", {titles}));
 	}
 	for (const Need &n : needs_)
-		if (n.path.empty() && n.required) say(n.display + ": not found in the firmware folder; choose its file");
+		if (n.path.empty() && n.required) say(tr("new_project.firmware_choose", {n.display}));
 	problems.set(lines);
 
 	/* the wizard's pages, in Chimera's words: the files page's complaint
@@ -2431,8 +2416,8 @@ void NewProjectViewModel::evaluate()
 		if (s.settingGatedOnly && !s.machineHas) continue;
 		const auto it = files_.find(s.id);
 		const int64_t n = it == files_.end() ? 0 : static_cast<int64_t>(it->second.size());
-		if (n < s.min && s.exposed) complaint = s.title + ": needs " + cardinalityOf(s.min, s.max) + ", has " + std::to_string(n);
-		else if (s.max >= 0 && n > s.max) complaint = s.title + ": takes " + cardinalityOf(s.min, s.max) + ", has " + std::to_string(n);
+		if (n < s.min && s.exposed) complaint = tr("new_project.slot_needs", {s.title, cardinalityOf(s.min, s.max), std::to_string(n)});
+		else if (s.max >= 0 && n > s.max) complaint = tr("new_project.slot_takes", {s.title, cardinalityOf(s.min, s.max), std::to_string(n)});
 	}
 	for (const std::vector<std::string> &group : atLeastOneOf_)
 	{
@@ -2445,7 +2430,7 @@ void NewProjectViewModel::evaluate()
 			const Slot *s = slot(id);
 			titles += (titles.empty() ? "" : ", ") + (s != nullptr ? s->title : id);
 		}
-		if (n == 0) complaint = "at least one file is needed across: " + titles;
+		if (n == 0) complaint = tr("new_project.one_across", {titles});
 	}
 	filesComplaint.set(complaint);
 	firmwareAsked.set(!needs_.empty());
@@ -2486,7 +2471,7 @@ Value NewProjectViewModel::SlotRows::cell(int64_t row, int32_t column) const
 	{
 		std::string out;
 		/* as Chimera says them: ".iso, .cue", a file with no extension in words */
-		for (const std::string &f : vm_.formatsFor(s)) out += (out.empty() ? "" : ", ") + (f.empty() ? std::string("no extension") : "." + f);
+		for (const std::string &f : vm_.formatsFor(s)) out += (out.empty() ? "" : ", ") + (f.empty() ? tr("new_project.no_extension") : "." + f);
 		return out;
 	}
 	case 5: return s.help;
@@ -2606,11 +2591,11 @@ Value NewProjectViewModel::FirmwareRows::cell(int64_t row, int32_t column) const
 	/* the firmware page's columns, in Chimera's words */
 	case 5: return n.label.empty() ? n.display : n.display + "  (" + n.label + ")";
 	case 6: return n.name;
-	case 7: return n.declSha1.empty() ? std::string("(your own dump)") : n.declSha1;
+	case 7: return n.declSha1.empty() ? tr("new_project.own_dump") : n.declSha1;
 	case 8:
 		if (!n.path.empty())
-			return (n.how == "your own" ? "your own: " : "found: ") + fs::path(n.path).filename().string();
-		return n.required ? std::string("not found") : std::string("optional - core default used");
+			return tr(n.how == "your own" ? "new_project.firmware_own" : "new_project.firmware_found", {fs::path(n.path).filename().string()});
+		return tr(n.required ? "project_files.not_found" : "new_project.firmware_optional");
 	case 9: return !n.path.empty() || !n.required;
 	case 10: return n.description;
 	default: return {};

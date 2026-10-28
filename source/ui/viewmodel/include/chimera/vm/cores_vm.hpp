@@ -8,6 +8,7 @@
 #include <mutex>
 
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/view_model.hpp"
 
 namespace chimera::vm {
@@ -23,7 +24,7 @@ public:
 	 * a file chosen outside the firmware folder is found there again */
 	Property<std::string> chosenFirmware{"{}"};
 	Property<int64_t> count{0};
-	Property<std::string> status{"No cores folder"};
+	Property<std::string> status{tr("cores.no_folder")};
 	/* Chimera's Core Manager: which kinds of core it lists (0 all, 1 the emulators, 2 the games;
 	 * remembered), the two lines over the list, and the line under it */
 	Property<int64_t> shows{0};

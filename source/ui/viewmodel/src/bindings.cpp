@@ -1,4 +1,5 @@
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/vm/json.hpp"
 
@@ -55,7 +56,7 @@ bool Bindings::parse(std::string_view json, const std::vector<std::string> &butt
 	if (!json::parse(json, root, error)) return false;
 	if (root.kind != Json::Kind::Object)
 	{
-		error = "the bindings are not a JSON object";
+		error = tr("bindings.not_object");
 		return false;
 	}
 
@@ -234,7 +235,7 @@ bool keyNamesFrom(std::string_view json, std::map<std::string, std::string> &out
 	if (!json::parse(json, all, error)) return false;
 	if (all.kind != Json::Kind::Object)
 	{
-		error = "the names to replace are not a JSON object";
+		error = tr("bindings.names_not_object");
 		return false;
 	}
 	out.clear();

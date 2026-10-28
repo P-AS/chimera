@@ -266,11 +266,11 @@ ApplicationWindow {
 
     // Chimera's columns: its key (the view model's sort name), heading, width and the row model's field
     readonly property var columns: [
-        {key: "Address", name: "Address", text: "Address", width: 78, field: "Address"},
-        {key: "Value", name: "Value", text: "Value", width: 77, field: "Value"},
-        {key: "Prev", name: "Prev", text: "Prev", width: 77, field: "Previous"},
-        {key: "Changes", name: "Changes", text: "Changes", width: 78, field: "Changes"},
-        {key: "Diff", name: "Diff", text: "Diff", width: 77, field: "Diff"}
+        {key: "Address", name: "Address", text: qsTrId("ram_columns.address"), width: 78, field: "Address"},
+        {key: "Value", name: "Value", text: qsTrId("ram_columns.value"), width: 77, field: "Value"},
+        {key: "Prev", name: "Prev", text: qsTrId("ram_columns.prev"), width: 77, field: "Previous"},
+        {key: "Changes", name: "Changes", text: qsTrId("ram_columns.changes"), width: 78, field: "Changes"},
+        {key: "Diff", name: "Diff", text: qsTrId("ram_columns.diff"), width: 77, field: "Diff"}
     ]
     readonly property var hidden: win.vm.hiddenColumns === "" ? [] : win.vm.hiddenColumns.split(",")
     function shown(key) { return win.hidden.indexOf(key) < 0 }

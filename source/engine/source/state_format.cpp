@@ -1,6 +1,7 @@
 /* state_format.cpp - see state_format.hpp. */
 
 #include "state_format.hpp"
+#include "language.hpp"
 #include "thread_string.hpp"
 
 #include "chimera/engine.h"
@@ -73,7 +74,7 @@ int64_t daysOf(const std::string &date)
 
 std::string named(const std::string &build)
 {
-	return build.empty() ? std::string("a build that does not say") : build;
+	return build.empty() ? chimera::lang::tr("state.unnamed_build") : build;
 }
 
 } // namespace
@@ -95,14 +96,14 @@ int readStateFileHeader(const uint8_t *data, size_t len, StateFileHeader &h, std
 	why.clear();
 	if (data == nullptr || len < kMagicLen)
 	{
-		why = "is not a state file";
+		why = chimera::lang::tr("state.not_state");
 		return 2;
 	}
 	const bool numbered = std::memcmp(data, CE_STATE_FILE_MAGIC, kMagicLen) == 0;
 	const bool legacy = !numbered && std::memcmp(data, CE_STATE_FILE_MAGIC_V1, kMagicLen) == 0;
 	if (!numbered && !legacy)
 	{
-		why = "is not a state file";
+		why = chimera::lang::tr("state.not_state");
 		return 2;
 	}
 
@@ -113,7 +114,7 @@ int readStateFileHeader(const uint8_t *data, size_t len, StateFileHeader &h, std
 		if (!takeU32(data, len, at, h.format) || !takeU32(data, len, at, writerLen)
 			|| writerLen > kMaxWriter || len - at < writerLen)
 		{
-			why = "is a state file cut short";
+			why = chimera::lang::tr("state.cut_short");
 			return 2;
 		}
 		h.writer.assign(reinterpret_cast<const char *>(data + at), writerLen);
@@ -131,14 +132,14 @@ int readStateFileHeader(const uint8_t *data, size_t len, StateFileHeader &h, std
 
 	if (len - at < 1)
 	{
-		why = "is a state file cut short";
+		why = chimera::lang::tr("state.cut_short");
 		return 2;
 	}
 	h.compressed = data[at++] != 0;
 	uint32_t tagLen = 0;
 	if (!takeU32(data, len, at, tagLen) || tagLen > kMaxTag || len - at < tagLen)
 	{
-		why = "is a state file cut short";
+		why = chimera::lang::tr("state.cut_short");
 		return 2;
 	}
 	h.tag.assign(data + at, data + at + tagLen);
@@ -150,14 +151,9 @@ int readStateFileHeader(const uint8_t *data, size_t len, StateFileHeader &h, std
 		/* A whole sentence, capitalised: it is shown to a person as it stands,
 		 * on its own or after a lead line, and never with a path in front. */
 		const std::string reads = kOldestReadableStateFormat == kStateFormat
-			? "writes and reads format " + std::to_string(kStateFormat)
-			: "writes format " + std::to_string(kStateFormat) + " and reads formats "
-				+ std::to_string(kOldestReadableStateFormat) + " to " + std::to_string(kStateFormat);
-		why = "This state was written in savestate format " + std::to_string(h.format)
-			+ " by " + (h.writer.empty() ? std::string("a build from before states said which") : h.writer)
-			+ ", and this Chimera (" + stateWriterId() + ") " + reads
-			+ ". The machine's layout changed between the two, so the state cannot be loaded;"
-			+ " it was not touched.";
+			? chimera::lang::tr("state.reads_one", {std::to_string(kStateFormat)})
+			: chimera::lang::tr("state.reads_range", {std::to_string(kStateFormat), std::to_string(kOldestReadableStateFormat)});
+		why = chimera::lang::tr("state.other_format", {std::to_string(h.format), h.writer.empty() ? chimera::lang::tr("state.writer_unknown") : h.writer, stateWriterId(), reads});
 		return 1;
 	}
 	return 0;
@@ -180,14 +176,8 @@ std::string versionSkewMessage(
 	const int64_t apart = a > b ? a - b : b - a;
 	if (apart < kVersionSkewDays) return "";
 
-	const std::string core = coreName.empty() ? std::string("core") : coreName;
-	std::string out = "This Chimera was built on " + frontendDate + " (" + named(frontendBuild)
-		+ ") and the " + core + " package this project runs on was built on " + coreDate
-		+ " (" + named(coreBuild) + ") - " + std::to_string(static_cast<long long>(apart))
-		+ " days apart. A savestate's layout can change between builds, so cached states may be"
-		+ " rebuilt and a branch may refuse to load. If anything looks wrong, install the "
-		+ core + " build from the same week as this Chimera (File > Core Manager), or update Chimera.";
-	return out;
+	const std::string core = coreName.empty() ? chimera::lang::tr("session.the_core") : coreName;
+	return chimera::lang::tr("state.version_skew", {frontendDate, named(frontendBuild), core, coreDate, named(coreBuild), std::to_string(static_cast<long long>(apart))});
 }
 
 } // namespace chimera

@@ -30,6 +30,8 @@ vm_lib = static_library(
   [
     ui_build_h,
     'viewmodel/src/view_model.cpp',
+    'viewmodel/src/tr.cpp',
+    'viewmodel/src/issue_report.cpp',
     'viewmodel/src/mcp_vm.cpp',
     'viewmodel/src/input_log.cpp',
     'viewmodel/src/bindings.cpp',
@@ -376,7 +378,7 @@ if qt_dep.found()
     dependencies: [qt_dep],
     override_options: ['cpp_std=c++20'],
   )
-  test('translations', test_translations, timeout: 30)
+  test('translations', test_translations, env: ['QT_QPA_PLATFORM=offscreen'], timeout: 30)
   # keys are named by their place, as Chimera's, whatever the layout, with
   # the modifier keys merged or each side its own
   test_key_names = executable(

@@ -1,6 +1,8 @@
 #include "chimera/vm/help_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/vm/crash_notes.hpp"
+#include "chimera/vm/issue_report.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -69,7 +71,7 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 		const int64_t when = space == std::string::npos ? 0 : std::atoll(stamp.c_str() + space + 1);
 		commit.set(full.substr(0, 9));
 		commitUrl.set(homePage.get() + "/commit/" + full);
-		buildName.set("Commit " + commit.get() + (when > 0 ? " (" + europeanTime(when) + ")" : std::string()));
+		buildName.set(when > 0 ? tr("help.build_dated", {commit.get(), europeanTime(when)}) : tr("help.build", {commit.get()}));
 	}
 	expose("buildName", "this build, as Chimera's About box and a report name it", buildName);
 	expose("commit", "the commit this build was made from, as Lua's client.getversion gives it", commit);
@@ -86,65 +88,34 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 
 	command("versionReport", "the build and the core open, in the words a bug report asks for them (Chimera's Copy Version Info)",
 		{}, [this](const Args &, std::string &) -> Value {
-			std::string text = "**Chimera build:** " + buildName.get();
-			const std::string core = coreAndVersion();
-			if (!core.empty()) text += "\n**Core and version:** " + core;
-			return text;
+			return issue_report::versionLines(buildName.get(), coreAndVersion());
 		});
 	command("makeReport", "fills in a report's first lines from this session and lists the files worth attaching, as "
 		"Chimera's Report an Issue", {}, [this](const Args &, std::string &) -> Value {
-			std::vector<std::string> fields;
-			fields.push_back("**Chimera build:** " + buildName.get());
-			const std::string core = coreAndVersion();
-			fields.push_back("**Core and version:** " + (core.empty() ? std::string("<!-- no core was running -->") : core));
-			const std::string os = osName.get().empty() ? "<!-- type your operating system here -->" : osName.get();
-			fields.push_back("**OS and GPU:** " + os + ", <!-- type your graphics card here -->");
-			std::string cpu = ce_host_cpu_name() != nullptr ? ce_host_cpu_name() : "";
-			if (cpu.empty()) cpu = "<!-- type your processor here -->";
-			if (const unsigned threads = std::thread::hardware_concurrency(); threads > 0) cpu += " (" + std::to_string(threads) + " threads)";
-			const uint64_t memory = ce_host_memory_total();
-			char gb[32];
-			std::snprintf(gb, sizeof gb, "%.1f GB of memory", static_cast<double>(memory) / static_cast<double>(1ull << 30));
-			fields.push_back("**CPU and memory:** " + cpu + ", " +
-				(memory == 0 ? std::string("<!-- type how much memory your computer has here -->") : std::string(gb)));
-			/* the project's files: one, the game, on the line itself */
-			std::string game = "**Game:**";
-			if (!session_.hasProject.get())
-				game += " <!-- no project was open -->";
-			else
+			issue_report::Facts facts;
+			facts.build = buildName.get();
+			facts.core = coreAndVersion();
+			facts.os = osName.get();
+			facts.cpu = ce_host_cpu_name() != nullptr ? ce_host_cpu_name() : "";
+			facts.threads = std::thread::hardware_concurrency();
+			facts.memory = ce_host_memory_total();
+			facts.projectOpen = session_.hasProject.get();
+			if (facts.projectOpen)
 			{
 				/* the open project's own list: slot and file name */
-				std::vector<std::pair<std::string, std::string>> files;
 				session_.onProjectWait([&](ce_project *p) {
 					if (p == nullptr) return;
 					for (int32_t i = 0; i < ce_project_file_count(p); i++)
 					{
 						const char *slot = ce_project_file_slot(p, i), *name = ce_project_file_name(p, i);
-						files.emplace_back(slot != nullptr ? slot : "", name != nullptr ? name : "");
+						facts.files.emplace_back(slot != nullptr ? slot : "", name != nullptr ? name : "");
 					}
 				});
-				auto named = [](const std::pair<std::string, std::string> &f, bool alone) {
-					const std::string name = std::filesystem::path(f.second).filename().string();
-					return alone && f.first == "game" ? name : f.first + ": " + name;
-				};
-				if (files.empty()) game += " the project has no files of its own";
-				else if (files.size() == 1) game += " " + named(files[0], true);
-				else
-					for (const auto &f : files) game += "\n- " + named(f, false);
 			}
-			fields.push_back(game);
-			std::string settings = "**Renderer and non-default settings:**";
-			if (!session_.isOpen.get())
-				settings += " <!-- no core was running -->";
-			else
-			{
-				const auto changed = settings_.changedSettings();
-				if (changed.empty()) settings += " every setting is at its default";
-				for (const auto &c : changed) settings += "\n- " + c.label + ": " + c.value + " (default: " + c.standard + ")";
-			}
-			fields.push_back(settings);
-			std::string text;
-			for (const std::string &f : fields) text += (text.empty() ? "" : "\n\n") + f;
+			facts.coreRunning = session_.isOpen.get();
+			if (facts.coreRunning)
+				for (const auto &c : settings_.changedSettings()) facts.changed.push_back({c.label, c.value, c.standard});
+			const std::string text = issue_report::firstLines(facts);
 			reportText.set(text);
 			/* the files: the project, and the sandbox's log, beside the program
 			 * first and then where it runs, as Chimera looks */
@@ -173,7 +144,7 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 			if (const char *core = ce_core_log_path(); core != nullptr && *core != '\0' && std::filesystem::is_regular_file(core, ec))
 				list += (list.empty() ? "" : "\n") + std::string(core);
 			reportFiles.set(list);
-			status.set(list.empty() ? "No saved project, crash note or log was found. The zip will hold the text." : "");
+			status.set(list.empty() ? tr("help.nothing_to_attach") : "");
 			return text;
 		});
 	command("saveReport", "the report, the game's picture (a PNG file, \"\" for none) and the files to attach (a line each, of "
@@ -191,12 +162,12 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 			auto refuse = [&](const std::string &why) -> Value {
 				std::error_code ec;
 				std::filesystem::remove(zip, ec);
-				status.set("The zip was not saved: " + why);
+				status.set(tr("help.zip_not_saved", {why}));
 				error = status.get();
 				return {};
 			};
 			mz_zip_archive out{};
-			if (!mz_zip_writer_init_heap(&out, 0, 0)) return refuse("no memory for it");
+			if (!mz_zip_writer_init_heap(&out, 0, 0)) return refuse(tr("help.no_memory"));
 			bool ok = true;
 			/* the text with plain line ends, and one more */
 			std::string text;
@@ -236,26 +207,26 @@ HelpViewModel::HelpViewModel(Dispatcher &dispatcher, SessionViewModel &session, 
 			if (!ok)
 			{
 				mz_free(buffer);
-				return refuse("it could not be put together");
+				return refuse(tr("help.not_put_together"));
 			}
 			{
 				std::ofstream file(zip, std::ios::binary);
 				file.write(static_cast<const char *>(buffer), static_cast<std::streamsize>(size));
 				mz_free(buffer);
-				if (!file) return refuse("could not write " + zip);
+				if (!file) return refuse(tr("session.could_not_write", {zip}));
 			}
 			/* as Chimera says it: the name, the size, what could not be read, past what an issue takes */
 			char megabytes[32];
 			std::snprintf(megabytes, sizeof megabytes, "%.1f", static_cast<double>(size) / (1024.0 * 1024.0));
-			std::string said = "Saved " + std::filesystem::path(zip).filename().string() + " (" + megabytes + " MB).";
+			std::string said = tr("help.zip_saved", {std::filesystem::path(zip).filename().string(), megabytes});
 			if (!unread.empty())
 			{
-				said += " Could not read: ";
-				for (size_t i = 0; i < unread.size(); i++) said += (i == 0 ? "" : ", ") + std::filesystem::path(unread[i]).filename().string();
-				said += ".";
+				std::string names;
+				for (size_t i = 0; i < unread.size(); i++) names += (i == 0 ? "" : ", ") + std::filesystem::path(unread[i]).filename().string();
+				said += " " + tr("help.unread", {names});
 			}
 			constexpr uint64_t kLimit = 25ull * 1024 * 1024;
-			if (size > kLimit) said += " GitHub takes up to 25 MB: save again without the largest file.";
+			if (size > kLimit) said += " " + tr("help.too_big");
 			status.set(said);
 			return static_cast<int64_t>(size);
 		});
@@ -271,7 +242,7 @@ std::string HelpViewModel::coreAndVersion() const
 	if (ce_package *p = ce_package_open(session_.packagePath().c_str(), &perr))
 	{
 		uint64_t len = 0;
-		if (const uint8_t *d = ce_package_entry(p, "waterbox.config", &len)) config.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
+		if (const uint8_t *d = ce_package_entry_texts(p, "waterbox.config", &len)) config.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
 		ce_package_free(p);
 	}
 	json::Json cfg;

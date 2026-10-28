@@ -176,30 +176,32 @@ ApplicationWindow {
                         // the tool strip
                         fill("ToolStripBackground", 0, 22, 520, 26)
                         let x = 8
-                        for (const label of ["Play", "Pause", "Record", "Frame Advance"]) x += write("ToolStripText", label, x, 29) + 16
+                        // words drawn as the window would draw them (a menu's & left out)
+                        const said = (key) => qsTrId(key).replace("&", "")
+                        for (const label of ["themes.preview_play", "themes.preview_pause", "themes.preview_record", "hotkey.frame_advance"]) x += write("ToolStripText", said(label), x, 29) + 16
                         // a form: fields, a drop-down, a disabled one, a read-only one, a link, coloured words, marks, a meter, buttons
                         const left = 10, fw = 236
-                        write("WindowText", "Project name", left, 58)
-                        fill("InputBackground", left, 74, fw, 20); outline("Border", left, 74, fw, 20); write("InputText", "any% in 12:34", left + 4, 77)
-                        fill("InputBackground", left, 100, 116, 20); outline("Border", left, 100, 116, 20); write("InputText", "Player 1", left + 4, 103)
+                        write("WindowText", said("themes.preview_project_name"), left, 58)
+                        fill("InputBackground", left, 74, fw, 20); outline("Border", left, 74, fw, 20); write("InputText", said("themes.preview_run_name"), left + 4, 77)
+                        fill("InputBackground", left, 100, 116, 20); outline("Border", left, 100, 116, 20); write("InputText", said("themes.preview_player").arg(1), left + 4, 103)
                         poly("GlyphForeground", [[left + 100, 108], [left + 108, 108], [left + 104, 113]]); parts.push([left + 99, 106, 10, 8, "GlyphForeground"])
-                        fill("DisabledBackground", left + 120, 100, 116, 20); outline("Border", left + 120, 100, 116, 20); write("DisabledText", "Player 2", left + 124, 103)
+                        fill("DisabledBackground", left + 120, 100, 116, 20); outline("Border", left + 120, 100, 116, 20); write("DisabledText", said("themes.preview_player").arg(2), left + 124, 103)
                         poly("GlyphShadow", [[left + 220, 108], [left + 228, 108], [left + 224, 113]]); parts.push([left + 219, 106, 10, 8, "GlyphShadow"])
-                        fill("ReadOnlyBackground", left, 126, fw, 20); outline("Border", left, 126, fw, 20); write("MutedText", "Movies/any%.tasproj (read-only)", left + 4, 129)
-                        const lw = write("LinkText", "Open Themes Folder", left, 152); line("LinkText", left, 164, left + lw, 164)
-                        write("MutedText", "a note in the margin", left + 128, 152)
-                        write("AccentGood", "Verified", left, 174); write("AccentReady", "Ready", left + 62, 174)
-                        write("AccentWarning", "Out of date", left + 112, 174); write("AccentError", "Missing", left + 190, 174)
-                        fill("AccentWarningBackground", left, 194, fw, 22); write("WindowText", "A firmware file is not the known one.", left + 6, 198)
-                        mark("GlyphGood", left + 8, 232); write("WindowText", "Good", left + 18, 225)
+                        fill("ReadOnlyBackground", left, 126, fw, 20); outline("Border", left, 126, fw, 20); write("MutedText", said("themes.preview_read_only_file"), left + 4, 129)
+                        const lw = write("LinkText", said("themes.open_themes_folder"), left, 152); line("LinkText", left, 164, left + lw, 164)
+                        write("MutedText", said("themes.preview_note"), left + 128, 152)
+                        write("AccentGood", said("themes.preview_verified"), left, 174); write("AccentReady", said("themes.preview_ready"), left + 62, 174)
+                        write("AccentWarning", said("themes.preview_out_of_date"), left + 112, 174); write("AccentError", said("themes.preview_missing"), left + 190, 174)
+                        fill("AccentWarningBackground", left, 194, fw, 22); write("WindowText", said("themes.preview_warning"), left + 6, 198)
+                        mark("GlyphGood", left + 8, 232); write("WindowText", said("themes.preview_good"), left + 18, 225)
                         poly("GlyphWarning", [[left + 66, 225], [left + 73, 238], [left + 59, 238]]); parts.push([left + 59, 225, 14, 13, "GlyphWarning"])
                         fill("GlyphWarningInk", left + 65, 229, 2, 5); fill("GlyphWarningInk", left + 65, 235, 2, 2)
-                        write("WindowText", "Unknown", left + 76, 225)
-                        mark("GlyphError", left + 140, 232); write("WindowText", "Bad", left + 150, 225)
-                        mark("GlyphNeutral", left + 190, 232); write("WindowText", "None", left + 200, 225)
+                        write("WindowText", said("themes.preview_unknown"), left + 76, 225)
+                        mark("GlyphError", left + 140, 232); write("WindowText", said("themes.preview_bad"), left + 150, 225)
+                        mark("GlyphNeutral", left + 190, 232); write("WindowText", said("common.none"), left + 200, 225)
                         // the level meter, the analog range box and a little hex editor
                         const top = 248
-                        write("WindowText", "Level", left, top)
+                        write("WindowText", said("themes.preview_level"), left, top)
                         fill("MeterTrough", left, top + 16, 140, 12); fill("MeterLow", left + 2, top + 18, 70, 8)
                         fill("MeterMid", left + 72, top + 18, 30, 8); fill("MeterHigh", left + 102, top + 18, 16, 8); fill("MeterPeak", left + 126, top + 16, 3, 12)
                         const box = left + fw - 76
@@ -207,7 +209,7 @@ ApplicationWindow {
                         line("AnalogRangeAxis", box + 38, top + 6, box + 38, top + 70); line("AnalogRangeAxis", box + 6, top + 38, box + 70, top + 38)
                         g.strokeStyle = preview.c("AnalogRangeLimit"); g.beginPath(); g.ellipse(box + 10, top + 10, 56, 56); g.stroke(); parts.push([box + 10, top + 10, 4, 56, "AnalogRangeLimit"])
                         mark("AnalogRangeDot", box + 52, top + 26)
-                        write("WindowText", "Hex", left, top + 36)
+                        write("WindowText", said("hex_editor.hex"), left, top + 36)
                         fill("HexMenuBar", left, top + 52, 140, 6); fill("HexBackground", left, top + 58, 140, 30)
                         const bytes = [["00", "3F", "1A", "C0", "7E", "FF"], ["12", "00", "00", "8B", "41", "02"]]
                         for (let row = 0; row < 2; row++)
@@ -217,19 +219,19 @@ ApplicationWindow {
                                 if (behind !== "") fill(behind, bx - 1, by, 20, 13)
                                 write("HexText", bytes[row][i], bx, by)
                             }
-                        button("OK", left + 96, 342, 66)
-                        button("Cancel", left + 170, 342, 66)
+                        button(said("common.ok"), left + 96, 342, 66)
+                        button(said("common.cancel"), left + 170, 342, 66)
                         fill("ShadedBackground", left, 342, 80, 24); write("MeterText", "-12 dB", left + 6, 347)
                         // a list: a header, rows plain, alternate, chosen, under the pointer, chosen without the focus
                         const ll = 258, lwid = 252, split = 150
                         let ly = 56
                         fill("HeaderBackground", ll, ly, lwid, 20)
-                        write("HeaderText", "Name", ll + 6, ly + 3, bold); write("HeaderText", "System", ll + split + 6, ly + 3, bold)
+                        write("HeaderText", said("common.name"), ll + 6, ly + 3, bold); write("HeaderText", said("cores.system"), ll + split + 6, ly + 3, bold)
                         line("GridLines", ll + split, ly, ll + split, ly + 20)
                         ly += 20
                         for (const r of [["Aizome", "NES", "InputBackground", "InputText"], ["Bubblegum Pop", "SNES", "AlternateRowBackground", "InputText"],
-                                         ["Chosen row", "N64", "Selection", "SelectionText"], ["Row under the pointer", "GBA", "HoverBackground", "InputText"],
-                                         ["Chosen, list not focused", "PS2", "InactiveSelection", "InactiveSelectionText"]]) {
+                                         [said("themes.preview_chosen_row"), "N64", "Selection", "SelectionText"], [said("themes.preview_pointed_row"), "GBA", "HoverBackground", "InputText"],
+                                         [said("themes.preview_chosen_unfocused"), "PS2", "InactiveSelection", "InactiveSelectionText"]]) {
                             fill(r[2], ll, ly, lwid, 18)
                             write(r[3], r[0], ll + 6, ly + 2); write(r[3], r[1], ll + split + 6, ly + 2)
                             line("GridLines", ll, ly + 17, ll + lwid, ly + 17)
@@ -242,7 +244,7 @@ ApplicationWindow {
                         const ph = 18 + 11 * rh
                         fill("RollBackground", ll, pt, lwid, ph)
                         fill("RollColumnBackground", ll, pt, lwid, 18)
-                        write("RollText", "Frame", ll + 4, pt + 2, bold)
+                        write("RollText", said("common.frame"), ll + 4, pt + 2, bold)
                         const names = ["A", "B", "Up", "Start", "X"]
                         for (let i = 0; i < 5; i++) { line("RollColumnBorder", cols[i], pt, cols[i], pt + 18); write("RollText", names[i], cols[i] + 4, pt + 2, bold) }
                         const rows = [[100, "TasGreenZone", "", "RollText"], [101, "TasGreenZoneInput", "A", "RollText"], [102, "TasGreenZoneInputStated", "A B", "RollText"],
@@ -260,7 +262,7 @@ ApplicationWindow {
                             ry += rh
                         }
                         fill("TasCursorColumn", cols[3], ry, 40, rh); fill("RollEmphasisColumn", cols[4], ry, 40, rh)
-                        write("RollHintText", "end of the movie", ll + 18, ry + 1)
+                        write("RollHintText", said("themes.preview_end_of_movie"), ll + 18, ry + 1)
                         line("RollGridLines", ll, ry + rh - 1, ll + lwid, ry + rh - 1)
                         for (let i = 0; i < 5; i++) line("RollGridLines", cols[i], pt + 18, cols[i], pt + ph)
                         fill("TasFrameColumnWash", ll, pt + 18, fc, ph - 18)
@@ -268,23 +270,23 @@ ApplicationWindow {
                         outline("RollColumnBorder", ll, pt, lwid, ph)
                         // the status bar
                         fill("StatusBarBackground", 0, 376, 520, 24)
-                        write("StatusBarText", "Frame 106    60 fps    Recording", 8, 381)
+                        write("StatusBarText", said("themes.preview_status"), 8, 381)
                         g.fillStyle = preview.c("TasIconRecording"); g.beginPath(); g.ellipse(500, 382, 11, 11); g.fill(); parts.push([500, 382, 11, 11, "TasIconRecording"])
                         // the menu last, as it opens over what is under it
                         fill("MenuBackground", 0, 0, 520, 22)
                         let mx = 8
-                        for (const t of ["File", "Emulation", "View", "Config", "Tools", "Help"]) {
+                        for (const t of ["common.file", "themes.preview_emulation", "main.view", "main.config_mnemonic", "main.tools", "main.help"].map(said)) {
                             const w = g.measureText(t).width + 12
-                            if (t === "Config") {
+                            if (t === said("main.config_mnemonic")) {
                                 fill("MenuSelectedBackground", mx, 2, w, 18); write("MenuSelectedText", t, mx + 6, 5)
-                                const items = ["Paths...", "", "Theme..."]
+                                const items = [said("main.paths"), "", said("main.theme")]
                                 let mh = 6
                                 for (const it of items) mh += it === "" ? 7 : 20
                                 fill("MenuBackground", mx, 22, 120, mh); outline("MenuBorder", mx, 22, 119, mh - 1)
                                 let iy = 25
                                 for (const it of items) {
                                     if (it === "") { line("MenuSeparator", mx + 6, iy + 3, mx + 114, iy + 3); iy += 7; continue }
-                                    if (it === "Theme...") { fill("MenuSelectedBackground", mx + 2, iy, 116, 20); write("MenuSelectedText", it, mx + 26, iy + 3) }
+                                    if (it === said("main.theme")) { fill("MenuSelectedBackground", mx + 2, iy, 116, 20); write("MenuSelectedText", it, mx + 26, iy + 3) }
                                     else write("MenuText", it, mx + 26, iy + 3)
                                     iy += 20
                                 }

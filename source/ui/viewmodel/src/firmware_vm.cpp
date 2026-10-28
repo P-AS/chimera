@@ -1,4 +1,5 @@
 #include "chimera/vm/firmware_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -34,7 +35,7 @@ std::string field(const json::Json &j, const char *name)
 /* a condition put in brackets when it joins others */
 std::string grouped(const std::string &s)
 {
-	return s.find(" and ") != std::string::npos || s.find(" or ") != std::string::npos ? "(" + s + ")" : s;
+	return s.find(tr("firmware.and")) != std::string::npos || s.find(tr("firmware.or")) != std::string::npos ? "(" + s + ")" : s;
 }
 
 std::string literal(const json::Json &v) { return v.kind == json::Json::Kind::String ? v.text : json::write(v); }
@@ -72,24 +73,24 @@ std::string FirmwareViewModel::conditionText(const json::Json &when)
 		{
 			std::string list;
 			for (const json::Json &o : in->items) list += (list.empty() ? "" : ", ") + literal(o);
-			return literal(*setting) + " in " + list;
+			return tr("firmware.setting_in", {literal(*setting), list});
 		}
 		return literal(*setting);
 	}
 	if (const json::Json *slot = when.find("slot"))
 	{
-		if (const json::Json *ext = when.find("extension")) return "a ." + literal(*ext) + " file in " + literal(*slot);
-		return "a file in " + literal(*slot);
+		if (const json::Json *ext = when.find("extension")) return tr("firmware.extension_in_slot", {literal(*ext), literal(*slot)});
+		return tr("firmware.file_in_slot", {literal(*slot)});
 	}
 	for (const char *join : {"all", "any"})
 		if (const json::Json *list = when.find(join); list != nullptr && list->kind == json::Json::Kind::Array)
 		{
 			std::string out;
 			for (const json::Json &c : list->items)
-				if (const std::string t = conditionText(c); !t.empty()) out += (out.empty() ? "" : std::string(join[1] == 'l' ? " and " : " or ")) + grouped(t);
+				if (const std::string t = conditionText(c); !t.empty()) out += (out.empty() ? "" : tr(join[1] == 'l' ? "firmware.and" : "firmware.or")) + grouped(t);
 			return out;
 		}
-	if (const json::Json *no = when.find("not")) return "not " + grouped(conditionText(*no));
+	if (const json::Json *no = when.find("not")) return tr("firmware.not", {grouped(conditionText(*no))});
 	return {};
 }
 
@@ -98,13 +99,13 @@ std::string FirmwareViewModel::Row::statusText() const
 	switch (state)
 	{
 	case Good:
-		if (!sha1.empty()) return "found, hash matches";
-		if (!path.empty() && !name.empty() && lower(fs::path(path).filename().string()) != lower(name)) return "found by size and name";
-		return "found by name";
-	case Unrecognised: return "right size, a dump the core has never seen - used anyway";
-	case Custom: return "not the " + std::to_string(size) + " bytes the core expects - used anyway";
-	case Unreadable: return "chosen file is gone";
-	default: return candidates >= 2 ? std::to_string(candidates) + " candidates - choose one with Set..." : "not found";
+		if (!sha1.empty()) return tr("project_files.found");
+		if (!path.empty() && !name.empty() && lower(fs::path(path).filename().string()) != lower(name)) return tr("firmware.found_by_size_name");
+		return tr("firmware.found_by_name");
+	case Unrecognised: return tr("firmware.unrecognised");
+	case Custom: return tr("firmware.custom", {std::to_string(size)});
+	case Unreadable: return tr("firmware.gone");
+	default: return candidates >= 2 ? tr("firmware.candidates", {std::to_string(candidates)}) : tr("project_files.not_found");
 	}
 }
 
@@ -112,15 +113,15 @@ std::string FirmwareViewModel::Row::whereText() const
 {
 	switch (where)
 	{
-	case FirmwareFolder: return "Firmware folder";
-	case Chosen: return path.empty() ? std::string("chosen") : "chosen: " + path;
+	case FirmwareFolder: return tr("firmware.firmware_folder");
+	case Chosen: return path.empty() ? tr("project_files.chosen") : tr("firmware.chosen_at", {path});
 	default: return {};
 	}
 }
 
 std::string FirmwareViewModel::summaryOf(const Group &g) const
 {
-	if (g.rows.empty()) return "needs no firmware";
+	if (g.rows.empty()) return tr("firmware.needs_none");
 	std::vector<std::string> ids;
 	size_t onHand = 0;
 	bool unpinned = true;
@@ -132,14 +133,13 @@ std::string FirmwareViewModel::summaryOf(const Group &g) const
 		unpinned = unpinned && r.sha1.empty();
 	}
 	if (ids.size() == 1 && g.rows.size() > 1)
-		return rows_[g.rows[0]].display + " · " + std::to_string(onHand) + " of " + std::to_string(g.rows.size()) +
-			" dumps on hand · any one satisfies a project that chooses it";
+		return tr("firmware.dumps_on_hand", {rows_[g.rows[0]].display, std::to_string(onHand), std::to_string(g.rows.size())});
 	size_t satisfied = 0;
 	for (const std::string &id : ids)
 		satisfied += std::any_of(g.rows.begin(), g.rows.end(), [&](size_t i) { return rows_[i].id == id && rows_[i].onHand(); }) ? 1 : 0;
-	const std::string files = ids.size() == 1 ? std::string("1 file") : std::to_string(ids.size()) + " files";
-	const std::string found = ids.size() == 1 ? (satisfied == 1 ? "on hand" : "not on hand") : std::to_string(satisfied) + " on hand";
-	return files + " · " + found + (unpinned ? " · not pinned by hash: recognised by the name the core gives them" : "");
+	const std::string files = tr("firmware.files", static_cast<int64_t>(ids.size()));
+	const std::string found = ids.size() == 1 ? tr(satisfied == 1 ? "firmware.on_hand" : "firmware.not_on_hand") : tr("firmware.some_on_hand", {std::to_string(satisfied)});
+	return files + " · " + found + (unpinned ? " · " + tr("firmware.unpinned") : "");
 }
 
 std::string FirmwareViewModel::keyOf(const Row &r) { return r.sha1.empty() ? r.id : r.id + "#" + upper(r.sha1); }
@@ -167,7 +167,7 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 		if (!arg(a, 0, l, error)) return false;
 		if (l < 0 || l >= static_cast<int64_t>(lines_.size()))
 		{
-			error = "no line " + std::to_string(l);
+			error = tr("new_project.no_line", {std::to_string(l)});
 			return false;
 		}
 		core = groups_[lines_[static_cast<size_t>(l)].group].core;
@@ -207,7 +207,7 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 			const fs::path folder = r->path.empty() ? fs::path() : fs::path(r->path).parent_path();
 			if (folder.empty() || !fs::is_directory(folder, ec))
 			{
-				status.set(r->path.empty() ? "No file was found for " + r->display + "." : "The folder of " + r->path + " is gone.");
+				status.set(r->path.empty() ? tr("firmware.no_file_for", {r->display}) : tr("firmware.folder_gone", {r->path}));
 				return std::string();
 			}
 			return folder.string();
@@ -224,7 +224,7 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 			if (!lineOf(a, r, error) || !arg(a, 1, path, error)) return {};
 			if (!fs::is_regular_file(path))
 			{
-				error = path + " is not a file";
+				error = tr("new_project.not_a_file", {path});
 				return {};
 			}
 			const Row was = *r;
@@ -253,7 +253,7 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 			if (a.size() > 1 && !arg(a, 1, recurse, error)) return {};
 			if (!fs::is_directory(folder))
 			{
-				error = folder + " is not a folder";
+				error = tr("new_project.not_a_folder", {folder});
 				return {};
 			}
 			const std::vector<FirmwareFile> index = indexFirmware({folder}, recurse, 10000);
@@ -272,7 +272,7 @@ FirmwareViewModel::FirmwareViewModel(Dispatcher &dispatcher, CoresViewModel &cor
 			/* where the person keeps firmware, when the folder named is nowhere real (Chimera issue 293) */
 			if (found > 0 && !fs::is_directory(cores_.firmwareFolder.get())) cores_.firmwareFolder.set(folder);
 			survey();
-			status.set("Found " + std::to_string(found) + (found == 1 ? " firmware file" : " firmware files") + " in " + folder);
+			status.set(tr("firmware.found_in", found, {folder}));
 			return found;
 		});
 	showsWatch_ = shows.changed.connect([this] { render(); });
@@ -287,12 +287,12 @@ bool FirmwareViewModel::lineOf(const Args &a, const Row *&out, std::string &erro
 	if (!arg(a, 0, line, error)) return false;
 	if (line < 0 || line >= static_cast<int64_t>(lines_.size()))
 	{
-		error = "no line " + std::to_string(line);
+		error = tr("new_project.no_line", {std::to_string(line)});
 		return false;
 	}
 	if (lines_[static_cast<size_t>(line)].row < 0)
 	{
-		error = "line " + std::to_string(line) + " is not a firmware file";
+		error = tr("firmware.not_a_firmware_line", {std::to_string(line)});
 		return false;
 	}
 	out = &rows_[static_cast<size_t>(lines_[static_cast<size_t>(line)].row)];
@@ -328,7 +328,7 @@ void FirmwareViewModel::survey()
 			uint64_t len = 0;
 			json::Json cfg;
 			std::string err;
-			if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+			if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len);
 				d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
 			{
 				if (field(cfg, "kind") == "game") g.gameCore = true;
@@ -418,12 +418,12 @@ void FirmwareViewModel::render()
 		if (!find.get().empty() && shown.empty() && !matches(g, Row(), find.get())) continue;
 		if (g.rows.empty())
 		{
-			lines_.push_back({gi, -1, "(needs no firmware)"});
+			lines_.push_back({gi, -1, tr("firmware.needs_none_line"), false, true});
 			continue;
 		}
 		if (collapsed_.count(g.core) > 0)
 		{
-			lines_.push_back({gi, -1, "+ " + g.core + ": " + std::to_string(shown.size()) + (shown.size() == 1 ? " file" : " files"), true});
+			lines_.push_back({gi, -1, "+ " + g.core + ": " + tr("firmware.files", static_cast<int64_t>(shown.size())), true});
 			continue;
 		}
 		/* an id at a time, in the order the core declares them */
@@ -447,8 +447,7 @@ void FirmwareViewModel::render()
 				lines_.push_back({gi, static_cast<long long>(i), {}});
 			}
 			if (hidden > 0)
-				lines_.push_back({gi, -1, "… " + std::to_string(hidden) + " more releases of " + rows_[rows[0]].display +
-					" not on hand; tick \"Show every release\" to see them"});
+				lines_.push_back({gi, -1, tr("firmware.more_releases", {std::to_string(hidden), rows_[rows[0]].display})});
 		}
 	}
 	model_.reset.emit();
@@ -480,7 +479,7 @@ void FirmwareViewModel::describe()
 	const int64_t l = picked.get();
 	if (l < 0 || l >= static_cast<int64_t>(lines_.size()) || lines_[static_cast<size_t>(l)].row < 0)
 	{
-		detail.set(groups_.empty() ? "No core package is in the cores folder." : "");
+		detail.set(groups_.empty() ? tr("firmware.no_cores") : "");
 		canSet.set(false);
 		canClear.set(false);
 		pickTitle.set("");
@@ -490,13 +489,13 @@ void FirmwareViewModel::describe()
 	canSet.set(true);
 	canClear.set(r.where == Chosen);
 	pickTitle.set(r.core + ": " + r.display + (r.label.empty() ? std::string() : " - " + r.label));
-	const std::string what = !r.description.empty() ? r.description : r.display + ", " + std::to_string(r.size) + " bytes";
-	const std::string expected = r.sha1.empty() ? (r.name.empty() ? std::string("any file") : "a file called " + r.name + ", any bytes")
-												: "expects " + upper(r.sha1);
-	const std::string when = r.condition.empty() ? std::string() : " · needed when " + r.condition;
-	const std::string actual = r.path.empty() ? std::string("nothing yet")
-		: r.actualSha1.empty() ? r.path + " could not be read"
-							   : r.path + " is " + r.actualSha1;
+	const std::string what = !r.description.empty() ? r.description : tr("firmware.bytes", {r.display, std::to_string(r.size)});
+	const std::string expected = r.sha1.empty() ? (r.name.empty() ? tr("firmware.any_file") : tr("firmware.file_called", {r.name}))
+												: tr("firmware.expects", {upper(r.sha1)});
+	const std::string when = r.condition.empty() ? std::string() : " · " + tr("firmware.needed_when", {r.condition});
+	const std::string actual = r.path.empty() ? tr("firmware.nothing_yet")
+		: r.actualSha1.empty() ? tr("firmware.unreadable", {r.path})
+							   : tr("firmware.path_is", {r.path, r.actualSha1});
 	detail.set(what + "\n" + expected + when + "\n" + actual);
 }
 
@@ -519,10 +518,10 @@ Value FirmwareViewModel::Lines::cell(int64_t row, int32_t column) const
 	{
 		switch (column)
 		{
-		case 2: return std::string(line.folded ? "folded" : line.text.rfind("(", 0) == 0 ? "none" : "more");
+		case 2: return std::string(line.folded ? "folded" : line.none ? "none" : "more");
 		case 3: return int64_t{3};
 		case 4: return line.text;
-		case 5: return std::string(line.folded ? "double-click or + to show" : "");
+		case 5: return line.folded ? tr("firmware.unfold_hint") : std::string();
 		case 10: return int64_t{Missing};
 		default: return std::string();
 		}
@@ -533,10 +532,10 @@ Value FirmwareViewModel::Lines::cell(int64_t row, int32_t column) const
 	case 2: return std::string("row");
 	case 3: return int64_t{r.state == Good ? 0 : r.state == Unrecognised || r.state == Custom ? 1 : r.state == Unreadable ? 2 : 3};
 	case 4: return r.display;
-	case 5: return !r.label.empty() ? r.label : r.condition.empty() ? std::string() : "when " + r.condition;
-	case 6: return r.sha1.empty() ? std::string("(any)") : upper(r.sha1).substr(0, 8);
+	case 5: return !r.label.empty() ? r.label : r.condition.empty() ? std::string() : tr("firmware.when", {r.condition});
+	case 6: return r.sha1.empty() ? tr("firmware.any") : upper(r.sha1).substr(0, 8);
 	case 7: return r.path.empty() ? std::string() : fs::path(r.path).filename().string();
-	case 8: return r.where == Chosen ? std::string("chosen") : r.whereText();
+	case 8: return r.where == Chosen ? tr("project_files.chosen") : r.whereText();
 	case 9: return r.statusText();
 	case 10: return static_cast<int64_t>(r.state);
 	default: return {};

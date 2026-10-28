@@ -1,4 +1,5 @@
 #include "chimera/vm/settings_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/engine.h"
 #include "chimera/vm/new_project_vm.hpp"
@@ -21,6 +22,7 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	expose("changed", "whether anything the machine is made from differs from what it was made from", changed);
 	expose("canRestart", "whether Project Settings can restart the machine with these", canRestart);
 	expose("restartNote", "what is in the way of restarting, \"\" when nothing is", restartNote);
+	expose("clockWrong", "the clock's start is not a time Chimera reads", clockWrong);
 	clockWatch_ = clockStart.changed.connect([this] { compare(); });
 	rows("settings", "one row a setting: name, label, type, value, options, option labels, min, max, description, edited", rows_);
 	rows("presets", "the presets this machine is offered: id, label, description", presetRows_);
@@ -30,10 +32,10 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (!arg(a, 0, id, error)) return {};
 			std::vector<std::string> skipped;
 			if (!form_.applyPreset(id, label, skipped, error)) return {};
-			std::string note = "Preset " + label + " written below";
+			std::string note = tr("settings.preset_written", {label});
 			if (!skipped.empty())
 			{
-				note += "; not for this machine:";
+				note += tr("settings.not_for_machine");
 				for (const std::string &s : skipped) note += " " + s;
 			}
 			status.set(note);
@@ -48,7 +50,7 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (!arg(a, 0, name, error)) return {};
 			if (a.size() < 2)
 			{
-				error = "argument 2 is missing";
+				error = tr("new_project.argument_missing", {"2"});
 				return {};
 			}
 			if (!form_.set(name, a[1], error)) return {};
@@ -61,13 +63,13 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			const std::optional<int64_t> clock = NewProjectViewModel::parseClockText(clockStart.get());
 			if (!session_.hasProject.get() || !clock || !changed.get())
 			{
-				error = !session_.hasProject.get() ? "No project is open." : !clock ? restartNote.get() : "Nothing is changed.";
+				error = !session_.hasProject.get() ? tr("session.no_project") : !clock ? restartNote.get() : tr("settings.nothing_changed");
 				return {};
 			}
-			status.set("Restarting...");
+			status.set(tr("settings.restarting"));
 			session_.changeProjectSettings(json::write(form_.recorded()), *clock, [this](bool ok) {
-				status.set(ok ? "The machine started again with the new settings, at frame 0"
-							  : "The machine did not start with the new settings, so the project keeps the settings it had.");
+				status.set(ok ? tr("settings.restarted")
+							  : tr("settings.not_restarted"));
 			});
 			return {};
 		}, &canRestart);
@@ -88,7 +90,7 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	command("apply", "gives the edits to the machine: live when the core can take them, else it starts again with them",
 		{}, [this](const Args &, std::string &) -> Value {
 			const Json values = form_.values();
-			status.set("Applying...");
+			status.set(tr("settings.applying"));
 			session_.changeSettings(json::write(values), [this, values](bool ok, std::string what) {
 				if (ok)
 				{
@@ -110,7 +112,7 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (ce_package *p = ce_package_open(session_.packageOnMachine().c_str(), &perr))
 			{
 				uint64_t len = 0;
-				if (const uint8_t *d = ce_package_entry(p, "waterbox.config", &len))
+				if (const uint8_t *d = ce_package_entry_texts(p, "waterbox.config", &len))
 					config.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
 				ce_package_free(p);
 			}
@@ -145,7 +147,7 @@ SettingsViewModel::SettingsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				applied_ = v;
 				form_.setValues(v);
 				pending.set(false);
-				status.set(std::to_string(declared) + " settings declared");
+				status.set(tr("settings.declared", declared));
 				madeFrom_ = machineText(form_.declarations(), v);
 				clockBefore_ = clock;
 				clockStart.set(NewProjectViewModel::clockText(clock));
@@ -176,8 +178,8 @@ void SettingsViewModel::compare()
 {
 	const std::optional<int64_t> clock = NewProjectViewModel::parseClockText(clockStart.get());
 	changed.set(machineText(form_.declarations(), form_.values()) != madeFrom_ || (clock && *clock != clockBefore_));
-	restartNote.set(!clock ? "The clock's start reads as year-month-day hours:minutes:seconds, from 1970 to 2200."
-						   : changed.get() ? "" : "Nothing is changed yet.");
+	clockWrong.set(!clock);
+	restartNote.set(!clock ? tr("settings.clock_format") : changed.get() ? "" : tr("settings.nothing_changed_yet"));
 	canRestart.set(session_.hasProject.get() && clock.has_value() && changed.get());
 }
 

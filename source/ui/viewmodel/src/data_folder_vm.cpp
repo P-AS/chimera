@@ -1,4 +1,5 @@
 #include "chimera/vm/data_folder_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -117,7 +118,7 @@ std::string move(const std::string &from, const std::string &to)
 		std::vector<fs::path> entries;
 		for (const auto &e : fs::directory_iterator(from)) entries.push_back(e.path());
 		for (const fs::path &e : entries)
-			if (fs::exists(fs::path(to) / e.filename())) throw std::runtime_error((fs::path(to) / e.filename()).string() + " is already there");
+			if (fs::exists(fs::path(to) / e.filename())) throw std::runtime_error(tr("data_folder.already_there", {(fs::path(to) / e.filename()).string()}));
 		for (const fs::path &e : entries)
 		{
 			const fs::path dest = fs::path(to) / e.filename();
@@ -132,7 +133,7 @@ std::string move(const std::string &from, const std::string &to)
 			}
 			done.push_back({e, dest, true});
 			copyTree(e, dest);
-			if (sizeOf(dest) != size) throw std::runtime_error(dest.string() + " is not the size of " + e.string());
+			if (sizeOf(dest) != size) throw std::runtime_error(tr("data_folder.wrong_size", {dest.string(), e.string()}));
 		}
 		/* every byte is in the new place: only now does the old go */
 		for (const Done &d : done)
@@ -180,10 +181,11 @@ int64_t freeAt(const std::string &dir)
 std::string bytesText(int64_t bytes)
 {
 	char buf[64];
-	if (bytes >= (int64_t{1} << 30)) std::snprintf(buf, sizeof buf, "%.1f GB", static_cast<double>(bytes) / static_cast<double>(int64_t{1} << 30));
-	else if (bytes >= (int64_t{1} << 20)) std::snprintf(buf, sizeof buf, "%.1f MB", static_cast<double>(bytes) / static_cast<double>(int64_t{1} << 20));
-	else std::snprintf(buf, sizeof buf, "%.0f KB", static_cast<double>(bytes) / 1024.0);
-	return buf;
+	const bool gb = bytes >= (int64_t{1} << 30), mb = bytes >= (int64_t{1} << 20);
+	if (gb) std::snprintf(buf, sizeof buf, "%.1f", static_cast<double>(bytes) / static_cast<double>(int64_t{1} << 30));
+	else if (mb) std::snprintf(buf, sizeof buf, "%.1f", static_cast<double>(bytes) / static_cast<double>(int64_t{1} << 20));
+	else std::snprintf(buf, sizeof buf, "%.0f", static_cast<double>(bytes) / 1024.0);
+	return tr(gb ? "units.gb" : mb ? "units.mb" : "units.kb", {buf});
 }
 
 } // namespace data_folder
@@ -199,19 +201,18 @@ DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("da
 	expose("figures", "how much is in the folder in use and how much its drive has free (refresh)", figures);
 	command("refresh", "says again how much is in the folder in use and how much its drive has free", {},
 		[this](const Args &, std::string &) -> Value {
-			figures.set(data_folder::bytesText(data_folder::sizeOf(inUse())) + " in use here, " + data_folder::bytesText(data_folder::freeAt(inUse())) +
-				" free on its drive");
+				figures.set(tr("data_folder.figures", {data_folder::bytesText(data_folder::sizeOf(inUse())), data_folder::bytesText(data_folder::freeAt(inUse()))}));
 			return {};
 		});
 	command("inspect", "what a folder picked would be, before anything is asked: {\"target\", \"choice\" (same, nested, "
-		"unwritable, holds data, empty), \"size\" and \"free\" (bytes to move and free there, as Chimera writes them)}",
+		"unwritable, holdsData, empty), \"size\" and \"free\" (bytes to move and free there, as Chimera writes them)}",
 		{"folder"}, [this](const Args &a, std::string &error) -> Value {
 			std::string folder;
 			if (!arg(a, 0, folder, error)) return {};
 			const std::string target = folder.empty() ? standard.get() : data_folder::targetFor(folder);
 			const data_folder::Choice c = data_folder::inspect(inUse(), target);
 			const char *word = c == data_folder::Choice::Same ? "same" : c == data_folder::Choice::Nested ? "nested"
-				: c == data_folder::Choice::Unwritable ? "unwritable" : c == data_folder::Choice::HoldsData ? "holds data" : "empty";
+				: c == data_folder::Choice::Unwritable ? "unwritable" : c == data_folder::Choice::HoldsData ? "holdsData" : "empty";
 			const int64_t size = data_folder::sizeOf(inUse()), free = data_folder::freeAt(target);
 			json::Json o;
 			o.kind = json::Json::Kind::Object;
@@ -231,7 +232,7 @@ DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("da
 			if (a.size() > 1 && !arg(a, 1, carry, error)) return {};
 			if (!environment.get().empty())
 			{
-				error = "CHIMERA_DATA_HOME is set, and it decides: unset it to choose here";
+				error = tr("data_folder.env_decides");
 				return {};
 			}
 			const std::string target = folder.empty() ? standard.get() : data_folder::targetFor(folder);
@@ -240,26 +241,26 @@ DataFolderViewModel::DataFolderViewModel(Dispatcher &dispatcher) : ViewModel("da
 			case data_folder::Choice::Same:
 				pending.set("");
 				pendingMove.set(false);
-				status.set("That is where it already is.");
+				status.set(tr("data_folder.already_here"));
 				return std::string("same");
 			case data_folder::Choice::Nested:
-				error = target + " is inside the data folder, or holds it: the data cannot move into or out of itself";
+				error = tr("data_folder.inside_itself", {target});
 				return {};
 			case data_folder::Choice::Unwritable:
-				error = target + " cannot be written to";
+				error = tr("data_folder.not_writable", {target});
 				return {};
 			case data_folder::Choice::HoldsData:
 			case data_folder::Choice::Empty: break;
 			}
 			pending.set(target);
 			pendingMove.set(carry);
-			status.set("Recorded. Nothing has been touched yet: it is done when the window next starts, before any project is open.");
-			return std::string(data_folder::holdsData(target) ? "holds data" : "empty");
+			status.set(tr("data_folder.recorded"));
+			return std::string(data_folder::holdsData(target) ? "holdsData" : "empty");
 		});
 	command("withdraw", "the change asked for, forgotten", {}, [this](const Args &, std::string &) -> Value {
 		pending.set("");
 		pendingMove.set(false);
-		status.set("The change was withdrawn.");
+		status.set(tr("data_folder.withdrawn"));
 		return {};
 	});
 }
@@ -288,10 +289,10 @@ std::string DataFolderViewModel::applyPending()
 		return {};
 	}
 	if (c == data_folder::Choice::Nested || c == data_folder::Choice::Unwritable)
-		return "The data folder was not changed: " + to + " cannot be used. It is still " + from + ".";
+		return tr("data_folder.not_changed", {to, from});
 	if (carry)
 		if (const std::string why = data_folder::move(from, to); !why.empty())
-			return "The data folder was not moved (" + why + "). It is still " + from + ", and nothing in it was changed.";
+			return tr("data_folder.not_moved", {why, from});
 	current.set(chosen);
 	return {};
 }

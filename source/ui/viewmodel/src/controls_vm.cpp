@@ -1,4 +1,5 @@
 #include "chimera/vm/controls_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/vm/piano_roll_vm.hpp"
 
@@ -185,7 +186,7 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (!table(a, t, error) || !index(a, 1, t, i, error) || !arg(a, 2, name, error)) return {};
 			if (!special(name))
 			{
-				error = name + " is not a special binding";
+				error = tr("hotkeys.not_special", {name});
 				return {};
 			}
 			begin();
@@ -227,7 +228,7 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			}
 			else
 			{
-				error = "no field " + field + ": value, mult or deadzone";
+				error = tr("controls.no_field", {field});
 				return {};
 			}
 			changed();
@@ -279,7 +280,7 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (std::find(buttons.begin(), buttons.end(), name) == buttons.end() &&
 				std::none_of(axes.begin(), axes.end(), [&](const SessionViewModel::Axis &x) { return x.name == name; }))
 			{
-				error = "no control " + name;
+				error = tr("piano_roll.no_control", {name});
 				return {};
 			}
 			begin();
@@ -300,7 +301,7 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				for (const SessionViewModel::Axis &x : session_.axes()) names.push_back(x.name);
 			else
 			{
-				error = "no kind " + kind + ": buttons or analog";
+				error = tr("controls.no_kind", {kind});
 				return {};
 			}
 			begin();
@@ -441,7 +442,7 @@ ControlsViewModel::ControlsViewModel(Dispatcher &dispatcher, SessionViewModel &s
 	if (roll_ != nullptr) columnsWatch_ = roll_->hiddenColumns.changed.connect([this] { if (!editing.get()) changed(); });
 	opensWatch_ = session_.opens.changed.connect([this] {
 		core.set(session_.coreName.get());
-		title.set(session_.controllerName() + " Configuration");
+		title.set(tr("controls.title", {session_.controllerName()}));
 		buttonGroups.set(groupsOf(session_.buttonNames()));
 		std::vector<std::string> axisNames;
 		for (const SessionViewModel::Axis &x : session_.axes()) axisNames.push_back(x.name);
@@ -474,7 +475,7 @@ bool ControlsViewModel::table(const Args &a, Table &out, std::string &error) con
 	else if (t == "negative") out = Negative;
 	else
 	{
-		error = "no table " + t + ": normal, autofire, positive or negative";
+		error = tr("controls.no_table", {t});
 		return false;
 	}
 	return true;
@@ -488,7 +489,7 @@ bool ControlsViewModel::index(const Args &a, size_t at, Table t, size_t &out, st
 	const size_t count = analog ? session_.axes().size() : session_.buttonNames().size();
 	if (i < 0 || static_cast<size_t>(i) >= count)
 	{
-		error = std::string(analog ? "no analog control " : "no button ") + std::to_string(i);
+		error = tr(analog ? "session.no_analog" : "session.no_button", {std::to_string(i)});
 		return false;
 	}
 	out = static_cast<size_t>(i);
@@ -566,7 +567,7 @@ void ControlsViewModel::keep()
 	if (roll_ != nullptr) roll_->setHiddenColumns(hiddenDraft_);
 	editing.set(false);
 	apply();
-	status.set("Saved the controls of " + core.get());
+	status.set(tr("controls.saved", {core.get()}));
 }
 
 void ControlsViewModel::apply()

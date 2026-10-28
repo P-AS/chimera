@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/json.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/vm/view_model.hpp"
@@ -49,7 +50,7 @@ public:
 	Property<int64_t> mouseSensitivityCopy{100};
 	/* the core whose controls are listed, and the window's title */
 	Property<std::string> core;
-	Property<std::string> title{"Controller Config"};
+	Property<std::string> title{tr("controls.default_title")};
 	/* the tabs inside each kind, in the order their first control comes:
 	 * "Player 1", "Player 2"..., "Console" (JSON arrays; one tab is none) */
 	Property<std::string> buttonGroups{"[]"};

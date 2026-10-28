@@ -18,6 +18,7 @@
 #include <thread>
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/sound.hpp"
 #include "chimera/vm/input_log.hpp"
@@ -61,14 +62,14 @@ public:
 	/* the frame the machine is about to run (frames 0..frame-1 have run) */
 	Property<int64_t> frame{0};
 	Property<double> fps{0.0};
-	Property<std::string> status{"Nothing open"};
+	Property<std::string> status{tr("session.nothing_open")};
 	Property<std::string> coreName;
 	Property<std::string> systemName;
 	/* the machine's id, as the core names it (Chimera's "Loaded core: name (id)") */
 	Property<std::string> systemId;
 	Property<int64_t> buttonCount{0};
 	/* the gamepads in use, or why there are none */
-	Property<std::string> gamepads{"No gamepads yet"};
+	Property<std::string> gamepads{tr("session.no_gamepads_yet")};
 	/* How fast the machine runs, as Chimera has it: a percent of its own
 	 * rate (1 to 6400, in Chimera's steps), or as fast as it can
 	 * (unthrottled); and its sound, on or off and its volume (0 to 100) */
@@ -210,7 +211,7 @@ public:
 	 * into the frames the machine runs as a press held does. */
 	Property<std::string> autoheld, autofired;
 	/* as Chimera shows them while arming: "Held: P1 A Auto-P1 B " */
-	Property<std::string> stickyText{"Held: "};
+	Property<std::string> stickyText{tr("session.held", {""})};
 	Property<bool> stickyArmed{false};
 	Property<int64_t> autofireOn{1}, autofireOff{1};
 	Property<bool> autofireSkipsLag{true};
@@ -221,7 +222,7 @@ public:
 	Property<bool> catchingPad{false};
 	Property<std::string> caughtPad;
 	/* "Sound on", or why there is none */
-	Property<std::string> sound{"No sound yet"};
+	Property<std::string> sound{tr("session.no_sound_yet")};
 	/* sample pairs sent to the speakers, and those dropped for running ahead */
 	Property<int64_t> soundQueued{0};
 	Property<int64_t> soundDropped{0};

@@ -1,4 +1,5 @@
 #include "chimera/vm/config_store.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <charconv>
 #include <filesystem>
@@ -56,7 +57,7 @@ ConfigStore::ConfigStore(std::string path) : path_(std::move(path))
 	/* kept for whoever wants to look, and not written over */
 	std::error_code ec;
 	std::filesystem::rename(path_, path_ + ".unreadable", ec);
-	problem_ = "the settings file did not read (" + error + "); it was set aside as " + path_ + ".unreadable";
+	problem_ = tr("config.unreadable", {error, path_ + ".unreadable"});
 }
 
 bool ConfigStore::switchIn(const std::string &path, const std::string &key, bool otherwise)
@@ -70,6 +71,19 @@ bool ConfigStore::switchIn(const std::string &path, const std::string &key, bool
 	if (!json::parse(ss.str(), all, error)) return otherwise;
 	const Json *on = all.find(key);
 	return on != nullptr && on->kind == Json::Kind::Bool ? on->boolean : otherwise;
+}
+
+std::string ConfigStore::textIn(const std::string &path, const std::string &key, const std::string &otherwise)
+{
+	std::ifstream in(path, std::ios::binary);
+	if (!in) return otherwise;
+	std::stringstream ss;
+	ss << in.rdbuf();
+	Json all;
+	std::string error;
+	if (!json::parse(ss.str(), all, error)) return otherwise;
+	const Json *text = all.find(key);
+	return text != nullptr && text->kind == Json::Kind::String ? text->text : otherwise;
 }
 
 void ConfigStore::keep(ViewModel &vm, const std::string &property)
@@ -110,7 +124,7 @@ bool ConfigStore::saveAs(const std::string &path, std::string &error)
 	out << json::write(root_) << "\n";
 	if (!out)
 	{
-		error = "cannot write " + path;
+		error = tr("session.could_not_write", {path});
 		return false;
 	}
 	return true;
@@ -121,7 +135,7 @@ int64_t ConfigStore::loadFrom(const std::string &path, std::string &error)
 	std::ifstream in(path, std::ios::binary);
 	if (!in)
 	{
-		error = "cannot read " + path;
+		error = tr("new_project.cannot_read", {path});
 		return -1;
 	}
 	std::stringstream ss;
@@ -134,7 +148,7 @@ int64_t ConfigStore::loadFrom(const std::string &path, std::string &error)
 	std::string why;
 	if (!json::parse(ss.str(), read, why) || read.kind != Json::Kind::Object)
 	{
-		error = path + " is not a settings file (" + (why.empty() ? std::string("not an object") : why) + ")";
+		error = tr("config.not_settings", {path, why.empty() ? tr("config.not_object") : why});
 		return -1;
 	}
 	int64_t set = 0;
@@ -160,12 +174,12 @@ void ConfigStore::save()
 		out << json::write(root_) << "\n";
 		if (!out)
 		{
-			problem_ = "cannot write " + temp;
+			problem_ = tr("session.could_not_write", {temp});
 			return;
 		}
 	}
 	std::filesystem::rename(temp, path_, ec);
-	problem_ = ec ? "cannot write " + path_ + ": " + ec.message() : std::string();
+	problem_ = ec ? tr("config.not_written_why", {path_, ec.message()}) : std::string();
 }
 
 } // namespace chimera::vm

@@ -6,6 +6,7 @@
  * notes the sessions that open while it is on, and tells them to mount the
  * "corelog" request. */
 #include "core_log.hpp"
+#include "language.hpp"
 #include "file_io.hpp"
 
 #include "chimera/engine.h"
@@ -98,18 +99,18 @@ int32_t ce_core_log(const char *path)
 	}
 	if (host == nullptr)
 	{
-		g_error = hostError != nullptr ? hostError : "libminiboxhost could not be loaded";
+		g_error = hostError != nullptr ? hostError : chimera::lang::tr("host.not_loaded");
 		return 0;
 	}
 	if (host->wbx_set_output_file == nullptr)
 	{
-		g_error = "this libminiboxhost cannot keep a core log (it has no wbx_set_output_file)";
+		g_error = chimera::lang::tr("core_log.unsupported");
 		return 0;
 	}
 	FILE *f = openUtf8(path, false);
 	if (f == nullptr)
 	{
-		g_error = std::string("cannot write ") + path;
+		g_error = chimera::lang::tr("session.could_not_write", {path});
 		return 0;
 	}
 	std::fputs(("Chimera core log, started " + utcNow() + "\nChimera build: " + ce_build_info() + "\n").c_str(), f);

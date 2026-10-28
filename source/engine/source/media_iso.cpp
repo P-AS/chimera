@@ -27,6 +27,7 @@
  * be wrong in a way nobody would notice until a game read the end of it.
  */
 #include "media_maker.hpp"
+#include "language.hpp"
 #include "file_io.hpp"
 
 #include "sha1.hpp"
@@ -277,9 +278,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	{
 		if (e.size >= k4GiB)
 		{
-			error = e.rel + " is 4 GiB or larger, which an ISO 9660 directory record cannot "
-				"describe in one piece. Pack this dump as a .zip instead, which has no such "
-				"limit.";
+			error = chimera::lang::tr("media.iso_too_big", {e.rel});
 			return false;
 		}
 	}
@@ -488,7 +487,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	chimera::FileWriter writer;
 	if (!writer.open(outPath.c_str()))
 	{
-		error = "cannot create " + outPath;
+		error = chimera::lang::tr("engine.could_not_create", {outPath});
 		return false;
 	}
 	std::FILE *out = writer.file();
@@ -500,7 +499,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 		if (!ok) return;
 		if (len && std::fwrite(data, 1, len, out) != len)
 		{
-			error = "cannot write the output (is the disk full?)";
+			error = chimera::lang::tr("media.disk_full");
 			ok = false;
 			return;
 		}
@@ -643,7 +642,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 		std::FILE *in = chimera::openFile(f->abs.c_str(), "rb");
 		if (!in)
 		{
-			error = "cannot read " + f->name;
+			error = chimera::lang::tr("new_project.cannot_read", {f->name});
 			ok = false;
 			break;
 		}
@@ -654,7 +653,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 			const size_t got = std::fread(buf.data(), 1, want, in);
 			if (got == 0)
 			{
-				error = f->name + " ended early - it changed while it was being packed";
+				error = chimera::lang::tr("media.changed_while_packed", {f->name});
 				ok = false;
 				break;
 			}
@@ -676,7 +675,7 @@ bool mediaWriteIso9660(const std::vector<MediaEntry> &files, const std::string &
 	if (!ok) return false;   /* the temporary file goes with `writer`; the image is as it was */
 	if (!writer.commit())
 	{
-		error = "cannot write the output (is the disk full?)";
+		error = chimera::lang::tr("media.disk_full");
 		return false;
 	}
 	sha1Out = sha.finishHex();

@@ -5,6 +5,7 @@
 // prefix, a '..' segment, a backslash or a name Windows gives a meaning is
 // refused. A store writes beside and renames, so a reader never sees half.
 #include "chimera/engine.h"
+#include "language.hpp"
 #include "cache-bridge.h"
 #include "file_io.hpp"
 #include "progress.hpp"
@@ -153,7 +154,7 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 			rewind(f);
 			if (fread(reinterpret_cast<void *>(static_cast<uintptr_t>(args->dst)), 1, static_cast<size_t>(size), f) != static_cast<size_t>(size)) { fclose(f); return 0; }
 			s_fetched++;
-			chimera::progress("loading compiled code", s_fetched, 0);
+			chimera::progress(chimera::lang::tr("cache.progress_loading").c_str(), s_fetched, 0);
 			/* one line per object, for whoever is watching this process fill a
 			 * cache (the wizard's precompile step reads exactly these) */
 			if (s_announce)
@@ -209,7 +210,7 @@ static __attribute__((noinline)) uintptr_t dispatch_impl(uintptr_t op, uintptr_t
 		ok = fclose(f) == 0 && ok;
 		if (!ok || !chimera::replaceFile(tmp.c_str(), full.c_str())) { chimera::removeFile(tmp.c_str()); return 0; }
 		s_stored++;
-		chimera::progress("keeping compiled code", s_stored, 0);
+		chimera::progress(chimera::lang::tr("cache.progress_keeping").c_str(), s_stored, 0);
 		if (s_announce)
 		{
 			printf("[cache] stored %s %s\n", rel.c_str(),

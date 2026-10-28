@@ -1,4 +1,5 @@
 #include "chimera/vm/trace_logger_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -38,7 +39,7 @@ TraceLoggerViewModel::TraceLoggerViewModel(Dispatcher &dispatcher, SessionViewMo
 #endif
 		if (out_ == nullptr)
 		{
-			error = "cannot write " + path;
+			error = tr("session.could_not_write", {path});
 			return {};
 		}
 		file.set(path);
@@ -58,10 +59,10 @@ TraceLoggerViewModel::TraceLoggerViewModel(Dispatcher &dispatcher, SessionViewMo
 		for (const Line &l : lines_) out << l.disassembly << (l.registers.empty() ? "" : "  ") << l.registers << "\n";
 		if (!out)
 		{
-			error = "cannot write " + path;
+			error = tr("session.could_not_write", {path});
 			return {};
 		}
-		status.set("Saved " + std::to_string(lines_.size()) + " lines to " + path);
+		status.set(tr("trace.saved", static_cast<int64_t>(lines_.size()), {path}));
 		return static_cast<int64_t>(lines_.size());
 	});
 	loggingWatch_ = logging.changed.connect([this] {
@@ -135,8 +136,8 @@ void TraceLoggerViewModel::closeFile()
 void TraceLoggerViewModel::sayStatus()
 {
 	/* Chimera's: the core's header, the lines buffered, and those written to the file */
-	std::string s = session_.traceHeader.get() + " - " + watch::thousands(static_cast<int64_t>(lines_.size())) + " lines buffered";
-	if (out_ != nullptr) s += " - " + watch::thousands(linesToFile.get()) + " written to file";
+	std::string s = tr("trace.buffered", {session_.traceHeader.get(), watch::thousands(static_cast<int64_t>(lines_.size()))});
+	if (out_ != nullptr) s += " - " + tr("trace.written", {watch::thousands(linesToFile.get())});
 	status.set(s);
 }
 
@@ -188,13 +189,13 @@ DebuggerViewModel::DebuggerViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			{
 				if (!session_.writeRegister(static_cast<int32_t>(i), value))
 				{
-					error = "this core does not take " + name;
+					error = tr("trace.not_taken", {name});
 					return {};
 				}
 				refresh();
 				return {};
 			}
-		error = "no register " + name;
+		error = tr("trace.no_register", {name});
 		return {};
 	});
 	command("setRegister", "a register set, by its place in the list: a number, or hex with 0x", {"index", "value"},
@@ -206,14 +207,14 @@ DebuggerViewModel::DebuggerViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			std::string text;
 			if (a.size() < 2)
 			{
-				error = "no value given";
+				error = tr("trace.no_value");
 				return {};
 			}
 			if (!fromValue(a[1], value))
 			{
 				if (!fromValue(a[1], text))
 				{
-					error = "a register's value is a number";
+					error = tr("trace.value_number");
 					return {};
 				}
 				try
@@ -224,13 +225,13 @@ DebuggerViewModel::DebuggerViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				}
 				catch (...)
 				{
-					error = text + " is not a number";
+					error = tr("trace.not_number", {text});
 					return {};
 				}
 			}
 			if (!session_.writeRegister(static_cast<int32_t>(index), value))
 			{
-				error = "this core does not take that register";
+				error = tr("trace.register_not_taken");
 				return {};
 			}
 			refresh();

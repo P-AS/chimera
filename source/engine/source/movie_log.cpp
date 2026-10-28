@@ -6,6 +6,7 @@
  */
 
 #include "chimera/engine.h"
+#include "language.hpp"
 #include "file_io.hpp"
 
 #include <chrono>
@@ -410,13 +411,13 @@ int64_t ce_movie_log_journal_replay(ce_movie_log *log, const char *path)
 	std::string text;
 	if (!readAllText(path, text) && !readAllText(std::string(path) + ".new", text))
 	{
-		log->lastError = "the input journal could not be read";
+		log->lastError = chimera::lang::tr("journal.unreadable");
 		return -1;
 	}
 	const size_t magicLen = std::strlen(kJournalMagic);
 	if (text.compare(0, magicLen, kJournalMagic) != 0 || text.size() <= magicLen || text[magicLen] != '\n')
 	{
-		log->lastError = "that is not an input journal";
+		log->lastError = chimera::lang::tr("journal.not_journal");
 		return -1;
 	}
 
@@ -485,7 +486,7 @@ int64_t ce_movie_log_journal_replay(ce_movie_log *log, const char *path)
 		{
 			/* everything before this record is what was entered; nothing after
 			 * a record that cannot be read can be placed with any confidence */
-			log->lastError = "the input journal has a record that cannot be read";
+			log->lastError = chimera::lang::tr("journal.bad_record");
 			break;
 		}
 		applied++;
@@ -516,7 +517,7 @@ static int32_t parseLog(ce_movie_log *log, const char *text, uint64_t len)
 			int32_t frame;
 			if (!parseInt32(line.substr(6, second == std::string::npos ? second : second - 6), frame))
 			{
-				log->lastError = "Savestate Frame number failed to parse";
+				log->lastError = chimera::lang::tr("journal.frame_unparsed");
 				journalAppend(log, imageOf(log, false));
 				return 1;
 			}
@@ -549,7 +550,7 @@ int32_t ce_movie_log_parse(ce_movie_log *log, const char *text, uint64_t len)
 	{
 		log->entries = std::vector<std::string>();
 		log->logKey.reset();
-		log->lastError = "there was not enough memory to read the movie";
+		log->lastError = chimera::lang::tr("journal.no_memory");
 		return 1;
 	}
 }

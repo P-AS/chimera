@@ -107,7 +107,7 @@ ApplicationWindow {
         win.askFirst(() => {
             win.run("create")
             if (win.vm.error === "") { win.madeProject = true; win.close() }
-            else if (win.vm.error.indexOf("clock start") >= 0) win.showPage(2)
+            else if (win.vm.clockWrong) win.showPage(2)
         })
     }
 

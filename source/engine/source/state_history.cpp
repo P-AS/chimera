@@ -1,6 +1,7 @@
 #include "state_history.hpp"
 #include "zstd_dyn.hpp"
 #include "file_io.hpp"
+#include "language.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -1791,7 +1792,7 @@ std::string describeDifference(const std::vector<uint64_t> &a, const std::vector
 {
 	count = 0;
 	std::string where;
-	if (a.empty() || b.empty() || a[0] != b[0]) where = " (sizes differ)";
+	if (a.empty() || b.empty() || a[0] != b[0]) where = " " + chimera::lang::tr("history.sizes_differ");
 	const size_t n = a.size() < b.size() ? a.size() : b.size();
 	for (size_t i = 1; i < n; i++)
 	{
@@ -3014,7 +3015,7 @@ bool StateHistory::restoreSpilled(const Segment &seg, int64_t steps, std::string
 	uint64_t anchorLen = 0, linkCount = 0, noteLen = 0;
 	if (in == nullptr || !body.open(in, seg.physAt, seg.physLength, seg.packed) || !body.readU64(anchorLen))
 	{
-		error = "the spilled state history could not be read";
+		error = chimera::lang::tr("history.spill_unreadable");
 		return false;
 	}
 
@@ -3026,7 +3027,7 @@ bool StateHistory::restoreSpilled(const Segment &seg, int64_t steps, std::string
 	 * the anchor's note, which is already in memory */
 	if (!body.skip(anchor.left) || !body.readU64(noteLen) || !body.skip(noteLen) || !body.readU64(linkCount))
 	{
-		error = "the spilled state history could not be read";
+		error = chimera::lang::tr("history.spill_unreadable");
 		return false;
 	}
 	for (int64_t i = 0; i < steps; i++)
@@ -3034,7 +3035,7 @@ bool StateHistory::restoreSpilled(const Segment &seg, int64_t steps, std::string
 		uint64_t endFrame = 0, len = 0;
 		if (!body.readU64(endFrame) || !body.readU64(noteLen) || !body.skip(noteLen) || !body.readU64(len))
 		{
-			error = "the spilled state history could not be read";
+			error = chimera::lang::tr("history.spill_unreadable");
 			return false;
 		}
 		ReaderSource link{ &body, len };
@@ -3042,7 +3043,7 @@ bool StateHistory::restoreSpilled(const Segment &seg, int64_t steps, std::string
 		if (!r.ok()) { error = r.errorMessage; return false; }
 		if (!body.skip(link.left))
 		{
-			error = "the spilled state history could not be read";
+			error = chimera::lang::tr("history.spill_unreadable");
 			return false;
 		}
 	}
@@ -3051,7 +3052,7 @@ bool StateHistory::restoreSpilled(const Segment &seg, int64_t steps, std::string
 	 * does not pay to decode the rest (2026-10-18) */
 	if (static_cast<uint64_t>(steps) == linkCount && !body.verifyEnd())
 	{
-		error = "the spilled state history is damaged (its checksum does not match)";
+		error = chimera::lang::tr("history.spill_damaged");
 		return false;
 	}
 	return true;
@@ -3388,7 +3389,7 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 	}
 	if (seg == nullptr)
 	{
-		error = "no stored state at that frame";
+		error = chimera::lang::tr("history.no_state_at");
 		return false;   /* nothing was touched: the machine is where it was */
 	}
 
@@ -3418,8 +3419,7 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 		BodySource anchor{ &in, seg->anchor.size() };
 		m_host->wbx_load_state(m_obj, bodyRead, reinterpret_cast<uintptr_t>(&anchor), &r);
 		if (r.ok() && !in.verifyEnd())
-			std::snprintf(r.errorMessage, sizeof r.errorMessage, "the stored state of frame %lld is damaged (its checksum does not match)",
-				(long long)seg->anchorFrame);
+			std::snprintf(r.errorMessage, sizeof r.errorMessage, "%s", chimera::lang::tr("history.anchor_damaged", {std::to_string(seg->anchorFrame)}).c_str());
 	}
 	if (!r.ok())
 	{
@@ -3436,8 +3436,7 @@ bool StateHistory::restore(int64_t frame, std::string &error, int64_t *landedOn)
 		BodySource src{ &in, d.size() };
 		m_host->wbx_load_delta(m_obj, bodyRead, reinterpret_cast<uintptr_t>(&src), &r);
 		if (r.ok() && !in.verifyEnd())
-			std::snprintf(r.errorMessage, sizeof r.errorMessage, "a stored frame after %lld is damaged (its checksum does not match)",
-				(long long)seg->anchorFrame);
+			std::snprintf(r.errorMessage, sizeof r.errorMessage, "%s", chimera::lang::tr("history.delta_damaged", {std::to_string(seg->anchorFrame)}).c_str());
 		if (!r.ok())
 		{
 			error = r.errorMessage;
@@ -3632,7 +3631,7 @@ bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const st
 	chimera::FileWriter writer;
 	if (!writer.open(path))
 	{
-		error = std::string("could not write the state history: ") + std::strerror(errno);
+		error = chimera::lang::tr("history.not_written_why", {std::strerror(errno)});
 		return false;
 	}
 	std::FILE *f = writer.file();
@@ -3675,7 +3674,7 @@ bool StateHistory::writeHistoryFile(std::FILE *spill, const char *path, const st
 	 * goes and the old one stays */
 	if (!ok || !writer.commit())
 	{
-		error = "the state history could not be written in full";
+		error = chimera::lang::tr("history.not_written_full");
 		return false;
 	}
 	return true;
@@ -3712,7 +3711,7 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 	finishPlan();   /* the snapshot below shares the anchor's bytes */
 	if (path == nullptr || path[0] == '\0')
 	{
-		error = "no path to save the state history to";
+		error = chimera::lang::tr("history.no_path");
 		return false;
 	}
 	if (!m_writer.threaded())
@@ -3761,7 +3760,7 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 		}
 		catch (const std::bad_alloc &)
 		{
-			why = "the state history could not be written: out of memory";
+			why = chimera::lang::tr("history.no_memory");
 			chimera::removeFile(where.c_str());   /* half a history is worse than none */
 		}
 		std::lock_guard<std::mutex> lock(m_savedLock);
@@ -3772,7 +3771,7 @@ bool StateHistory::saveToLater(const char *path, const char *machineId, std::str
 	/* this one is queued all the same; the answer is about the one before */
 	if (!previousOk)
 	{
-		error = "the previous save of the state history failed: " + previous;
+		error = chimera::lang::tr("history.previous_failed", {previous});
 		return false;
 	}
 	return true;
@@ -3811,7 +3810,7 @@ bool StateHistory::loadFrom(const char *path, const char *machineId, std::string
 	};
 
 	char magic[sizeof kMagic - 1];
-	if (!readAll(f, magic, sizeof magic)) return give_up("that is not a state history");
+	if (!readAll(f, magic, sizeof magic)) return give_up(chimera::lang::tr("history.not_history"));
 	bool packed = false;   /* 4: one zstd stream */
 	bool held = false;     /* 5: bodies as held */
 	if (std::memcmp(magic, kMagic, sizeof magic) == 0)
@@ -3831,25 +3830,25 @@ bool StateHistory::loadFrom(const char *path, const char *machineId, std::string
 			clear();
 			return true;
 		}
-		return give_up("that is not a state history");
+		return give_up(chimera::lang::tr("history.not_history"));
 	}
 
 	/* The rest, raw or as one zstd stream, through the reader spilled bodies
 	 * already go through. It is bounded by the file: a record claiming more
 	 * than there is fails here rather than reading past the end. */
 	uint64_t fileLen = 0;
-	if (!seekEnd(f) || !tellAt(f, fileLen) || fileLen < sizeof magic) return give_up("the state history is damaged");
+	if (!seekEnd(f) || !tellAt(f, fileLen) || fileLen < sizeof magic) return give_up(chimera::lang::tr("history.damaged"));
 	SpillBodyReader in;
-	if (!in.open(f, sizeof magic, fileLen - sizeof magic, packed)) return give_up("the state history could not be read");
+	if (!in.open(f, sizeof magic, fileLen - sizeof magic, packed)) return give_up(chimera::lang::tr("history.unreadable"));
 	/* a length the file cannot hold is damage, not an allocation to try; packed,
 	 * the file holds at most what zstd's densest block (a run, 3 bytes for up to
 	 * 128 KB) could expand to */
 	const uint64_t most = packed ? fileLen << 16 : fileLen;
 
 	uint64_t idLen = 0;
-	if (!in.readU64(idLen) || idLen > (1u << 20)) return give_up("the state history is damaged");
+	if (!in.readU64(idLen) || idLen > (1u << 20)) return give_up(chimera::lang::tr("history.damaged"));
 	std::string id(static_cast<size_t>(idLen), '\0');
-	if (!in.read(id.data(), id.size())) return give_up("the state history is damaged");
+	if (!in.read(id.data(), id.size())) return give_up(chimera::lang::tr("history.damaged"));
 	if (id != (machineId != nullptr ? machineId : "")
 		&& std::find(alsoReadable.begin(), alsoReadable.end(), id) == alsoReadable.end())
 	{
@@ -3883,18 +3882,18 @@ bool StateHistory::loadFrom(const char *path, const char *machineId, std::string
 	};
 
 	uint64_t segCount = 0;
-	if (!in.readU64(segCount)) return give_up("the state history is damaged");
+	if (!in.readU64(segCount)) return give_up(chimera::lang::tr("history.damaged"));
 	for (uint64_t i = 0; i < segCount; i++)
 	{
 		Segment seg;
 		uint64_t anchorFrame = 0, deltaCount = 0, noteLen = 0;
-		if (!in.readU64(anchorFrame)) return give_up("the state history is damaged");
+		if (!in.readU64(anchorFrame)) return give_up(chimera::lang::tr("history.damaged"));
 		seg.anchorFrame = static_cast<int64_t>(anchorFrame);
-		if (!readBody(seg.anchor)) return give_up("the state history is damaged");
-		if (!in.readU64(noteLen) || noteLen > kMaxNote) return give_up("the state history is damaged");
+		if (!readBody(seg.anchor)) return give_up(chimera::lang::tr("history.damaged"));
+		if (!in.readU64(noteLen) || noteLen > kMaxNote) return give_up(chimera::lang::tr("history.damaged"));
 		seg.anchorNote.resize(static_cast<size_t>(noteLen));
-		if (!in.read(seg.anchorNote.data(), seg.anchorNote.size())) return give_up("the state history is damaged");
-		if (!in.readU64(deltaCount)) return give_up("the state history is damaged");
+		if (!in.read(seg.anchorNote.data(), seg.anchorNote.size())) return give_up(chimera::lang::tr("history.damaged"));
+		if (!in.readU64(deltaCount)) return give_up(chimera::lang::tr("history.damaged"));
 		seg.bytes = seg.anchor.held();
 		int64_t landed = seg.anchorFrame;
 		for (uint64_t d = 0; d < deltaCount; d++)
@@ -3902,16 +3901,16 @@ bool StateHistory::loadFrom(const char *path, const char *machineId, std::string
 			uint64_t endFrame = 0;
 			if (!in.readU64(endFrame) || !in.readU64(noteLen) || noteLen > kMaxNote)
 			{
-				return give_up("the state history is damaged");
+				return give_up(chimera::lang::tr("history.damaged"));
 			}
 			std::vector<uint8_t> note(static_cast<size_t>(noteLen));
-			if (!in.read(note.data(), note.size())) return give_up("the state history is damaged");
+			if (!in.read(note.data(), note.size())) return give_up(chimera::lang::tr("history.damaged"));
 			/* the spans have to tile: a file whose links go backwards or stand
 			 * still would offer frames it cannot walk to */
-			if (static_cast<int64_t>(endFrame) <= landed) return give_up("the state history is damaged");
+			if (static_cast<int64_t>(endFrame) <= landed) return give_up(chimera::lang::tr("history.damaged"));
 			landed = static_cast<int64_t>(endFrame);
 			Body delta;
-			if (!readBody(delta)) return give_up("the state history is damaged");
+			if (!readBody(delta)) return give_up(chimera::lang::tr("history.damaged"));
 			seg.bytes += delta.held();
 			seg.links.push_back(Link{ std::move(delta), landed, std::move(note) });
 		}

@@ -258,6 +258,16 @@ Advice earned the hard way:
   chip runs at another rate states its own: `"audioRate": 64000` in its entry
   of `machines` (issue 226). Check it by counting: the samples a run produces
   over its frames must be the rate over the frame rate.
+- **Every text a person reads is a key** of the package's language tables,
+  `waterbox/languages/<code>.json` copied into the package as
+  `languages/<code>.json`, one for every language Chimera has (owner,
+  2026-10-28). That covers the declarations' names, descriptions and labels
+  and what the code returns: the load error, a suggestion's note, an
+  import's notes and refusal, the game's settings, its properties'
+  descriptions. A key's arguments follow it after a 0x1F byte. How, and what
+  stays a name: [translations.md](translations.md), "A core's texts".
+  `tools/check-core-texts.py <core checkout>` checks the code's keys
+  against the English table.
 - **Descriptions are written in plain language** (issue 241). A user reads
   the `description` of a setting, a firmware entry and a machine preset, and
   the `help` of a file slot, in Chimera's windows. Write short sentences,

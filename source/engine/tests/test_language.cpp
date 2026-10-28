@@ -5,7 +5,8 @@
  * languages folder against English - the same keys, the same %1..%9 and %n, a menu's
  * shortcut letter kept, the spaces at either end kept, the plural forms the
  * language takes - and what reads them: the plural rules, the filling, a
- * language used and another in its place, and the C ABI.
+ * language used and another in its place, a core package's texts and what
+ * its declarations are checked for, and the C ABI.
  *
  * Plain asserts, run by `meson test -C build/meson-linux`.
  */
@@ -16,7 +17,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
-#include <set>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -24,41 +25,10 @@ namespace {
 
 namespace lang = chimera::lang;
 
-/* the %1..%9 and %n a text uses */
-std::multiset<std::string> placeholders(const std::string &t)
-{
-	std::multiset<std::string> out;
-	for (size_t i = 0; i + 1 < t.size(); i++)
-	{
-		if (t[i] == '%' && ((t[i + 1] >= '1' && t[i + 1] <= '9') || t[i + 1] == 'n')) out.insert(t.substr(i, 2));
-	}
-	return out;
-}
-
-/* a menu's shortcut letter: an & before a letter, not "&&" */
-bool hasShortcut(const std::string &t)
-{
-	for (size_t i = 0; i + 1 < t.size(); i++)
-	{
-		if (t[i] != '&') continue;
-		if (t[i + 1] == '&') { i++; continue; }
-		if (t[i + 1] != ' ') return true;
-	}
-	return false;
-}
-
-std::string edges(const std::string &t)
-{
-	size_t a = 0, b = t.size();
-	while (a < b && (t[a] == ' ' || t[a] == '\n')) a++;
-	while (b > a && (t[b - 1] == ' ' || t[b - 1] == '\n')) b--;
-	return t.substr(0, a) + "|" + t.substr(b);
-}
-
 int problems = 0;
-void problem(const std::string &code, const std::string &key, const std::string &what)
+void problem(const std::string &what)
 {
-	if (problems++ < 40) std::fprintf(stderr, "%s: %s: %s\n", code.c_str(), key.c_str(), what.c_str());
+	if (problems++ < 40) std::fprintf(stderr, "%s\n", what.c_str());
 }
 
 } // namespace
@@ -78,7 +48,7 @@ int main()
 		assert(t.find("d.none") == nullptr);
 		const char *bad[] = {
 			"[]",
-			R"({"name": "x", "texts": {}})",
+			R"({"name": "x", "english": "x"})",
 			R"({"name": "x", "english": "x", "texts": {"a": 3}})",
 			R"({"name": "x", "english": "x", "texts": {"a": {"one": 1}}})",
 			R"({"name": "x", "english": "x", "texts": {"a": "1", "a": "2"}})",
@@ -117,6 +87,59 @@ int main()
 		assert(lang::fill("%1", {"%2"}) == "%2");   /* what fills is not filled again */
 	}
 
+	{ // a core package's texts: keys with their arguments, in the language in use
+		std::map<std::string, std::string> files = {
+			{"languages/en.json", R"({"texts": {"fw.data": "%1 of the game, which you supply.",
+				"load.missing": "%1 is not in %2", "slot.help": "The disk.",
+				"load.files": {"one": "%n file is missing", "other": "%n files are missing"}}})"},
+			{"languages/de.json", R"({"texts": {"fw.data": "%1 des Spiels, das Sie mitbringen.",
+				"load.missing": "%1 fehlt in %2", "slot.help": "Die Diskette.",
+				"load.files": {"one": "%n Datei fehlt", "other": "%n Dateien fehlen"}}})"},
+		};
+		auto entry = [&files](const std::string &name, std::string &bytes) {
+			auto it = files.find(name);
+			if (it == files.end()) return false;
+			bytes = it->second;
+			return true;
+		};
+		lang::PackageTexts texts;
+		texts.read(entry);
+		assert(texts.text("slot.help") == "The disk.");
+		assert(texts.text("load.missing\x1fGAME.DAT\x1fthe zip") == "GAME.DAT is not in the zip");
+		assert(texts.text("load.files\x1f" "1") == "1 file is missing" && texts.text("load.files\x1f" "3") == "3 files are missing");
+		assert(texts.text("Not a key") == "Not a key");   /* words a core wrote in are shown as they are */
+		assert(texts.text("load.missing\x1f" "slot.help\x1fthe zip") == "The disk. is not in the zip");   /* a key inside */
+		/* in a document, only the strings that are keys change: a member's
+		 * name stays, and so does a number no double holds */
+		assert(texts.texts(R"({"note": "slot.help", "values": {"x": "fw.data\u001fCOL\u00e901.DAT", "big": 18446744073709551615},
+			"slot.help": ["Not a key", "load.missing\u001f\"a\"\u001fb\\c"]})")
+			== R"({"note": "The disk.", "values": {"x": "COLé01.DAT of the game, which you supply.", "big": 18446744073709551615},
+			"slot.help": ["Not a key", "\"a\" is not in b\\c"]})");
+		assert(texts.texts("  [\"slot.help\"]") == "  [\"The disk.\"]");
+		assert(texts.texts("slot.help") == "The disk.");   /* not a document: one text */
+		assert(lang::use("de"));
+		assert(texts.text("load.missing\x1fGAME.DAT\x1f" "dem Zip") == "GAME.DAT fehlt in dem Zip");
+		assert(texts.text("load.files\x1f" "1") == "1 Datei fehlt");
+		assert(lang::use("fr"));   /* the package has no French: its English */
+		assert(texts.text("slot.help") == "The disk.");
+		assert(lang::use("en"));
+
+		/* the declarations: every text a key, given every argument it uses */
+		files["waterbox.config"] = R"({"firmware": [{"display": "fw.data\u001fCOL01.DAT", "description": "fw.data"}],
+			"settings": [{"display": "Words", "description": "slot.help"}]})";
+		std::vector<std::string> lines = lang::packageProblems(entry);
+		auto has = [&lines](const std::string &part) {
+			for (const std::string &l : lines)
+				if (l.find(part) != std::string::npos) return true;
+			return false;
+		};
+		assert(has("settings[].display is not a key of languages/en.json: \"Words\""));
+		assert(has("firmware[].description \"fw.data\" uses %1 and is given 0 argument(s)"));
+		assert(!has("firmware[].display"));
+		assert(!has("slot.help"));
+		assert(has("languages/fr.json is not in the package"));
+	}
+
 	{ // every table there has every key English has, and nothing else
 		const auto &all = lang::languages();
 		assert(all.size() >= 8 && all.front().code == "en");
@@ -124,56 +147,23 @@ int main()
 		for (size_t i = 0; i < all.size(); i++)
 		{
 			std::string error;
-			if (!lang::readTableFile(all[i].code, tables[i], error)) problem(all[i].code, "(the table)", error);
+			if (!lang::readTableFile(all[i].code, tables[i], error)) problem(all[i].code + ": " + error);
 		}
 		const lang::Table *english = &tables[0];
 		for (size_t i = 0; i < tables.size(); i++)
-		{
-			const std::string code = all[i].code;
-			const std::vector<std::string> forms = lang::pluralForms(code);
-			if (forms.empty()) problem(code, "(the table)", "no plural rule for this language (language.cpp)");
-			for (const auto &e : english->entries)
-			{
-				const lang::Table::Entry *t = tables[i].find(e.first.c_str());
-				if (t == nullptr) { problem(code, e.first, "missing"); continue; }
-				const std::string en = e.second.forms.empty() ? e.second.text : e.second.forms.back().second;
-				if (e.second.forms.empty() != t->forms.empty()) { problem(code, e.first, "plural forms where English has none, or none where it has"); continue; }
-				std::vector<std::string> texts;
-				if (t->forms.empty()) texts.push_back(t->text);
-				else
-				{
-					std::vector<std::string> named;
-					for (const auto &f : t->forms) { named.push_back(f.first); texts.push_back(f.second); }
-					if (named != forms) problem(code, e.first, "plural forms are not " + std::to_string(forms.size()) + " in the language's order");
-				}
-				for (const std::string &x : texts)
-				{
-					std::multiset<std::string> want = placeholders(en), have = placeholders(x);
-					/* a language with one form may leave %n out of none; one form in a
-					 * language with several may write the number as a word ("one") */
-					if (!e.second.forms.empty()) { want.erase("%n"); have.erase("%n"); }
-					if (want != have) problem(code, e.first, "placeholders differ from English: " + x);
-					if (hasShortcut(en) && !hasShortcut(x)) problem(code, e.first, "no shortcut letter (&): " + x);
-					if (edges(en) != edges(x)) problem(code, e.first, "spaces or line breaks at the ends differ from English");
-				}
-			}
-			for (const auto &e : tables[i].entries)
-			{
-				if (english->find(e.first.c_str()) == nullptr) problem(code, e.first, "not an English key");
-			}
-		}
+			for (const std::string &p : lang::compare(*english, tables[i], all[i].code)) problem(p);
 		if (problems != 0) std::fprintf(stderr, "%d problems in the language tables\n", problems);
 		assert(problems == 0);
 	}
 
 	{ // used, and another in its place; a key no table has comes back as itself
 		assert(lang::inUse() == "en");
-		assert(lang::text("common.file") == "&File");
-		assert(lang::text("no.such.key") == "no.such.key");
+		assert(lang::tr("common.file") == "&File");
+		assert(lang::tr("no.such.key") == "no.such.key");
 		assert(lang::use("es"));
-		assert(lang::text("common.file") == "&Archivo");
+		assert(lang::tr("common.file") == "&Archivo");
 		assert(!lang::use("xx"));
-		assert(lang::inUse() == "es" && lang::text("common.file") == "&Archivo");
+		assert(lang::inUse() == "es" && lang::tr("common.file") == "&Archivo");
 		assert(lang::use("en"));
 	}
 

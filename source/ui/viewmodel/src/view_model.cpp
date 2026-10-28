@@ -1,4 +1,5 @@
 #include "chimera/vm/view_model.hpp"
+#include "chimera/vm/tr.hpp"
 
 namespace chimera::vm {
 
@@ -23,17 +24,17 @@ bool ViewModel::set(std::string_view property, const Value &v, std::string &erro
 		if (p.name != property) continue;
 		if (!p.set)
 		{
-			error = name_ + "." + p.name + " cannot be set";
+			error = tr("view_model.read_only", {name_ + "." + p.name});
 			return false;
 		}
 		if (!p.set(v))
 		{
-			error = name_ + "." + p.name + " cannot be " + describe(v);
+			error = tr("view_model.cannot_be", {name_ + "." + p.name, describe(v)});
 			return false;
 		}
 		return true;
 	}
-	error = name_ + " has no property " + std::string(property);
+	error = tr("view_model.no_property", {name_, std::string(property)});
 	return false;
 }
 
@@ -44,7 +45,7 @@ std::optional<Value> ViewModel::run(std::string_view command, const Args &args, 
 		if (c.name != command) continue;
 		if (c.enabled && !c.enabled->get())
 		{
-			error = name_ + "." + c.name + " cannot run now";
+			error = tr("view_model.cannot_run", {name_ + "." + c.name});
 			return std::nullopt;
 		}
 		error.clear();
@@ -53,7 +54,7 @@ std::optional<Value> ViewModel::run(std::string_view command, const Args &args, 
 		if (!error.empty()) return std::nullopt;
 		return v;
 	}
-	error = name_ + " has no command " + std::string(command);
+	error = tr("view_model.no_command", {name_, std::string(command)});
 	return std::nullopt;
 }
 

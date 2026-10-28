@@ -1,4 +1,5 @@
 #include "chimera/vm/game_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/engine.h"
 #include "chimera/vm/json.hpp"
@@ -70,7 +71,7 @@ GamePropertiesViewModel::GamePropertiesViewModel(Dispatcher &dispatcher, Session
 				const int32_t index = s != nullptr ? ce_session_property_find(s, name.c_str(), &element) : -1;
 				if (index < 0)
 				{
-					why = "the game has no property " + name;
+					why = tr("ram_watch.no_property", {name});
 					return;
 				}
 				ce_property_value v{};
@@ -101,7 +102,7 @@ GamePropertiesViewModel::GamePropertiesViewModel(Dispatcher &dispatcher, Session
 			if (!arg(a, 0, name, error)) return {};
 			if (a.size() < 2)
 			{
-				error = "argument 2 is missing";
+				error = tr("new_project.argument_missing", {"2"});
 				return {};
 			}
 			const Value value = a[1];
@@ -114,7 +115,7 @@ GamePropertiesViewModel::GamePropertiesViewModel(Dispatcher &dispatcher, Session
 				const int32_t index = s != nullptr ? ce_session_property_find(s, name.c_str(), &element) : -1;
 				if (index < 0)
 				{
-					why = "the game has no property " + name;
+					why = tr("ram_watch.no_property", {name});
 					return;
 				}
 				ce_property_value v{};
@@ -143,7 +144,7 @@ GamePropertiesViewModel::GamePropertiesViewModel(Dispatcher &dispatcher, Session
 				}
 				else
 				{
-					why = "no value to set " + name + " to";
+					why = tr("game.no_value", {name});
 					return;
 				}
 				if (ce_session_property_set(s, index, element, &v) == 0) done = true;

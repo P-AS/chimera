@@ -1,4 +1,5 @@
 #include "chimera/vm/media_maker_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <filesystem>
 
@@ -9,16 +10,14 @@ namespace chimera::vm {
 namespace {
 struct Shape
 {
+	/* the label and the help are keys in the language tables */
 	const char *label, *extension, *help;
 };
 /* the shapes, in the order the box offers them (Chimera's words) */
 const Shape kShapes[] = {
-	{"Zip archive, stored (.zip)", ".zip",
-		"No compression, so a core reads it by seeking, the way it would read the loose files. The same size on disk as the folder."},
-	{"Disc image, ISO 9660 + Joliet (.iso)", ".iso",
-		"A disc, which is what the disc-based cores want. Long names are kept in the Joliet tree. A single file of 4 GiB or more cannot "
-		"be described by this format."},
-	{"Floppy disk, FAT12 (.img)", ".img", "A 1.44 MB floppy with 8.3 names. What does not fit is refused rather than quietly left out."},
+	{"media.zip", ".zip", "media.zip_help"},
+	{"media.iso", ".iso", "media.iso_help"},
+	{"media.floppy", ".img", "media.floppy_help"},
 };
 
 struct Progress
@@ -34,7 +33,7 @@ struct Progress
 MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder recipes)
 	: ViewModel("mediaMaker", dispatcher), recipes_(std::move(recipes))
 {
-	formatHelp.set(kShapes[0].help);
+	formatHelp.set(tr(kShapes[0].help));
 	expose("folder", "the folder to pack", folder);
 	expose("output", "the file written", output, true);
 	expose("format", "0 a zip stored, 1 an ISO 9660 + Joliet disc, 2 a FAT12 floppy", format, true);
@@ -47,7 +46,7 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 	expose("sha1", "the SHA-1 of the file written last, what a project records", sha1);
 	command("shapes", "the shapes offered, a line each", {}, [](const Args &, std::string &) -> Value {
 		std::string text;
-		for (const Shape &s : kShapes) text += (text.empty() ? "" : "\n") + std::string(s.label);
+		for (const Shape &s : kShapes) text += (text.empty() ? "" : "\n") + tr(s.label);
 		return text;
 	});
 	command("setFolder", "the folder to pack; the file is suggested beside it, named after it", {"path"},
@@ -71,7 +70,7 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 			format.set(0);
 			return;
 		}
-		formatHelp.set(kShapes[format.get()].help);
+		formatHelp.set(tr(kShapes[format.get()].help));
 		/* the suggested name kept in step with the shape */
 		if (!output.get().empty() && !folder.get().empty())
 			output.set(std::filesystem::path(output.get()).replace_extension(kShapes[format.get()].extension).string());
@@ -87,12 +86,12 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 		[this, &dispatcher](const Args &, std::string &error) -> Value {
 			if (running.get())
 			{
-				error = "a pack is under way";
+				error = tr("media.under_way");
 				return {};
 			}
 			if (folder.get().empty() || output.get().empty())
 			{
-				error = "choose the folder and the file first";
+				error = tr("media.choose_first");
 				return {};
 			}
 			if (worker_.joinable()) worker_.join();
@@ -111,7 +110,7 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 					const double share = total > 0 ? static_cast<double>(done) / static_cast<double>(total) : 0.0;
 					MediaMakerViewModel *vm = pr->vm;
 					pr->post([vm, name, share, filesDone, filesTotal] {
-						vm->current.set(name + "  (" + std::to_string(filesDone) + " of " + std::to_string(filesTotal) + ")");
+						vm->current.set(tr("media.progress", {name, std::to_string(filesDone), std::to_string(filesTotal)}));
 						vm->progress.set(share);
 					});
 					return pr->cancel->load() ? 0 : 1;
@@ -133,17 +132,17 @@ MediaMakerViewModel::MediaMakerViewModel(Dispatcher &dispatcher, RecipeFinder re
 						/* the size as Chimera's N0 writes it: 1,474,560 */
 						std::string grouped = std::to_string(size);
 						for (int at = static_cast<int>(grouped.size()) - 3; at > 0; at -= 3) grouped.insert(static_cast<size_t>(at), ",");
-						result.set("Written: " + to + "\nSHA1 " + sha + "  (" + grouped + " bytes)");
+						result.set(tr("media.written", {to, sha, grouped}));
 					}
 					else
-						result.set(error == "cancelled" ? "Cancelled; nothing was written." : error);
+						result.set(error == "cancelled" ? tr("media.cancelled") : error);
 				});
 			});
 			return {};
 		});
 	command("cancel", "stops the pack; what it had written is removed", {}, [this](const Args &, std::string &) -> Value {
 		cancel_.store(true);
-		if (running.get()) current.set("Stopping...");
+		if (running.get()) current.set(tr("media.stopping"));
 		return {};
 	});
 }
@@ -165,7 +164,7 @@ void MediaMakerViewModel::recognise()
 		if (ce_media_recipe_format(r.json.c_str()) != format.get()) continue;
 		if (ce_media_recipe_applies(r.json.c_str(), folder.get().c_str()) != 1) continue;
 		recipeJson_ = r.json;
-		recognised.set("This folder is a " + r.label + ": the image is written the way " + r.core + " reads it.");
+		recognised.set(tr("media.recognised", {r.label, r.core}));
 		return;
 	}
 }

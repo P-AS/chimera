@@ -36,6 +36,8 @@ public:
 	 * anything is made (what the program does at its start); `otherwise`
 	 * when the file, or the switch in it, is missing */
 	static bool switchIn(const std::string &path, const std::string &key, bool otherwise);
+	/* a text the file keeps ("customize.language"), read the same way */
+	static std::string textIn(const std::string &path, const std::string &key, const std::string &otherwise);
 
 private:
 	void save();

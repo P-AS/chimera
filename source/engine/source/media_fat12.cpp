@@ -21,6 +21,7 @@
  * order rather than from the order a directory happened to be read in.
  */
 #include "media_maker.hpp"
+#include "language.hpp"
 #include "file_io.hpp"
 
 #include "sha1.hpp"
@@ -219,9 +220,7 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 	/* ---- does it fit ---- */
 	if (root.kids.size() > kRootEntries)
 	{
-		error = "the root of this folder holds " + std::to_string(root.kids.size()) +
-			" entries and a floppy's root directory has room for " + std::to_string(kRootEntries) +
-			". Put them in subdirectories, or use another format.";
+		error = chimera::lang::tr("media.root_too_full", {std::to_string(root.kids.size()), std::to_string(kRootEntries)});
 		return false;
 	}
 
@@ -248,9 +247,7 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		const uint64_t have = uint64_t(kClusterCount) * kSectorSize;
 		uint64_t want = 0;
 		for (const auto &e : files) want += e.size;
-		error = "this folder does not fit on a 1.44 MB floppy: " + std::to_string(want) +
-			" bytes of files need " + std::to_string(uint64_t(needed) * kSectorSize) +
-			" bytes of clusters, and the disk holds " + std::to_string(have) + ".";
+		error = chimera::lang::tr("media.floppy_full", {std::to_string(want), std::to_string(uint64_t(needed) * kSectorSize), std::to_string(have)});
 		return false;
 	}
 
@@ -399,14 +396,14 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 		std::FILE *in = chimera::openFile(f->abs.c_str(), "rb");
 		if (!in)
 		{
-			error = "cannot read " + f->name;
+			error = chimera::lang::tr("new_project.cannot_read", {f->name});
 			return false;
 		}
 		const size_t got = std::fread(clusterAt(f->firstCluster), 1, static_cast<size_t>(f->size), in);
 		std::fclose(in);
 		if (got != f->size)
 		{
-			error = f->name + " ended early - it changed while it was being packed";
+			error = chimera::lang::tr("media.changed_while_packed", {f->name});
 			return false;
 		}
 		bytesDone += got;
@@ -422,12 +419,12 @@ bool mediaWriteFat12(const std::vector<MediaEntry> &files, const std::string &ou
 	chimera::FileWriter writer;
 	if (!writer.open(outPath.c_str()))
 	{
-		error = "cannot create " + outPath;
+		error = chimera::lang::tr("engine.could_not_create", {outPath});
 		return false;
 	}
 	if (!writer.write(img.data(), img.size()) || !writer.commit())
 	{
-		error = "cannot write the output (is the disk full?)";
+		error = chimera::lang::tr("media.disk_full");
 		return false;
 	}
 

@@ -1,4 +1,5 @@
 #include "chimera/vm/surface_viewer_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 
@@ -42,18 +43,18 @@ void SurfaceViewerViewModel::draw()
 	const int64_t i = picked.get();
 	if (list.items.empty())
 	{
-		status.set(session_.isOpen.get() ? "This core draws no surfaces." : "No core is running.");
+		status.set(tr(session_.isOpen.get() ? "surfaces.none" : "surfaces.no_core"));
 		return;
 	}
 	if (i < 0 || i >= static_cast<int64_t>(list.items.size()))
 	{
-		status.set("No surface " + std::to_string(i));
+		status.set(tr("surfaces.no_surface", {std::to_string(i)}));
 		return;
 	}
 	const json::Json &s = list.items[static_cast<size_t>(i)];
 	if (!session_.renderSurface(static_cast<int32_t>(i), surface))
 	{
-		status.set(s.find("name")->text + ": the core drew nothing");
+		status.set(tr("surfaces.drew_nothing", {s.find("name")->text}));
 		return;
 	}
 	/* as Chimera's: "Nametables - 512x480" */

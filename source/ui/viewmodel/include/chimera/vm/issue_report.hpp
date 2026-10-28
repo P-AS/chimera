@@ -1,0 +1,36 @@
+#pragma once
+/* A bug report's first lines, as Chimera's issue form on GitHub asks for
+ * them (Help > Report an Issue). They stay in English, the form's own
+ * words: the report is read by Chimera's developers, as its logs are
+ * (docs/translations.md). */
+
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace chimera::vm::issue_report {
+
+struct Setting
+{
+	std::string label, value, standard;
+};
+
+struct Facts
+{
+	std::string build, core, os, cpu;
+	unsigned threads = 0;
+	uint64_t memory = 0;
+	bool projectOpen = false, coreRunning = false;
+	/* the open project's files: slot and file name */
+	std::vector<std::pair<std::string, std::string>> files;
+	/* the settings not at their defaults */
+	std::vector<Setting> changed;
+};
+
+/* the build and the core open (Chimera's Copy Version Info) */
+std::string versionLines(const std::string &build, const std::string &core);
+/* every first line of a report */
+std::string firstLines(const Facts &facts);
+
+} // namespace chimera::vm::issue_report

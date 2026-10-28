@@ -1,4 +1,5 @@
 #include "chimera/vm/messages_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -60,12 +61,12 @@ MessagesViewModel::MessagesViewModel(Dispatcher &dispatcher) : ViewModel("messag
 			if (!arg(a, 0, name, error) || !arg(a, 1, x, error) || !arg(a, 2, y, error) || !arg(a, 3, anchor, error)) return {};
 			if (std::find(std::begin(kNames), std::end(kNames), name) == std::end(kNames))
 			{
-				error = "nothing called " + name + " is drawn over the picture";
+				error = tr("messages.no_element", {name});
 				return {};
 			}
 			if (x < 0 || y < 0 || anchor < 0 || anchor > 3)
 			{
-				error = "x and y are 0 or more, and the corner 0 to 3";
+				error = tr("messages.place_values");
 				return {};
 			}
 			Json all;
@@ -90,7 +91,7 @@ MessagesViewModel::MessagesViewModel(Dispatcher &dispatcher) : ViewModel("messag
 			for (char &c : color) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 			if (!isColor(color))
 			{
-				error = color + " is not a colour: #AARRGGBB or #RRGGBB";
+				error = tr("messages.not_colour", {color});
 				return {};
 			}
 			Property<std::string> *p = which == "messages" ? &messagesColor : which == "alert" ? &alertColor
@@ -99,7 +100,7 @@ MessagesViewModel::MessagesViewModel(Dispatcher &dispatcher) : ViewModel("messag
 																										 : nullptr;
 			if (p == nullptr)
 			{
-				error = "no colour " + which + ": messages, alert, lastInput or movieInput";
+				error = tr("messages.no_colour", {which});
 				return {};
 			}
 			p->set(color);

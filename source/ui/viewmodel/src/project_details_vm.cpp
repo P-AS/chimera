@@ -1,4 +1,5 @@
 #include "chimera/vm/project_details_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -91,13 +92,13 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 			});
 			if (!open)
 			{
-				error = "no project is open";
+				error = tr("session.no_project");
 				return {};
 			}
 			if (makeDefault) defaultAuthor.set(au);
 			session_.markChanged();
 			load();
-			status.set("The header is changed; it is kept when the project is saved");
+			status.set(tr("details.header_changed"));
 			return {};
 		});
 	command("setComments", "the comments, a line each", {"comments"}, [this](const Args &a, std::string &error) -> Value {
@@ -123,7 +124,7 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 		});
 		if (!open)
 		{
-			error = "no project is open";
+			error = tr("session.no_project");
 			return {};
 		}
 		session_.markChanged();
@@ -137,7 +138,7 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 			if (!subtitleArgs(a, 0, sub, error)) return {};
 			if (!session_.hasProject.get())
 			{
-				error = "no project is open";
+				error = tr("session.no_project");
 				return {};
 			}
 			subtitles_.push_back(sub);
@@ -151,7 +152,7 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 			if (!arg(a, 0, i, error) || !subtitleArgs(a, 1, sub, error)) return {};
 			if (i < 0 || i >= static_cast<int64_t>(subtitles_.size()))
 			{
-				error = "no subtitle " + std::to_string(i);
+				error = tr("details.no_subtitle", {std::to_string(i)});
 				return {};
 			}
 			subtitles_[static_cast<size_t>(i)] = sub;
@@ -163,7 +164,7 @@ ProjectDetailsViewModel::ProjectDetailsViewModel(Dispatcher &dispatcher, Session
 		if (!arg(a, 0, i, error)) return {};
 		if (i < 0 || i >= static_cast<int64_t>(subtitles_.size()))
 		{
-			error = "no subtitle " + std::to_string(i);
+			error = tr("details.no_subtitle", {std::to_string(i)});
 			return {};
 		}
 		subtitles_.erase(subtitles_.begin() + i);
@@ -207,17 +208,17 @@ bool ProjectDetailsViewModel::subtitleArgs(const Args &a, size_t from, Subtitle 
 		return false;
 	if (out.frame < 0 || out.duration < 1)
 	{
-		error = "a subtitle starts at a frame, 0 or after, and lasts a frame or more";
+		error = tr("details.subtitle_frames");
 		return false;
 	}
 	if (!readColor(color, out.color))
 	{
-		error = color + " is not a colour: #RRGGBB or #AARRGGBB";
+		error = tr("details.not_colour", {color});
 		return false;
 	}
 	if (out.message.find('\n') != std::string::npos)
 	{
-		error = "a subtitle is one line";
+		error = tr("details.one_line");
 		return false;
 	}
 	return true;
@@ -286,8 +287,7 @@ void ProjectDetailsViewModel::storeSubtitles()
 	rows_.reset.emit();
 	showFrame();
 	session_.markChanged();
-	status.set(std::to_string(subtitles_.size()) + (subtitles_.size() == 1 ? " subtitle" : " subtitles") +
-		"; kept when the project is saved");
+			status.set(tr("details.subtitles_kept", static_cast<int64_t>(subtitles_.size())));
 }
 
 void ProjectDetailsViewModel::showFrame()

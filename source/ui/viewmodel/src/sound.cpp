@@ -1,4 +1,5 @@
 #include "chimera/vm/sound.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <map>
@@ -74,7 +75,7 @@ Sound::Sound(const std::string &device, int32_t bufferMs) : api_(std::make_uniqu
 #endif
 	if (a.lib == nullptr)
 	{
-		problem_ = "OpenAL was not found, so there is no sound";
+		problem_ = tr("sound.no_openal");
 		return;
 	}
 	if (!(a.bind(a.alcOpenDevice, "alcOpenDevice") && a.bind(a.alcCloseDevice, "alcCloseDevice") &&
@@ -86,7 +87,7 @@ Sound::Sound(const std::string &device, int32_t bufferMs) : api_(std::make_uniqu
 		a.bind(a.alSourceUnqueueBuffers, "alSourceUnqueueBuffers") && a.bind(a.alGetSourcei, "alGetSourcei") &&
 		a.bind(a.alSourcePlay, "alSourcePlay") && a.bind(a.alSourceStop, "alSourceStop")))
 	{
-		problem_ = "the OpenAL found is missing a function the sound needs";
+		problem_ = tr("sound.openal_incomplete");
 		return;
 	}
 	a.bind(a.alcGetString, "alcGetString");
@@ -94,13 +95,13 @@ Sound::Sound(const std::string &device, int32_t bufferMs) : api_(std::make_uniqu
 	a.device = a.alcOpenDevice(device.empty() ? nullptr : device.c_str());
 	if (a.device == nullptr)
 	{
-		problem_ = device.empty() ? "no sound device" : "the sound device " + device + " would not open";
+		problem_ = device.empty() ? tr("sound.no_device") : tr("sound.device_refused", {device});
 		return;
 	}
 	a.context = a.alcCreateContext(a.device, nullptr);
 	if (a.context == nullptr || a.alcMakeContextCurrent(a.context) == 0)
 	{
-		problem_ = "OpenAL would not start on the sound device";
+		problem_ = tr("sound.not_started");
 		if (a.context != nullptr) a.alcDestroyContext(a.context);
 		a.alcCloseDevice(a.device);
 		return;

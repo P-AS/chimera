@@ -299,7 +299,12 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     Repeater {
                                         model: kind.groups.length > 1 ? kind.groups : []
-                                        delegate: TabButton { required property string modelData; text: modelData; width: implicitWidth }
+                                        // a group's identifier, "Player 2" or "Console", in the language in use
+                                        delegate: TabButton {
+                                            required property string modelData
+                                            text: modelData.startsWith("Player ") ? qsTrId("controls.group_player").arg(modelData.substring(7)) : qsTrId("controls.group_console")
+                                            width: implicitWidth
+                                        }
                                     }
                                 }
                                 StackLayout {

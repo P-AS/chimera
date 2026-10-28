@@ -508,6 +508,13 @@ if not meson.is_cross_build()
     build_by_default: false,
   )
 
+  # no text written in the code: every text a person reads is a key in the
+  # language tables (docs/translations.md, owner 2026-10-28)
+  test('texts', find_program('python3'), args: [files('tools/check-texts.py'), meson.project_source_root()])
+  # the synthetic core's: every key its code returns is in its table
+  test('synth_texts', find_program('python3'),
+    args: [files('tools/check-core-texts.py'), meson.project_source_root() / 'tests/synth/package-box'])
+
   foreach engine_test : ['sha1', 'movie_log', 'movie_text', 'movie_entry', 'control_names', 'state_container', 'state_format', 'package', 'multifile', 'project', 'firmware', 'state_history', 'media', 'gl_flight', 'gl_sync', 'gl_buffer_pool', 'stride_tuner', 'plain_numbers', 'greenzone_shape', 'ram_search', 'kept_pictures', 'game_properties', 'mcp', 'average_fps', 'compile_sessions', 'host_machine', 'utf8_paths', 'work_thread', 'guest_calls', 'gl_session', 'resampler', 'language']
     test(
       'engine_' + engine_test,

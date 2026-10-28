@@ -1,4 +1,5 @@
 #include "chimera/vm/firmware.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -96,7 +97,7 @@ const FirmwareFile *findFirmware(const Json &decl, const std::string &pinnedSha1
 		for (const FirmwareFile &f : index)
 			if ((!pinnedSha1.empty() || size == 0 || f.size == size) && lower(f.hash()) == lower(sha))
 			{
-				how = pinnedSha1.empty() ? "by its hash" : "by the hash the project pins";
+				how = tr(pinnedSha1.empty() ? "firmware.by_hash" : "firmware.by_pinned_hash");
 				return &f;
 			}
 		return nullptr;
@@ -108,13 +109,13 @@ const FirmwareFile *findFirmware(const Json &decl, const std::string &pinnedSha1
 		for (const FirmwareFile &f : index)
 			if (lower(f.name) == name && (size == 0 || f.size == size))
 			{
-				how = "by its name";
+				how = tr("firmware.by_name");
 				return &f;
 			}
 	/* the one file the size and the name hints point at */
 	const std::vector<const FirmwareFile *> candidates = hintCandidates(decl, index);
 	if (candidates.size() != 1) return nullptr;
-	how = "by its size and name";
+	how = tr("firmware.by_size_name");
 	return candidates[0];
 }
 

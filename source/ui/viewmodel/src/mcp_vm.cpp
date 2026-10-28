@@ -1,4 +1,5 @@
 #include "chimera/vm/mcp_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -14,8 +15,6 @@ namespace chimera::vm {
 using json::Json;
 
 namespace {
-const char *const kNoMovie = "No project is open in Chimera.";
-const char *const kNoChimera = "Chimera's main window cannot be asked.";
 /* the most frames one call may write, which keeps a slip of the agent's small */
 constexpr int64_t kMostFrames = 100000;
 
@@ -83,7 +82,7 @@ McpViewModel::McpViewModel(Dispatcher &dispatcher, SessionViewModel &session, Pi
 		if (ce_mcp_state() == CE_MCP_STOPPED)
 		{
 			const char *error = nullptr;
-			if (ce_mcp_start(&error) != 1) startError_ = error != nullptr ? error : "no reason given";
+			if (ce_mcp_start(&error) != 1) startError_ = error != nullptr ? error : tr("common.no_reason");
 			else
 			{
 				ce_mcp_allow_changes(allowChanges.get() ? 1 : 0);
@@ -105,7 +104,7 @@ McpViewModel::McpViewModel(Dispatcher &dispatcher, SessionViewModel &session, Pi
 		const char *why = nullptr;
 		if (ce_mcp_start(&why) != 1)
 		{
-			error = why != nullptr ? why : "the server could not be started";
+			error = why != nullptr ? why : tr("mcp.not_started");
 			return {};
 		}
 		ce_mcp_allow_changes(allowChanges.get() || changes ? 1 : 0);
@@ -123,7 +122,7 @@ McpViewModel::McpViewModel(Dispatcher &dispatcher, SessionViewModel &session, Pi
 		if (!arg(a, 0, path, error)) return {};
 		std::ofstream out(path, std::ios::binary);
 		out << log.get();
-		note.set(out ? "Saved " + std::filesystem::path(path).filename().string() + "." : "The log was not saved: " + path + " could not be written");
+		note.set(out ? tr("mcp.log_saved", {std::filesystem::path(path).filename().string()}) : tr("mcp.log_not_saved", {path}));
 		return {};
 	});
 	/* the person's choice, remembered for every later start; started, it applies at once */
@@ -140,9 +139,9 @@ void McpViewModel::refresh()
 	const int32_t s = ce_mcp_state();
 	const char *client = ce_mcp_client();
 	state.set(s == CE_MCP_CONNECTED ? "connected" : s == CE_MCP_WAITING ? "waiting" : "stopped");
-	stateText.set(s == CE_MCP_CONNECTED ? "Started. Connected: " + std::string(client != nullptr ? client : "") + "."
-		: s == CE_MCP_WAITING ? std::string("Started. No agent is connected.")
-		: startError_.empty() ? std::string("Stopped.") : "Not started: " + startError_ + ".");
+	stateText.set(s == CE_MCP_CONNECTED ? tr("mcp.connected", {client != nullptr ? client : ""})
+		: s == CE_MCP_WAITING ? tr("mcp.waiting")
+		: startError_.empty() ? tr("mcp.stopped") : tr("mcp.start_failed", {startError_}));
 	started.set(s != CE_MCP_STOPPED);
 	allowedNow.set(s != CE_MCP_STOPPED ? ce_mcp_changes_allowed() != 0 : allowChanges.get());
 	const uint64_t total = ce_mcp_log_total();
@@ -171,15 +170,14 @@ RowModel *McpViewModel::rowsOf(ViewModel &vm, const std::string &name)
 void McpViewModel::createProject(uint64_t id, const Json &arguments)
 {
 	auto refuse = [this, id](const std::string &why) { session_.mcpAnswer(id, why, true); };
-	if (newProject == nullptr) return refuse(kNoChimera);
+	if (newProject == nullptr) return refuse(tr("mcp.window_cannot_be_asked"));
 	std::string core = textOf(arguments, "core");
 	while (!core.empty() && std::isspace(static_cast<unsigned char>(core.back()))) core.pop_back();
 	while (!core.empty() && std::isspace(static_cast<unsigned char>(core.front()))) core.erase(core.begin());
-	if (core.empty()) return refuse("Give 'core': a core's name or file, as list_cores gives them.");
+	if (core.empty()) return refuse(tr("mcp.give_core"));
 	const bool discard = flagOf(arguments, "discard_unsaved");
 	if (session_.hasProject.get() && session_.unsaved.get() && !discard)
-		return refuse("The project open now has changes that are not saved, so no other was made. Save it with "
-			"save_project, or give discard_unsaved: true to let them go.");
+		return refuse(tr("mcp.unsaved_not_made"));
 	NewProjectViewModel::AgentRequest request;
 	request.core = core;
 	if (const Json *slots = arguments.find("files"))
@@ -194,7 +192,7 @@ void McpViewModel::createProject(uint64_t id, const Json &arguments)
 				request.files.emplace_back(slot, f.text);
 			}
 		}
-		if (!read) return refuse("'files' is an object from slots to lists of paths, such as {\"rom\": [\"game.nes\"]}.");
+		if (!read) return refuse(tr("mcp.files_shape"));
 	}
 	if (const Json *game = arguments.find("game"))
 	{
@@ -205,14 +203,14 @@ void McpViewModel::createProject(uint64_t id, const Json &arguments)
 			read = read && g.kind == Json::Kind::String;
 			request.games.push_back(g.text);
 		}
-		if (!read) return refuse("'game' is a path, or a list of paths.");
+		if (!read) return refuse(tr("mcp.game_shape"));
 	}
 	if (const Json *given = arguments.find("settings"))
 	{
 		bool read = given->kind == Json::Kind::Object;
 		for (const auto &[name, value] : given->members)
 			read = read && value.kind != Json::Kind::Null && value.kind != Json::Kind::Array && value.kind != Json::Kind::Object;
-		if (!read) return refuse("'settings' is an object from settings' names to their values.");
+		if (!read) return refuse(tr("mcp.settings_shape"));
 		request.settings = *given;
 	}
 	if (const Json *ids = arguments.find("firmware"))
@@ -223,12 +221,12 @@ void McpViewModel::createProject(uint64_t id, const Json &arguments)
 			read = read && path.kind == Json::Kind::String;
 			request.firmware.emplace_back(fid, path.text);
 		}
-		if (!read) return refuse("'firmware' is an object from firmware ids to paths.");
+		if (!read) return refuse(tr("mcp.firmware_shape"));
 	}
 	request.firmwareFolder = textOf(arguments, "firmware_folder");
 	std::error_code ec;
 	if (!request.firmwareFolder.empty() && !std::filesystem::is_directory(pathOf(request.firmwareFolder), ec))
-		return refuse("There is no folder at '" + request.firmwareFolder + "'.");
+		return refuse(tr("mcp.no_folder_at", {request.firmwareFolder}));
 	request.system = textOf(arguments, "system");
 	newProject->completeForAgent(request, [this, id, refuse](NewProjectViewModel::AgentOutcome made) {
 		if (made.missing.kind == Json::Kind::Array && !made.missing.items.empty())
@@ -240,7 +238,7 @@ void McpViewModel::createProject(uint64_t id, const Json &arguments)
 			add(missing, "searched", made.searched);
 			return session_.mcpAnswer(id, json::write(missing), true);
 		}
-		if (!made.made) return refuse(!made.refusal.empty() ? made.refusal : "No project was made.");
+		if (!made.made) return refuse(!made.refusal.empty() ? made.refusal : tr("mcp.not_made"));
 		/* the project open now gave way to it; what it had not saved the agent said may go */
 		session_.mcpAnswerOpened(id);
 	});
@@ -249,7 +247,7 @@ void McpViewModel::createProject(uint64_t id, const Json &arguments)
 void McpViewModel::luaTool(const std::string &tool, const Json &arguments, const std::function<void(const std::string &, bool)> &answer)
 {
 	auto refuse = [&](const std::string &why) { answer(why, true); };
-	if (lua == nullptr) return refuse("Lua cannot run in this Chimera: its library could not be loaded.");
+	if (lua == nullptr) return refuse(tr("mcp.no_lua"));
 	auto trimmed = [](std::string t) {
 		while (!t.empty() && std::isspace(static_cast<unsigned char>(t.back()))) t.pop_back();
 		while (!t.empty() && std::isspace(static_cast<unsigned char>(t.front()))) t.erase(t.begin());
@@ -261,14 +259,14 @@ void McpViewModel::luaTool(const std::string &tool, const Json &arguments, const
 		std::string listText;
 		fromValue(lua->run("functionsList", {}, error).value_or(Value()), listText);
 		Json all;
-		if (!json::parse(listText, all, error) || all.kind != Json::Kind::Array) return refuse("Lua cannot run in this Chimera: its library could not be loaded.");
+		if (!json::parse(listText, all, error) || all.kind != Json::Kind::Array) return refuse(tr("mcp.no_lua"));
 		const Json *libraryToken = arguments.find("library");
 		const Json *searchToken = arguments.find("search");
 		const bool byLibrary = libraryToken != nullptr && libraryToken->kind == Json::Kind::String;
 		const bool bySearch = searchToken != nullptr && searchToken->kind == Json::Kind::String;
 		const int64_t fallback = 200;
 		int64_t limit = 0;
-		if (!number(arguments, "limit", 1, 1000, &fallback, limit)) return refuse("'limit' must be between 1 and 1000.");
+		if (!number(arguments, "limit", 1, 1000, &fallback, limit)) return refuse(tr("mcp.limit_range"));
 		auto lower = [](std::string t) { for (char &c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return t; };
 		auto field = [](const Json &f, const char *k) { const Json *j = f.find(k); return j != nullptr ? j->text : std::string(); };
 		auto flag = [](const Json &f, const char *k) { const Json *j = f.find(k); return j != nullptr && j->boolean; };
@@ -298,7 +296,7 @@ void McpViewModel::luaTool(const std::string &tool, const Json &arguments, const
 			add(item, "returns", Json::string(field(f, "returns")));
 			add(item, "description", Json::string(field(f, "description")));
 			if (!field(f, "example").empty()) add(item, "example", Json::string(field(f, "example")));
-			if (flag(f, "unavailable")) add(item, "unavailable", Json::string("it raises an error in every core"));
+			if (flag(f, "unavailable")) add(item, "unavailable", Json::string(tr("mcp.unavailable_function")));
 			if (flag(f, "deprecated")) add(item, "deprecated", Json::boolean_(true));
 			listed.items.push_back(std::move(item));
 		}
@@ -311,7 +309,7 @@ void McpViewModel::luaTool(const std::string &tool, const Json &arguments, const
 	if (tool == "run_lua")
 	{
 		const std::string code = textOf(arguments, "code");
-		if (trimmed(code).empty()) return refuse("Give 'code': the Lua to run, such as \"return emu.framecount()\".");
+		if (trimmed(code).empty()) return refuse(tr("mcp.give_code"));
 		if (showLuaConsole) showLuaConsole();
 		std::string results, error;
 		const bool ran = lua->runForAgent(code, results, error);
@@ -331,10 +329,10 @@ void McpViewModel::luaTool(const std::string &tool, const Json &arguments, const
 	}
 	/* lua_script */
 	const std::string path = textOf(arguments, "path");
-	if (trimmed(path).empty()) return refuse("Give 'path': the .lua file to run.");
+	if (trimmed(path).empty()) return refuse(tr("mcp.give_path"));
 	const bool stop = flagOf(arguments, "stop");
 	std::error_code ec;
-	if (!stop && !std::filesystem::is_regular_file(pathOf(path), ec)) return refuse("There is no file at '" + path + "'.");
+	if (!stop && !std::filesystem::is_regular_file(pathOf(path), ec)) return refuse(tr("agent.no_file", {path}));
 	if (showLuaConsole) showLuaConsole();
 	const bool running = lua->scriptForAgent(path, stop);
 	Json out = object();
@@ -363,29 +361,29 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 	/* before the agent's first change: a branch of the movie as it is now */
 	if (tool == "keep_work")
 	{
-		if (!session_.hasProject.get()) return answer("no project is open, so there is no work to keep", false);
-		if (!session_.isOpen.get()) return refuse("TAStudio is not open, so a branch could not be saved");
+		if (!session_.hasProject.get()) return answer(tr("mcp.no_work_to_keep"), false);
+		if (!session_.isOpen.get()) return refuse(tr("mcp.no_tastudio"));
 		std::string error;
-		Value made = branches_.run("create", {std::string("Before the agent's changes, ") + localNow("%Y-%m-%d %H:%M")}, error).value_or(Value());
+		Value made = branches_.run("create", {tr("mcp.branch_before_agent", {localNow("%Y-%m-%d %H:%M")})}, error).value_or(Value());
 		int64_t at = -1;
-		if (!fromValue(made, at)) return refuse("a branch could not be saved: " + error);
-		return answer("branch " + std::to_string(at + 1), false);
+		if (!fromValue(made, at)) return refuse(tr("mcp.branch_not_saved", {error}));
+		return answer(tr("mcp.branch_number", {std::to_string(at + 1)}), false);
 	}
 	Json arguments;
 	std::string error;
-	if (!json::parse(argumentsJson, arguments, error) || arguments.kind != Json::Kind::Object) return refuse("The arguments are not a JSON object.");
+	if (!json::parse(argumentsJson, arguments, error) || arguments.kind != Json::Kind::Object) return refuse(tr("mcp.arguments_not_object"));
 
 	/* the tools of the main window: they need no project, or only the project as a file */
-	if (tool == "server_info") return serverInfo ? answer(serverInfo(), false) : refuse(kNoChimera);
+	if (tool == "server_info") return serverInfo ? answer(serverInfo(), false) : refuse(tr("mcp.window_cannot_be_asked"));
 	if (tool == "pause" || tool == "resume")
 	{
-		if (!session_.isOpen.get()) return refuse(kNoMovie);
+		if (!session_.isOpen.get()) return refuse(tr("session.no_project_in_chimera"));
 		session_.run(tool == "pause" ? "pause" : "play", {}, error);
 		return session_.mcpAnswerRunState(id);
 	}
 	if (tool == "save_project")
 	{
-		if (!session_.hasProject.get()) return refuse(kNoMovie);
+		if (!session_.hasProject.get()) return refuse(tr("session.no_project_in_chimera"));
 		namespace fs = std::filesystem;
 		const std::string own = session_.projectPath.get();
 		std::string path, asked = textOf(arguments, "path");
@@ -403,15 +401,15 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 		else if (!own.empty() && fs::exists(own, ec))
 			path = own;
 		else
-			return refuse("This project has not been saved yet: give 'path'.");
+			return refuse(tr("mcp.give_save_path"));
 		if (!flagOf(arguments, "overwrite") && path != own && fs::exists(path, ec))
-			return refuse("A file is already at '" + path + "', so the project was not saved. Give overwrite: true to replace it.");
+			return refuse(tr("mcp.file_exists", {path}));
 		const fs::path folder = fs::path(path).parent_path();
-		if (!folder.empty() && !fs::is_directory(folder, ec)) return refuse("The folder '" + folder.string() + "' does not exist, so the project was not saved.");
+		if (!folder.empty() && !fs::is_directory(folder, ec)) return refuse(tr("mcp.no_folder", {folder.string()}));
 		session_.run("saveProject", {path}, error);
 		return answerAfter([this, answer, path] {
 			if (session_.projectPath.get() != path || session_.unsaved.get())
-				return answer("The project was not saved: " + session_.status.get(), true);
+				return answer(tr("mcp.not_saved", {session_.status.get()}), true);
 			Json saved = object();
 			add(saved, "saved", Json::string(path));
 			add(saved, "movie_length", Json::integer(roll_.frameCount.get()));
@@ -421,23 +419,22 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 	}
 	if (tool == "close_tastudio")
 	{
-		if (!session_.hasProject.get()) return refuse(kNoMovie);
+		if (!session_.hasProject.get()) return refuse(tr("session.no_project_in_chimera"));
 		const bool lost = session_.unsaved.get();
 		if (lost && !flagOf(arguments, "discard_unsaved"))
-			return refuse("The project has changes that are not saved, so it was not closed. Save it with save_project, "
-				"or give discard_unsaved: true to close it without them.");
+			return refuse(tr("mcp.unsaved_not_closed"));
 		session_.run("close", {}, error);
 		return answerAfter([this, answer, lost] {
 			Json closed = object();
 			add(closed, "closed", Json::boolean_(!session_.hasProject.get()));
 			add(closed, "machine_open", Json::boolean_(session_.isOpen.get()));
-			if (lost) add(closed, "note", Json::string("The changes that were not saved are lost."));
+			if (lost) add(closed, "note", Json::string(tr("mcp.changes_lost")));
 			answer(json::write(closed), false);
 		});
 	}
 	if (tool == "create_project") return createProject(id, arguments);
 	if (tool == "lua_functions" || tool == "run_lua" || tool == "lua_script") return luaTool(tool, arguments, answer);
-	if (!movie) return refuse(kNoMovie);
+	if (!movie) return refuse(tr("session.no_project_in_chimera"));
 
 	if (tool == "list_markers")
 	{
@@ -489,8 +486,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 		return answer(json::write(out), false);
 	}
 	/* the engine has checked these against the movie and the controls: a plain step, with its name for the undo history */
-	const std::string label = textOf(arguments, "label").empty() ? std::string("Agent") : textOf(arguments, "label");
-	const char *const notAStep = "The step to apply is not one the engine makes.";
+	const std::string label = textOf(arguments, "label").empty() ? tr("mcp.agent") : textOf(arguments, "label");
 	if (tool == "set_input")
 	{
 		int64_t frame = 0;
@@ -504,7 +500,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 				if (e.kind != Json::Kind::String) good = false;
 				lines += (lines.empty() && &e == &entries->items.front() ? "" : "\n") + e.text;
 			}
-		if (!good || !roll_.run("agentLines", {frame, lines, label}, error)) return refuse(notAStep);
+		if (!good || !roll_.run("agentLines", {frame, lines, label}, error)) return refuse(tr("piano_roll.unknown_step"));
 		Json facts = object();
 		add(facts, "frame", Json::integer(frame));
 		add(facts, "count", Json::integer(static_cast<int64_t>(entries->items.size())));
@@ -515,7 +511,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 		int64_t frame = 0, count = 0;
 		if (!number(arguments, "frame", 0, length, nullptr, frame) || !number(arguments, "count", 1, kMostFrames, nullptr, count) ||
 			!roll_.run("agentInsert", {frame, count, label}, error))
-			return refuse(notAStep);
+			return refuse(tr("piano_roll.unknown_step"));
 		Json facts = object();
 		add(facts, "frame", Json::integer(frame));
 		add(facts, "inserted", Json::integer(count));
@@ -526,7 +522,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 		int64_t frame = 0, count = 0;
 		if (!number(arguments, "frame", 0, std::max<int64_t>(0, length - 1), nullptr, frame) ||
 			!number(arguments, "count", 1, std::max<int64_t>(1, length - frame), nullptr, count) || !roll_.run("agentDelete", {frame, count, label}, error))
-			return refuse(notAStep);
+			return refuse(tr("piano_roll.unknown_step"));
 		Json facts = object();
 		add(facts, "frame", Json::integer(frame));
 		add(facts, "deleted", Json::integer(count));
@@ -534,7 +530,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 	}
 	if (tool == "undo")
 	{
-		if (!roll_.canUndo.get()) return refuse("There is nothing to undo.");
+		if (!roll_.canUndo.get()) return refuse(tr("mcp.nothing_to_undo"));
 		roll_.run("undo", {}, error);
 		Json facts = object();
 		add(facts, "undone", Json::boolean_(true));
@@ -543,7 +539,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 	if (tool == "add_marker")
 	{
 		int64_t frame = 0;
-		if (!number(arguments, "frame", 0, INT32_MAX - 1, nullptr, frame)) return refuse("'frame' must be a frame number, 0 or more.");
+		if (!number(arguments, "frame", 0, INT32_MAX - 1, nullptr, frame)) return refuse(tr("mcp.frame_number"));
 		const std::string text = textOf(arguments, "text");
 		roll_.run("addMarker", {frame, text}, error);
 		Json facts = object();
@@ -555,7 +551,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 	{
 		int64_t frame = 0;
 		if (!number(arguments, "frame", 0, length, nullptr, frame))
-			return refuse("'frame' must be between 0 and the movie's length, " + std::to_string(length) + ".");
+			return refuse(tr("mcp.frame_range", {std::to_string(length)}));
 		if (session_.frame.get() == frame && !session_.running.get())
 		{
 			Json at = object();
@@ -569,7 +565,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 		const int64_t usual = 600;
 		int64_t most = 0;
 		if (!number(arguments, "max_frames", 1, kMostFrames, &usual, most))
-			return refuse("'max_frames' must be between 1 and " + std::to_string(kMostFrames) + ".");
+			return refuse(tr("mcp.max_frames_range", {std::to_string(kMostFrames)}));
 		return session_.mcpPlayUntil(id, argumentsJson, most);
 	}
 	if (tool == "capture_series")
@@ -582,7 +578,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 				if (f.kind != Json::Kind::Number) { frames.clear(); break; }
 				frames.push_back(static_cast<int64_t>(f.number()));
 			}
-		if (frames.empty()) return refuse(notAStep);
+		if (frames.empty()) return refuse(tr("piano_roll.unknown_step"));
 		/* frames past the movie's end added first, empty and in one step, so that playing reaches every one */
 		const int64_t last = *std::max_element(frames.begin(), frames.end());
 		if (last > length) roll_.run("agentInsert", {length, last - length, label}, error);
@@ -592,7 +588,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 	{
 		Value made = branches_.run("create", {textOf(arguments, "note")}, error).value_or(Value());
 		int64_t at = -1;
-		if (!fromValue(made, at)) return refuse("a branch could not be saved: " + error);
+		if (!fromValue(made, at)) return refuse(tr("mcp.branch_not_saved", {error}));
 		Json out = object();
 		add(out, "number", Json::integer(at + 1));
 		return answer(json::write(out), false);
@@ -602,9 +598,8 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 		const int64_t count = branches_.count.get();
 		int64_t n = 0;
 		if (!number(arguments, "number", 1, count, nullptr, n))
-			return refuse(count == 0 ? std::string("The project has no branches.")
-				: "'number' must be between 1 and " + std::to_string(count) + ", the branches list_branches gives.");
-		if (!branches_.run("load", {n - 1}, error)) return refuse("The branch was not loaded: " + error);
+			return refuse(count == 0 ? tr("mcp.no_branches") : tr("mcp.branch_range", {std::to_string(count)}));
+		if (!branches_.run("load", {n - 1}, error)) return refuse(tr("mcp.branch_not_loaded", {error}));
 		return answerAfter([this, answer, n] {
 			Json out = object();
 			add(out, "number", Json::integer(n));
@@ -613,7 +608,7 @@ void McpViewModel::host(uint64_t id, const std::string &tool, const std::string 
 			answer(json::write(out), false);
 		});
 	}
-	refuse("Chimera does not run the tool '" + tool + "' yet.");
+	refuse(tr("mcp.no_tool", {tool}));
 }
 
 } // namespace chimera::vm

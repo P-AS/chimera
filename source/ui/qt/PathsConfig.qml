@@ -29,6 +29,8 @@ ApplicationWindow {
     property var edits: ({})
     property bool recent: true
     function keyOf(system, name) { return system + "|" + name }
+    // what a person reads for a folder: its name is the setting's identifier
+    function labelOf(name) { return qsTrId("paths.folder_" + name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")) }
     function textOf(system, name, path) { const k = win.keyOf(system, name); return k in win.edits ? win.edits[k] : path }
     function edit(system, name, text) {
         const now = Object.assign({}, win.edits)
@@ -128,12 +130,12 @@ ApplicationWindow {
                             folderDialog.system = row.system
                             folderDialog.name = row.name
                             folderDialog.forSystem = forSystem
-                            folderDialog.title = qsTrId("paths_config.set_the_directory_for").arg(row.name)
+                            folderDialog.title = qsTrId("paths_config.set_the_directory_for").arg(win.labelOf(row.name))
                             folderDialog.currentFolder = localFiles.folderUrl(win.vm.run("absolute", [box.text, forSystem]))
                             folderDialog.open()
                         }
                     }
-                    Label { text: row.name; Layout.preferredWidth: 100; elide: Text.ElideRight }
+                    Label { text: win.labelOf(row.name); Layout.preferredWidth: 100; elide: Text.ElideRight }
                 }
             }
             Item { Layout.fillHeight: true }

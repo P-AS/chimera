@@ -5,6 +5,8 @@
  * by the encodings' usual names ("utf-8", "shift_jis", "windows-1252"). One C function, __chimera_string(operation, ...), and the
  * library itself in lua_libraries.cpp. */
 
+#include "chimera/vm/tr.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -388,7 +390,7 @@ int luaChimeraString(lua_State *L)
 			lua_pop(L, 1);
 		}
 		U16 text;
-		if (!decodeBytes(bytes, encoding, text)) return luaL_error(L, "'%s' is not a supported encoding name", encoding.c_str());
+		if (!decodeBytes(bytes, encoding, text)) return luaL_error(L, "%s", tr("lua.bad_encoding", {encoding}).c_str());
 		push16(L, text);
 		return 1;
 	}
@@ -397,7 +399,7 @@ int luaChimeraString(lua_State *L)
 		const U16 text = arg16(L, 2);
 		const std::string encoding = luaL_optstring(L, 3, "utf-8");
 		std::string bytes;
-		if (!encodeText(text, encoding, bytes)) return luaL_error(L, "'%s' is not a supported encoding name", encoding.c_str());
+		if (!encodeText(text, encoding, bytes)) return luaL_error(L, "%s", tr("lua.bad_encoding", {encoding}).c_str());
 		lua_createtable(L, static_cast<int>(bytes.size()), 0);
 		for (size_t i = 0; i < bytes.size(); i++)
 		{
@@ -410,7 +412,7 @@ int luaChimeraString(lua_State *L)
 	{
 		const U16 s = arg16(L, 2);
 		const int64_t width = whole(L, 3);
-		if (width < 1) return luaL_error(L, "bizstring.fold: the width must be 1 or more");
+		if (width < 1) return luaL_error(L, "%s", tr("lua.fold_width").c_str());
 #ifdef _WIN32
 		const U16 sep = lua_isnoneornil(L, 4) ? U16(u"\r\n") : arg16(L, 4);
 #else
@@ -430,7 +432,7 @@ int luaChimeraString(lua_State *L)
 		U16 s = arg16(L, 2);
 		const int64_t length = whole(L, 3);
 		const U16 pad = arg16(L, 4);
-		if (length < 0) return luaL_error(L, "bizstring.%s: the length must not be negative", op.c_str());
+		if (length < 0) return luaL_error(L, "%s", tr("lua.length_negative", {op}).c_str());
 		const char16_t c = pad.empty() ? u' ' : pad[0];
 		if (static_cast<int64_t>(s.size()) < length)
 		{
@@ -461,7 +463,7 @@ int luaChimeraString(lua_State *L)
 		if (blank(L, 2)) return lua_pushnil(L), 1;
 		const U16 s = arg16(L, 2), from = arg16(L, 3);
 		const U16 to = lua_isnoneornil(L, 4) ? U16() : arg16(L, 4);
-		if (from.empty()) return luaL_error(L, "bizstring.replace: the string to replace cannot be empty");
+		if (from.empty()) return luaL_error(L, "%s", tr("lua.replace_empty").c_str());
 		U16 out;
 		size_t at = 0;
 		for (size_t hit = s.find(from); hit != U16::npos; hit = s.find(from, at))
@@ -479,7 +481,7 @@ int luaChimeraString(lua_State *L)
 		const U16 s = arg16(L, 2);
 		const int64_t position = whole(L, 3), count = whole(L, 4);
 		if (position < 0 || count < 0 || position + count > static_cast<int64_t>(s.size()))
-			return luaL_error(L, "bizstring.%s: the position and %s must lie within the string", op.c_str(), op == "substring" ? "length" : "count");
+			return luaL_error(L, "%s", tr(op == "substring" ? "lua.position_length" : "lua.position_count", {op}).c_str());
 		const size_t p = static_cast<size_t>(position), n = static_cast<size_t>(count);
 		push16(L, op == "substring" ? s.substr(p, n) : s.substr(0, p) + s.substr(p + n));
 		return 1;
@@ -518,7 +520,7 @@ int luaChimeraString(lua_State *L)
 		}
 		return 1;
 	}
-	return luaL_error(L, "__chimera_string: no operation %s", op.c_str());
+	return luaL_error(L, "%s", tr("lua.no_operation", {op}).c_str());
 }
 
 } // namespace chimera::vm

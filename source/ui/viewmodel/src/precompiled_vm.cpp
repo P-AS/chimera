@@ -1,4 +1,5 @@
 #include "chimera/vm/precompiled_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -22,10 +23,11 @@ std::string PrecompiledViewModel::sizeText(uint64_t bytes)
 {
 	const double gb = static_cast<double>(bytes) / (1024.0 * 1024 * 1024);
 	char buf[32];
-	if (gb >= 1.0) std::snprintf(buf, sizeof buf, "%.2f GB", gb);
-	else if (static_cast<double>(bytes) / (1024.0 * 1024) >= 1.0) std::snprintf(buf, sizeof buf, "%.1f MB", static_cast<double>(bytes) / (1024.0 * 1024));
-	else std::snprintf(buf, sizeof buf, "%.0f KB", std::floor(static_cast<double>(bytes) / 1024.0 + 0.5));
-	return buf;
+	const double mb = static_cast<double>(bytes) / (1024.0 * 1024);
+	if (gb >= 1.0) std::snprintf(buf, sizeof buf, "%.2f", gb);
+	else if (mb >= 1.0) std::snprintf(buf, sizeof buf, "%.1f", mb);
+	else std::snprintf(buf, sizeof buf, "%.0f", std::floor(static_cast<double>(bytes) / 1024.0 + 0.5));
+	return tr(gb >= 1.0 ? "units.gb" : mb >= 1.0 ? "units.mb" : "units.kb", {buf});
 }
 
 PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("precompiled", dispatcher)
@@ -71,7 +73,7 @@ PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("
 					const long i = std::strtol(one.c_str(), &end, 10);
 					if (end == nullptr || *end != '\0' || i < 0 || static_cast<size_t>(i) >= games_.size())
 					{
-						error = "no row " + one;
+						error = tr("cache.no_row", {one});
 						return {};
 					}
 					picked.push_back(static_cast<size_t>(i));
@@ -86,7 +88,7 @@ PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("
 				if (fs::path(g.folder).parent_path() != fs::path(root.get())) continue;
 				if (g.open || (!compiling.get().empty() && fs::path(g.folder) == fs::path(compiling.get())))
 				{
-					failed += (failed.empty() ? "" : ", ") + g.name + " (in use)";
+					failed += (failed.empty() ? "" : ", ") + tr("cache.in_use_item", {g.name});
 					continue;
 				}
 				std::error_code ec;
@@ -100,8 +102,8 @@ PrecompiledViewModel::PrecompiledViewModel(Dispatcher &dispatcher) : ViewModel("
 				}
 			}
 			survey();
-			status.set("Removed " + std::to_string(removed) + ", freeing " + CacheManagerViewModel::sizeText(freed) + ".");
-			if (!failed.empty()) error = "could not remove: " + failed;
+			status.set(tr("precompiled.removed", removed, {CacheManagerViewModel::sizeText(freed)}));
+			if (!failed.empty()) error = tr("cache.could_not_remove", {failed});
 			return removed;
 		});
 	rootWatch_ = root.changed.connect([this] { survey(); });
@@ -150,10 +152,8 @@ void PrecompiledViewModel::survey()
 		}
 	/* newest first; what nothing dates goes last */
 	std::stable_sort(games_.begin(), games_.end(), [](const Game &a, const Game &b) { return a.compiled > b.compiled; });
-	total.set(CacheManagerViewModel::sizeText(all) + " in " + std::to_string(games_.size()) + (games_.size() == 1 ? " game" : " games"));
-	header.set(games_.empty() ? "No game has compiled code yet. A core that translates its game's code fills this when a project is created."
-		: std::to_string(games_.size()) + (games_.size() == 1 ? " game, " : " games, ") + sizeText(all) +
-			". Removing one means its game is compiled again the next time a project needs it, which costs minutes and never work.");
+	total.set(tr("precompiled.total", static_cast<int64_t>(games_.size()), {CacheManagerViewModel::sizeText(all)}));
+	header.set(games_.empty() ? tr("precompiled.none") : tr("precompiled.header", static_cast<int64_t>(games_.size()), {sizeText(all)}));
 	rows_.reset.emit();
 }
 
@@ -179,14 +179,11 @@ Value PrecompiledViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 6: return static_cast<int64_t>(g.bytes);
 	case 7: return CacheManagerViewModel::sizeText(g.bytes);
 	case 8:
-		return g.open ? std::string("In use: the machine open now.")
-			   : g.unknown ? std::string("Nothing here says which game or core this belongs to - most likely a compile at a boot, or one that was interrupted.")
-			   : g.complete ? std::string()
-							: std::string("Some of the objects this game needs are missing; it will be compiled again when a project needs it.");
+		return g.open ? tr("precompiled.in_use") : g.unknown ? tr("precompiled.unknown") : g.complete ? std::string() : tr("precompiled.incomplete");
 	case 9: return g.folder;
 	/* Chimera's columns: who compiled it, when (local time), the modules, the size, and how it reads */
 	case 10:
-		if (g.core.empty()) return std::string("not recorded");
+		if (g.core.empty()) return tr("precompiled.not_recorded");
 		return g.version.empty() ? g.core : g.core + " " + g.version.substr(0, 12);
 	case 11:
 	{

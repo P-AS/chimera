@@ -10893,3 +10893,55 @@ checks the plural rules of all 26 languages. `translations` checks the
 language a German, French, Chinese, Brazilian, British and Swahili system
 starts in and what `qsTrId` answers. The window opened on a German system
 with no settings showed its menus in German.
+
+## A core's texts are keys of its own tables, with arguments after a 0x1F (2026-10-28)
+
+Following the owner's rules of the same day (the section above), the view
+models' and the engine's texts moved to keys too, about 2,550 in Chimera's
+English table, and `tools/check-texts.py` (the `texts` test) refuses words
+written into the code. Logic that read an English text now reads a flag:
+the data folder's "holds data" choice, a firmware line that names none, the
+project wizard's refused clock.
+
+A core package's texts follow the same rule, in tables the package carries
+(`languages/<code>.json`). The declarations hold keys, and so does what the
+core returns while it runs: the load error, the answers of
+`SuggestSettings` and `ImportMovie`, `GetGameSettings`, and its properties'
+descriptions. Decided here, within the owner's rules:
+
+- No new export and no new declaration: the strings a core already returns
+  may be keys, and the engine resolves every string that is one. A core
+  that has not moved yet still shows its words.
+- A text with arguments is its key, then each argument after a 0x1F byte.
+  The cores write sentences with a file's name or a number in them, and
+  SyndicatFX alone has 438 firmware descriptions that differ only by a file
+  name: one key with `%1` is one text for a translator, not 438. A key with
+  plural forms takes its count first; an argument that is a key is its
+  text, for an emulator's reason inside the core's sentence.
+- The engine keeps a session's package tables after the package is closed
+  (`PackageTexts`), and resolves at the moment it is asked, so a language
+  changed while a game runs changes the game's settings and properties too.
+- In a JSON answer only the key strings are replaced; the rest is kept byte
+  for byte. Parsing and printing it again would have rounded a 64-bit
+  number in a suggested setting.
+- What stays a name: control names, option values, memory domain, bus,
+  register, surface and drive names, a property's name, group and value
+  names (scripts set a property by its value's name), and data a core reads
+  from its emulator or a database.
+
+Tested: `engine_language`'s package part (keys with arguments, plural forms,
+a key inside, a member name and a 64-bit number left alone, a missing
+language shown in English, a declaration field that is no key or lacks an
+argument) was seen to fail with the arguments not filled, with the
+argument count not checked, and with member names resolved. The synthetic
+core's texts are keys now; `synth_texts` (tools/check-core-texts.py) was
+seen to fail on a misspelt key, and the witness's new `E:core-text` reads
+"Synth: The synthetic core refuses this game of 4 bytes." through
+chimera-run. Witness 122/0 in a fresh work folder.
+
+Found on the way, not caused by this and not fixed: in a work folder kept
+from an earlier witness run, `M:mcp:window:changes` fails. The agent saves
+a copy of the project under the same project id, both share one cache
+folder, and the next run's window restores the copy's state history for a
+movie with other input; afterwards no state is found, not even frame 0.
+

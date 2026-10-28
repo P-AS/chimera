@@ -93,10 +93,17 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.columnSpan: 2
                 model: win.vm.rows("presets")
-                textRole: "name"
-                // the preset the command is, or one's own
+                textRole: "key"
+                // the preset the command is, or one's own (the language key of its name)
                 currentIndex: find(win.vm.preset)
-                displayText: win.vm.preset
+                displayText: qsTrId(win.vm.preset)
+                delegate: ItemDelegate {
+                    required property int index
+                    required property string key
+                    width: presetBox.width
+                    text: qsTrId(key)
+                    highlighted: presetBox.highlightedIndex === index
+                }
                 onActivated: (index) => win.vm.run("usePreset", [index])
             }
             Label { text: qsTrId("encode_video.ffmpeg_command") }

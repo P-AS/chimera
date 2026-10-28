@@ -27,6 +27,8 @@
 #include <utility>
 #include <vector>
 
+namespace chimera::lang { class PackageTexts; }
+
 struct cJSON;
 
 class CeGameProperties
@@ -94,8 +96,15 @@ public:
 	const std::vector<std::string> &problems() const { return m_problems; }
 
 	/* The table as the engine understood it, every field filled in, and what
-	 * was left out: {"properties": [...], "problems": [...]}. */
+	 * was left out: {"properties": [...], "problems": [...]}. A description
+	 * is in the language in use: the core gives a key of its package's
+	 * tables (useTexts). */
 	const std::string &describe() const;
+	void useTexts(const chimera::lang::PackageTexts *texts)
+	{
+		m_texts = texts;
+		m_describeStale = true;
+	}
 
 	/* Whether the table said its places move ("dynamic": true). */
 	bool dynamic() const { return m_dynamic; }
@@ -160,6 +169,8 @@ private:
 	std::map<std::string, int32_t> m_byName; // by key(): lower-cased, or exact in a dynamic table
 	mutable std::string m_describe;
 	mutable bool m_describeStale = true;
+	mutable std::string m_describeLanguage;
+	const chimera::lang::PackageTexts *m_texts = nullptr;
 	int32_t m_timer = -1;
 	bool m_dynamic = false;
 	uint64_t m_generation = 0;

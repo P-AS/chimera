@@ -215,7 +215,15 @@ ECL_EXPORT int32_t TraceGetUsedBytes(void) { return g_traceUsed; }
 ECL_EXPORT void TraceClear(void) { g_traceUsed = g_traceLines = g_traceOverflow = 0; }
 ECL_EXPORT const char *TraceGetHeader(void) { return "Where: opcode a b c immediate\tthe registers"; }
 
+/* Why Init refused, for GetLoadError: a key of languages/en.json, each of its
+ * arguments after a TEXT_ARG (docs/translations.md). TEXT_ARG is a string of
+ * its own so the byte after it is never read as more of its hex. */
+#define TEXT_ARG "\x1f"
+static char g_loadError[256];
+ECL_EXPORT const char *GetLoadError(void) { return g_loadError; }
+
 ECL_EXPORT int Init(void) {
+	g_loadError[0] = 0;
 	/* A game's own firmware (SuggestSettings answers it, with the game's own
 	 * setting that calls for it): with that setting on, the game does not
 	 * start unless the file is mounted under its id. */
@@ -237,6 +245,14 @@ ECL_EXPORT int Init(void) {
 	if (len == 4 && memcmp(rom, "DIE!", 4) == 0) {
 		fprintf(stderr, "synth: dying in Init on purpose\n");
 		abort();
+	}
+	/* A rom of the four bytes NO!! is refused with a sentence of the
+	 * package's tables and an argument, which the engine puts into the
+	 * language in use (docs/translations.md). */
+	if (len == 4 && memcmp(rom, "NO!!", 4) == 0) {
+		snprintf(g_loadError, sizeof g_loadError, "error.refused" TEXT_ARG "%u", (unsigned)len);
+		free(rom);
+		return 0;
 	}
 	/* A core that never comes back (2026-10-19): a rom of the four bytes
 	 * SPIN loops forever in Init, and a rom ending in SPINFRAME loops forever
@@ -659,12 +675,12 @@ ECL_EXPORT const char *GetGameProperties(void)
 	return "{ \"gameTimer\": \"Steps\", \"properties\": ["
 		"{ \"name\": \"Status\", \"domain\": \"RAM\", \"offset\": 0, \"type\": \"u8\", \"group\": \"Game\","
 		" \"values\": { \"0\": \"Playing\", \"1\": \"Won\", \"2\": \"Lost\" },"
-		" \"description\": \"Every test rom's result byte\" },"
+		" \"description\": \"property.status\" },"
 		"{ \"name\": \"Cursor.X\", \"domain\": \"RAM\", \"offset\": 1, \"type\": \"u8\", \"group\": \"Cursor\","
-		" \"description\": \"Column of the cell the cursor is in\" },"
+		" \"description\": \"property.cursor_x\" },"
 		"{ \"name\": \"Cursor.Y\", \"domain\": \"RAM\", \"offset\": 2, \"type\": \"u8\", \"group\": \"Cursor\" },"
 		"{ \"name\": \"Steps\", \"domain\": \"RAM\", \"offset\": 4, \"type\": \"u32\", \"group\": \"Game\","
-		" \"description\": \"Moves made; past 1000 the game is lost\" },"
+		" \"description\": \"property.steps\" },"
 		"{ \"name\": \"Started\", \"domain\": \"RAM\", \"offset\": 8, \"type\": \"bool\", \"group\": \"Game\" },"
 		/* every other kind of property, over RAM gridWalker leaves alone (0x100 on),
 		 * so the witness can put each through the engine and read the bytes back */
@@ -682,7 +698,7 @@ ECL_EXPORT const char *GetGameProperties(void)
 		"{ \"name\": \"Test.Nibble\", \"domain\": \"RAM\", \"offset\": 320, \"type\": \"u8\", \"bit\": 4, \"bits\": 4, \"group\": \"Test\" },"
 		/* a value with no place of its own, read through the hidden domain */
 		"{ \"name\": \"Letter\", \"domain\": \"Mailbox\", \"offset\": 0, \"type\": \"string\", \"length\": 4, \"group\": \"Test\","
-		" \"description\": \"What the core left in its mailbox\" }"
+		" \"description\": \"property.letter\" }"
 		"] }";
 }
 
@@ -700,17 +716,17 @@ static char g_import[64 * 1024];
 ECL_EXPORT const char *ImportMovie(void)
 {
 	FILE *f = fopen("movie", "rb");
-	if (!f) return "{\"error\": \"no movie: the file \\\"movie\\\" is not mounted\"}";
+	if (!f) return "{\"error\": \"import.no_movie\"}";
 	static char text[48 * 1024];
 	size_t n = fread(text, 1, sizeof text - 1, f);
 	fclose(f);
 	text[n] = 0;
 	char rom[128] = "";
 	wbx_setting_str("importRom", rom, sizeof rom);
-	if (rom[0] == 0) return "{\"error\": \"which game was this movie made on? (importRom)\"}";
+	if (rom[0] == 0) return "{\"error\": \"import.which_game\"}";
 	FILE *g = fopen(rom, "rb");
 	if (!g) {
-		snprintf(g_import, sizeof g_import, "{\"error\": \"the game %s is not at hand\"}", rom);
+		snprintf(g_import, sizeof g_import, "{\"error\": \"import.game_missing\\u001f%s\"}", rom);
 		return g_import;
 	}
 	fclose(g);
@@ -719,7 +735,7 @@ ECL_EXPORT const char *ImportMovie(void)
 	size_t o = (size_t)snprintf(g_import, sizeof g_import,
 		"{\"format\": \"Synth movie\", \"settings\": {\"initFillByte\": %ld}, \"firmware\": [],"
 		" \"files\": [{\"name\": \"%s\", \"slot\": \"rom\"}],"
-		" \"notes\": [\"imported by the synth core\"], \"input\": \"[Input]\\n", fill, rom);
+		" \"notes\": [\"import.note\"], \"input\": \"[Input]\\n", fill, rom);
 	long frames = 0;
 	for (const char *line = text; *line && o + 32 < sizeof g_import; ) {
 		const char *end = line;
@@ -754,7 +770,7 @@ ECL_EXPORT const char *SuggestSettings(void)
 	uint8_t *rom = read_rom(&romLen);
 	const int nofill = rom && romLen >= 6 && memcmp(rom + romLen - 6, "NOFILL", 6) == 0;
 	free(rom);
-	if (nofill) return "{\"values\": {}, \"note\": \"The synthetic core suggests nothing for this game.\"}";
+	if (nofill) return "{\"values\": {}, \"note\": \"suggest.nothing\"}";
 	char slots[512] = "";
 	FILE *f = fopen("slots", "rb");
 	if (f) {
@@ -762,7 +778,9 @@ ECL_EXPORT const char *SuggestSettings(void)
 		slots[n] = 0;
 		fclose(f);
 	}
-	char seen[160] = "";
+	/* the note: a key, and with disks in the slot map its arguments (how
+	 * many, the first, which also chooses the plural form; the disk speed) */
+	char note[160] = "suggest.fill";
 	const char *disks = strstr(slots, "\"disk\"");
 	if (disks) {
 		int count = 0;
@@ -770,8 +788,8 @@ ECL_EXPORT const char *SuggestSettings(void)
 			if (*p == '.') count++;
 		FILE *track = fopen("disk1.bin", "rb");
 		if (track) fclose(track);
-		snprintf(seen, sizeof seen, " It sees %d disk%s%s, at disk speed %ld.", count, count == 1 ? "" : "s",
-			track ? " and the track of disk1.cue" : "", wbx_setting_long("diskSpeed", 1));
+		snprintf(note, sizeof note, "%s\\u001f%d\\u001f%ld", track ? "suggest.fill_disks_track" : "suggest.fill_disks", count,
+			wbx_setting_long("diskSpeed", 1));
 	}
 	/* what reached it, for a test to see: the game the project gave it, its
 	 * size, and the fill byte in the project's settings (a frontend ignores it) */
@@ -790,16 +808,16 @@ ECL_EXPORT const char *SuggestSettings(void)
 		fclose(f);
 	}
 	snprintf(g_suggestion, sizeof g_suggestion,
-		"{\"values\": {\"initFillByte\": 9}, \"note\": \"The synthetic core suggests a fill of 9.%s\","
-		" \"settings\": [{\"name\": \"gameLogo\", \"display\": \"Game Logo\", \"type\": \"enum\","
+		"{\"values\": {\"initFillByte\": 9}, \"note\": \"%s\","
+		" \"settings\": [{\"name\": \"gameLogo\", \"display\": \"game_setting.gamelogo\", \"type\": \"enum\","
 		" \"options\": [\"off\", \"on\"], \"default\": \"off\", \"sync\": true,"
-		" \"description\": \"This game's own: shows its logo, from a file of its own.\"},"
-		" {\"name\": \"initFillByte\", \"display\": \"Not the package's\", \"type\": \"int\", \"default\": 1}],"
-		" \"firmware\": [{\"id\": \"gamelogo\", \"display\": \"Game logo\", \"name\": \"gamelogo.bin\","
+		" \"description\": \"game_setting.gamelogo.about\"},"
+		" {\"name\": \"initFillByte\", \"display\": \"game_setting.not_the_package_s\", \"type\": \"int\", \"default\": 1}],"
+		" \"firmware\": [{\"id\": \"gamelogo\", \"display\": \"game_firmware.gamelogo\", \"name\": \"gamelogo.bin\","
 		" \"requiredWhen\": {\"setting\": \"gameLogo\", \"is\": \"on\"}},"
-		" {\"id\": \"bios\", \"display\": \"Not the package's\", \"name\": \"other.bin\", \"required\": true}],"
+		" {\"id\": \"bios\", \"display\": \"game_setting.not_the_package_s\", \"name\": \"other.bin\", \"required\": true}],"
 		" \"seen\": \"game %s, %ld bytes, fill %ld\"}",
-		seen, name[0] ? name : "none", size, wbx_setting_long("initFillByte", 0));
+		note, name[0] ? name : "none", size, wbx_setting_long("initFillByte", 0));
 	return g_suggestion;
 }
 

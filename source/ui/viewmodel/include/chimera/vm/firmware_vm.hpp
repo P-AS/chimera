@@ -100,6 +100,8 @@ private:
 		std::string text;
 		/* a core's files folded to this one line */
 		bool folded = false;
+		/* the line that says a core needs no firmware */
+		bool none = false;
 	};
 	/* the cores whose files are folded to one line, while the window is open (issue 368) */
 	std::set<std::string> collapsed_;

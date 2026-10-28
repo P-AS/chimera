@@ -1,4 +1,5 @@
 #include "chimera/vm/encoder_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -23,19 +24,19 @@ const std::vector<EncoderViewModel::Preset> &EncoderViewModel::presets()
 {
 	/* Chimera's (its issue 323): the default, four for YouTube at 2160 lines, four at full colour */
 	static const std::vector<Preset> list = {
-		{"MP4, H.264 and AAC (the default)", kDefaultCommand},
+		{"encoder.preset_mp4", kDefaultCommand},
 		/* at 2160 lines in the shape the machine shows (dar: a PC-98's
 		 * 640x400 is 4:3), square pixels (issue 375) */
-		{"YouTube 2160p, landscape, smooth scaling", "-vf scale=trunc(2160*dar/2)*2:2160:flags=lanczos,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
-		{"YouTube 2160p, landscape, sharp pixels", "-vf scale=trunc(2160*dar/2)*2:2160:flags=neighbor,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
-		{"YouTube 2160p, portrait, smooth scaling", "-vf scale=2160:trunc(2160/dar/2)*2:flags=lanczos,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
-		{"YouTube 2160p, portrait, sharp pixels", "-vf scale=2160:trunc(2160/dar/2)*2:flags=neighbor,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		{"encoder.preset_landscape_smooth", "-vf scale=trunc(2160*dar/2)*2:2160:flags=lanczos,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		{"encoder.preset_landscape_sharp", "-vf scale=trunc(2160*dar/2)*2:2160:flags=neighbor,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		{"encoder.preset_portrait_smooth", "-vf scale=2160:trunc(2160/dar/2)*2:flags=lanczos,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
+		{"encoder.preset_portrait_sharp", "-vf scale=2160:trunc(2160/dar/2)*2:flags=neighbor,setsar=1 -c:v libx264 -crf 12 -pix_fmt yuv420p -c:a aac -b:a 384k -f mp4"},
 		/* full colour, FLAC sound: the RGB ones keep every pixel and sample;
 		 * the YUV one changes some colours by a level (issue 375) */
-		{"H.264 4:4:4 (YUV, nearly lossless), MKV", "-c:v libx264 -qp 0 -pix_fmt yuv444p -c:a flac -f matroska"},
-		{"Lossless H.264 RGB, MKV", "-c:v libx264rgb -qp 0 -pix_fmt rgb24 -c:a flac -f matroska"},
-		{"Lossless H.265 RGB, MKV", "-c:v libx265 -x265-params lossless=1 -pix_fmt gbrp -c:a flac -f matroska"},
-		{"Lossless UT Video, MKV", "-c:v utvideo -pix_fmt gbrp -c:a flac -f matroska"},
+		{"encoder.preset_444", "-c:v libx264 -qp 0 -pix_fmt yuv444p -c:a flac -f matroska"},
+		{"encoder.preset_h264_rgb", "-c:v libx264rgb -qp 0 -pix_fmt rgb24 -c:a flac -f matroska"},
+		{"encoder.preset_h265_rgb", "-c:v libx265 -x265-params lossless=1 -pix_fmt gbrp -c:a flac -f matroska"},
+		{"encoder.preset_ut_video", "-c:v utvideo -pix_fmt gbrp -c:a flac -f matroska"},
 	};
 	return list;
 }
@@ -131,11 +132,11 @@ struct EncoderViewModel::Job
 	}
 	std::string died()
 	{
-		if (!process) return "ffmpeg is not running";
+		if (!process) return tr("encoder.ffmpeg_not_running");
 		process->closeInput();
 		process->wait(5000);
 		const std::string tail = process->errorTail();
-		return "ffmpeg stopped" + (tail.empty() ? std::string(".") : ":\n" + tail);
+		return tail.empty() ? tr("encoder.ffmpeg_stopped") : tr("encoder.ffmpeg_stopped_saying", {tail});
 	}
 	/* finishes the current file; false with why when ffmpeg did not end well */
 	bool close(std::string &why)
@@ -154,7 +155,7 @@ struct EncoderViewModel::Job
 		const std::string tail = process->errorTail();
 		process.reset();
 		if (fed && code == 0) return true;
-		why = "ffmpeg ended with " + std::to_string(code) + (tail.empty() ? std::string(".") : ":\n" + tail);
+		why = tail.empty() ? tr("encoder.ffmpeg_ended", {std::to_string(code)}) : tr("encoder.ffmpeg_ended_saying", {std::to_string(code), tail});
 		return false;
 	}
 	bool video(const uint32_t *px, std::string &why)
@@ -186,7 +187,7 @@ struct EncoderViewModel::Job
 		const int16_t *samples = ce_session_sound(s, &pairs);
 		if (px == nullptr || sw <= 0 || sh <= 0)
 		{
-			why = "The machine drew no picture.";
+			why = tr("encoder.no_picture");
 			return false;
 		}
 		/* what is drawn over it, at its own size, by the window: then made
@@ -197,7 +198,7 @@ struct EncoderViewModel::Job
 			for (uint32_t &p : composed) p |= 0xFF000000u;
 			if (!session->onWindowWait([&] { compose(composed, sw, sh, osd); }))
 			{
-				why = "The window is closing.";
+				why = tr("encoder.window_closing");
 				return false;
 			}
 			px = composed.data();
@@ -312,14 +313,14 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 	expose("levelLeft", "the sound's left peak lately, 0 to 1", levelLeft);
 	expose("levelRight", "the sound's right peak lately, 0 to 1", levelRight);
 	expose("written", "the file last written", written);
-	rows("presets", "Chimera's presets: name, command", presetRows_);
+	rows("presets", "Chimera's presets: the language key of the name, the command", presetRows_);
 
 	auto follow = [this] {
 		/* the box shows the preset the command is; the file the container's extension */
 		const std::string c = commandLine.get();
-		std::string name = "Your own command";
+		std::string name = "encoder.preset_own";
 		for (const Preset &p : presets())
-			if (c == p.command) name = p.name;
+			if (c == p.command) name = p.key;
 		preset.set(name);
 		const std::string ext = extensionOf(c);
 		if (!ext.empty() && !output.get().empty())
@@ -340,7 +341,7 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 		if (!arg(a, 0, i, error)) return {};
 		if (i < 0 || i >= static_cast<int64_t>(presets().size()))
 		{
-			error = "no preset " + std::to_string(i);
+			error = tr("encoder.no_preset", {std::to_string(i)});
 			return {};
 		}
 		commandLine.set(presets()[static_cast<size_t>(i)].command);
@@ -369,39 +370,39 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 		[this](const Args &, std::string &error) -> Value {
 			if (job_)
 			{
-				error = "An encode is already running.";
+				error = tr("encoder.already_running");
 				return {};
 			}
 			if (!session_.hasProject.get())
 			{
-				error = "Open a project first: a video is an encode of a run.";
+				error = tr("main.open_a_project_first_a_video");
 				return {};
 			}
 			if (toFrame.get() < fromFrame.get())
 			{
-				error = "The end marker is before the start marker.";
+				error = tr("session.end_before_start");
 				return {};
 			}
 			if (output.get().empty())
 			{
-				error = "Choose a file to write the video to.";
+				error = tr("encoder.choose_file");
 				return {};
 			}
 			if (splitCommandLine(commandLine.get()).empty())
 			{
-				error = "The ffmpeg command is empty.";
+				error = tr("encoder.empty_command");
 				return {};
 			}
 			const std::string ff = ffmpegPath();
 			if (ff.empty())
 			{
-				error = "There is no ffmpeg beside Chimera (it ships in the bundle's dll folder).";
+				error = tr("encoder.no_ffmpeg");
 				return {};
 			}
 			const fs::path out(output.get());
 			if (out.has_parent_path() && !fs::is_directory(out.parent_path()))
 			{
-				error = "There is no folder " + out.parent_path().string() + ".";
+				error = tr("encoder.no_folder", {out.parent_path().string()});
 				return {};
 			}
 			auto job = std::make_shared<Job>();
@@ -424,14 +425,14 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 			job->to = toFrame.get();
 			if (job->resize && (job->outW < 2 || job->outH < 2))
 			{
-				error = "The size to resize to is too small.";
+				error = tr("encoder.too_small");
 				return {};
 			}
 			job_ = job;
 			phase.set("encoding");
 			framesDone.set(0);
 			frameCount.set(job->to - job->from + 1);
-			status.set("Winding the run to frame " + std::to_string(job->from) + "...");
+			status.set(tr("encoder.winding", {std::to_string(job->from)}));
 			session_.borrowMachine(
 				job->from, job->to, [job](ce_session *s, std::string &why) { return job->frame(s, why); },
 				[job] {
@@ -448,18 +449,17 @@ EncoderViewModel::EncoderViewModel(Dispatcher &dispatcher, SessionViewModel &ses
 					if (ended == 0 && job->error.empty())
 					{
 						phase.set("done");
-						status.set("Wrote " + std::to_string(n) + " frames to " + files + ".");
+						status.set(tr("encoder.wrote", n, {files}));
 					}
 					else if (ended == 1)
 					{
 						phase.set("stopped");
-						status.set("Stopped after " + std::to_string(n) + " of " + std::to_string(frameCount.get()) + " frames." +
-								   (why.empty() ? "" : " " + why));
+						status.set(tr("encoder.stopped_after", {std::to_string(n), std::to_string(frameCount.get())}) + (why.empty() ? "" : " " + why));
 					}
 					else
 					{
 						phase.set("failed");
-						status.set(why.empty() ? std::string("The encode failed.") : why);
+						status.set(why.empty() ? tr("encoder.failed") : why);
 					}
 					levelLeft.set(0);
 					levelRight.set(0);
@@ -521,14 +521,14 @@ std::string EncoderViewModel::progressText(int64_t done, int64_t total, double f
 		for (int at = static_cast<int>(text.size()) - 3; at > 0; at -= 3) text.insert(static_cast<size_t>(at), ",");
 		return n < 0 ? "-" + text : text;
 	};
-	std::string text = "frame " + grouped(done) + " / " + grouped(total) + "   " + grouped(std::llround(framesPerSecond)) + " fps";
+	std::string text = tr("encoder.progress", {grouped(done), grouped(total), grouped(std::llround(framesPerSecond))});
 	if (framesPerSecond > 0)
 	{
 		const int64_t left = static_cast<int64_t>(static_cast<double>(std::max<int64_t>(0, total - done)) / framesPerSecond);
 		const int64_t h = left / 3600, m = left / 60 % 60, sec = left % 60;
-		text += "   about " + (h >= 1 ? std::to_string(h) + "h " + std::to_string(m) + "m"
-								 : left >= 60 ? std::to_string(left / 60) + "m " + std::to_string(sec) + "s" : std::to_string(sec) + "s") +
-				" remaining";
+		text += "   " + tr("encoder.remaining", {h >= 1 ? tr("encoder.hours_minutes", {std::to_string(h), std::to_string(m)})
+										   : left >= 60 ? tr("encoder.minutes_seconds", {std::to_string(left / 60), std::to_string(sec)})
+														: tr("encoder.seconds", {std::to_string(sec)})});
 	}
 	return text;
 }

@@ -14,6 +14,7 @@
 #include <string>
 
 #include "chimera/vm/picture.hpp"
+#include "chimera/vm/tr.hpp"
 
 namespace chimera::qt {
 
@@ -42,14 +43,14 @@ public:
 		vm::Picture::Frame f;
 		if (path.isEmpty() || !picture_.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0)
 		{
-			if (say) say("No screenshot: there is no picture yet");
+			if (say) say(vm::tr("screenshot.no_picture"));
 			return {};
 		}
 		QDir().mkpath(QFileInfo(path).absolutePath());
 		const QImage image(reinterpret_cast<const uchar *>(f.pixels.data()), f.width, f.height, f.width * 4, QImage::Format_RGB32);
 		const bool jpeg = path.endsWith(QStringLiteral(".jpg"), Qt::CaseInsensitive);
 		const bool written = image.save(path, jpeg ? "JPG" : "PNG");
-		if (say) say(written ? QFileInfo(path).fileName().toStdString() + " saved." : "No screenshot: " + path.toStdString() + " could not be written");
+		if (say) say(written ? vm::tr("screenshot.saved", {QFileInfo(path).fileName().toStdString()}) : vm::tr("screenshot.not_written", {path.toStdString()}));
 		return written ? path : QString();
 	}
 	/* a picture the window grabbed (the picture area with what is over it) */
@@ -60,7 +61,7 @@ public:
 		if (path.isEmpty() || image.isNull()) return {};
 		QDir().mkpath(QFileInfo(path).absolutePath());
 		const bool written = image.save(path, path.endsWith(QStringLiteral(".jpg"), Qt::CaseInsensitive) ? "JPG" : "PNG");
-		if (say) say(written ? QFileInfo(path).fileName().toStdString() + " saved." : "No screenshot: " + path.toStdString() + " could not be written");
+		if (say) say(written ? vm::tr("screenshot.saved", {QFileInfo(path).fileName().toStdString()}) : vm::tr("screenshot.not_written", {path.toStdString()}));
 		return written ? path : QString();
 	}
 	std::function<void(const std::string &)> say;

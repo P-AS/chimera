@@ -1,4 +1,5 @@
 #include "chimera/vm/gamepads.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <cstdint>
 
@@ -87,7 +88,7 @@ Gamepads::Gamepads() : api_(std::make_unique<Api>())
 #endif
 	if (a.lib == nullptr)
 	{
-		problem_ = "SDL2 was not found, so there are no gamepads";
+		problem_ = tr("gamepads.no_sdl");
 		return;
 	}
 	const bool all = a.bind(a.Init, "SDL_Init") && a.bind(a.QuitSubSystem, "SDL_QuitSubSystem") &&
@@ -109,7 +110,7 @@ Gamepads::Gamepads() : api_(std::make_unique<Api>())
 		a.bind(a.JoystickGetHat, "SDL_JoystickGetHat") && a.bind(a.JoystickUpdate, "SDL_JoystickUpdate");
 	if (!all)
 	{
-		problem_ = "the SDL2 found is missing a function the gamepads need";
+		problem_ = tr("gamepads.sdl_incomplete");
 		return;
 	}
 	/* the window is never SDL's, so SDL must not wait for its focus */
@@ -120,7 +121,7 @@ Gamepads::Gamepads() : api_(std::make_unique<Api>())
 	a.SetHint("SDL_NO_SIGNAL_HANDLERS", "1");
 	if (a.Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0)
 	{
-		problem_ = std::string("SDL2 would not start its gamepads: ") + a.GetError();
+		problem_ = tr("gamepads.sdl_refused", {a.GetError()});
 		return;
 	}
 	a.started = true;

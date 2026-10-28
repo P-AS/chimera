@@ -1,4 +1,5 @@
 #include "chimera/vm/crash_notes.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -57,9 +58,9 @@ std::string writeFolder(const std::string &notesFolder)
 	std::error_code ec;
 	const fs::path root = fs::absolute(pathOf(notesFolder), ec).lexically_normal().make_preferred();
 	const std::wstring w = root.wstring();
-	if (ec || w.size() >= kFolderChars) return "the crash folder's path is too long: " + notesFolder;
+	if (ec || w.size() >= kFolderChars) return tr("crash.path_too_long", {notesFolder});
 	fs::create_directories(root, ec);
-	if (ec) return "the crash folder could not be made: " + notesFolder;
+	if (ec) return tr("crash.folder_not_made", {notesFolder});
 	std::memset(block + 8, 0, kFolderChars * 2);
 	std::memcpy(block + 8, w.data(), w.size() * sizeof(wchar_t));
 	return "";
@@ -75,7 +76,7 @@ std::string allowModule(const std::wstring &module)
 {
 	HKEY key = nullptr;
 	if (RegCreateKeyExW(HKEY_CURRENT_USER, kHelperModulesKey, 0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS)
-		return "the list of crash helper modules could not be opened";
+		return tr("crash.list_not_opened");
 	std::vector<std::wstring> gone;
 	for (DWORD i = 0;; i++)
 	{
@@ -93,7 +94,7 @@ std::string allowModule(const std::wstring &module)
 	const bool listed = RegQueryValueExW(key, module.c_str(), nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS;
 	const bool ok = listed || RegSetValueExW(key, module.c_str(), 0, REG_DWORD, reinterpret_cast<const BYTE *>(&zero), sizeof zero) == ERROR_SUCCESS;
 	RegCloseKey(key);
-	return ok ? "" : "the crash module could not be allowed for this user";
+	return ok ? "" : tr("crash.not_allowed");
 }
 #endif
 
@@ -112,13 +113,13 @@ std::string arm(const std::string &moduleFolder, const std::string &notesFolder)
 #ifndef _WIN32
 	(void)moduleFolder;
 	(void)notesFolder;
-	return "crash notes are written by Windows Error Reporting";
+	return tr("crash.by_wer");
 #else
 	if (isArmed.load()) return "";
 	std::error_code ec;
 	/* the path as Windows writes it, so the list of helpers holds one entry for one module */
 	const fs::path module = fs::absolute(pathOf(moduleFolder) / kModuleFileName, ec).lexically_normal().make_preferred();
-	if (ec || !fs::exists(module, ec)) return textOf(module) + " is missing";
+	if (ec || !fs::exists(module, ec)) return tr("crash.missing", {textOf(module)});
 	std::memset(block, 0, kBlockSize);
 	put32(0, kMagic);
 	put32(4, kVersion);
@@ -128,12 +129,12 @@ std::string arm(const std::string &moduleFolder, const std::string &notesFolder)
 	using Register = HRESULT(WINAPI *)(PCWSTR, PVOID);
 	const auto reg = reinterpret_cast<Register>(
 		reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "WerRegisterRuntimeExceptionModule")));
-	if (reg == nullptr) return "this Windows has no crash helper modules";
+	if (reg == nullptr) return tr("crash.no_helpers");
 	if (const HRESULT hr = reg(module.wstring().c_str(), block); FAILED(hr))
 	{
 		char text[64];
-		std::snprintf(text, sizeof text, "Windows refused the crash module (0x%08lX)", static_cast<unsigned long>(hr));
-		return text;
+		std::snprintf(text, sizeof text, "0x%08lX", static_cast<unsigned long>(hr));
+		return tr("crash.refused", {text});
 	}
 	isArmed.store(true);
 	prune(notesFolder, kNotesKept);
@@ -188,12 +189,12 @@ std::string Note::summary() const
 {
 	std::string kind = field("kind");
 	if (const size_t cut = kind.find(" ("); cut != std::string::npos && cut > 0) kind = kind.substr(0, cut);
-	if (kind.empty()) kind = "exception " + field("code");
+	if (kind.empty()) kind = tr("crash.exception", {field("code")});
 	const std::string module = field("module");
-	std::string where = module.empty() ? "" : " in " + module + "+" + field("offset");
+	std::string where = module.empty() ? "" : " " + tr("crash.in_module", {module + "+" + field("offset")});
 	if (const std::string who = whoseModule(module); !who.empty()) where += " (" + who + ")";
 	const std::string frame = field("frame");
-	const std::string at = frame.empty() || frame == "0" ? "" : " at frame " + frame;
+	const std::string at = frame.empty() || frame == "0" ? "" : " " + tr("crash.at_frame", {frame});
 	return kind + where + at;
 }
 
@@ -201,13 +202,13 @@ std::string whoseModule(const std::string &module)
 {
 	const std::string m = lowered(module);
 	if (startsWith(m, "nvoglv") || startsWith(m, "nvwgf") || startsWith(m, "nvd3dum") || startsWith(m, "nvlddmkm"))
-		return "the NVIDIA graphics driver";
+		return tr("crash.nvidia");
 	if (startsWith(m, "atiogl") || startsWith(m, "atig6") || startsWith(m, "amdxx") || startsWith(m, "aticfx") || startsWith(m, "amdvlk"))
-		return "the AMD graphics driver";
+		return tr("crash.amd");
 	if (startsWith(m, "ig") && (m.find("icd") != std::string::npos || m.find("xel") != std::string::npos ||
 								   m.find("d3d") != std::string::npos || m.find("gl") != std::string::npos))
-		return "the Intel graphics driver";
-	if (startsWith(m, "vulkan-1") || m == "opengl32.dll") return "the graphics system";
+		return tr("crash.intel");
+	if (startsWith(m, "vulkan-1") || m == "opengl32.dll") return tr("crash.graphics");
 	return "";
 }
 

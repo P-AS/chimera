@@ -56,6 +56,44 @@ engine answers from the table in use; the engine and the view models ask
 through `ce_text`. A key that a table lacks shows as the key itself, so a
 missing one is seen.
 
+## A core's texts
+
+A core package carries its own tables, `languages/<code>.json` inside the
+package, one for every language Chimera has. They have only `texts`; the
+language is Chimera's.
+
+What a core declares holds keys of them, never words: in `waterbox.config`
+a setting's `display`, `description` and `optionLabels`, a firmware entry's
+`display`, `description` and `label`, a preset's `label` and `description`,
+and the texts of `movieImport` (`menu`, the movie's and the files' `label`,
+the options' `display` and `description`); in `file_slots.json` a slot's
+`title`, `help` and `nameHelp`. The engine gives the window these files with
+every key replaced by its text in the language in use
+(`ce_package_entry_texts`).
+
+So does what the core returns while it runs: the reason `Init` refused
+(`GetLoadError`), the answers of `SuggestSettings` and `ImportMovie` (a
+note, notes, a refusal, the game's own settings and firmware), the game's
+settings (`GetGameSettings`) and its properties' descriptions. In a JSON
+answer only the strings that are keys change; the rest stays byte for byte,
+so a number no double holds is not rounded.
+
+A text with arguments is its key followed by each argument after a 0x1F
+byte: `error.not_loaded` 0x1F `game.bin` is the text of `error.not_loaded`
+with `%1` replaced by `game.bin`. In JSON the byte is written `\u001f`; in C
+it is best a string of its own, `#define TEXT_ARG "\x1f"`, written
+`"error.not_loaded" TEXT_ARG "%s"`, since a hex escape takes every hex digit
+after it. A key with plural forms takes its count as the first argument
+(`%n`, which is `%1` too). An argument that is itself a key is its text, so
+an emulator's own reason can sit inside the core's sentence.
+
+A package with no table for the language in use shows its English; a string
+that is no key of either is shown as it is. These stay as they are, being
+names rather than writing: control names, option values, memory domain,
+bus, register, surface and drive names, a property's name, group and value
+names (scripts use them), and data the core reads from its emulator or a
+database, such as an arcade game's dip switches or a patch's name.
+
 ## How the language is chosen
 
 Config > Language lists every table there is, each language named in
@@ -83,12 +121,30 @@ has, and its code in `languages/meson.build`. The engine needs the
 language's plural rule (`pluralForms` and `pluralForm` in
 `source/engine/source/language.cpp`).
 
-## The test
+## The tests
 
 `engine_language` checks every table against English: the same keys and
 no others, the same `%1`..`%9`, the plural forms the language takes, a
 menu's shortcut letter kept, and the spaces and line breaks at either end
 kept. It also checks the plural rules, the filling of `%1`..`%9`, a
-language used and another in its place, and the C calls. `translations`
+language used and another in its place, a core package's texts (keys with
+arguments, plural forms, a key inside, JSON changed only where it holds a
+key, a missing language shown in English) and the C calls. `translations`
 checks the window's side: the language it starts in for a given system, a
 remembered choice, and what `qsTrId` answers.
+
+`texts` (`tools/check-texts.py`) finds words written into Chimera's code:
+string literals that read as words and are none of what the rules leave
+English. Identifiers that happen to be English words (hotkey names, the
+on-screen elements, config names) are listed in
+`tools/check-texts-identifiers.txt`.
+
+For the cores, `test-packages` checks every installed package: a table for
+every language Chimera has, each against the package's English as above,
+and every text field of its declarations a key of it, given every argument
+its text uses. What a core's code returns only the code knows:
+`tools/check-core-texts.py <core checkout>` reads the core's own sources and
+says each key-like string not in its English table and each key of the
+table nothing names. `synth_texts` runs it on the synthetic core, and the
+witness's `E:core-text` sees a refusal the synthetic core gives as a key
+with an argument reach chimera-run in English.

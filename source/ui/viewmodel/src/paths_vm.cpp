@@ -1,4 +1,5 @@
 #include "chimera/vm/paths_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -112,7 +113,7 @@ PathsViewModel::PathsViewModel(Dispatcher &dispatcher) : ViewModel("paths", disp
 			const auto it = std::find_if(d.begin(), d.end(), [&](const auto &e) { return e.first == name; });
 			if (it == d.end())
 			{
-				error = "no folder called " + name;
+				error = tr("paths.no_folder", {name});
 				return {};
 			}
 			if (name == "Base")
@@ -135,7 +136,7 @@ PathsViewModel::PathsViewModel(Dispatcher &dispatcher) : ViewModel("paths", disp
 			const auto it = std::find_if(d.begin(), d.end(), [&](const auto &e) { return e.first == name; });
 			if (system.empty() || it == d.end())
 			{
-				error = system.empty() ? std::string("no system") : "no folder called " + name;
+				error = system.empty() ? tr("paths.no_system") : tr("paths.no_folder", {name});
 				return {};
 			}
 			useSystem(system);
@@ -158,7 +159,7 @@ PathsViewModel::PathsViewModel(Dispatcher &dispatcher) : ViewModel("paths", disp
 		std::string name;
 		if (!arg(a, 0, name, error)) return {};
 		const std::string r = resolve(name);
-		if (r.empty()) error = "no folder called " + name;
+		if (r.empty()) error = tr("paths.no_folder", {name});
 		return r;
 	});
 	command("resolveFor", "where a system's folder is, made absolute (its own, else its base, else the global base)",
@@ -193,7 +194,7 @@ PathsViewModel::PathsViewModel(Dispatcher &dispatcher) : ViewModel("paths", disp
 			const std::string r = resolve(name);
 			if (r.empty())
 			{
-				error = "no folder called " + name;
+				error = tr("paths.no_folder", {name});
 				return {};
 			}
 			std::error_code ec;

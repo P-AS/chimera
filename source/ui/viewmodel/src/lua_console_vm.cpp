@@ -1,4 +1,5 @@
 #include "chimera/vm/lua_console_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -58,8 +59,7 @@ fs::file_time_type writtenAt(const std::string &path)
 }
 
 /* what New Script copies when the Lua folder has no template of its own, as Chimera's */
-const char *const kTemplate = "-- This template lives at `.../Lua/.template.lua`.\nwhile true do\n\t-- Code here will run once when the "
-	"script is loaded, then after each emulated frame.\n\temu.frameadvance();\nend\n";
+const char *const kTemplate = "lua_console.template";
 } // namespace
 
 LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua, std::function<void(const std::string &)> echo)
@@ -119,7 +119,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			fs::create_directories(folder, ec);
 			if (!fs::is_directory(folder, ec))
 			{
-				error = "could not make " + folder.string();
+				error = tr("lua_console.could_not_make", {folder.string()});
 				return {};
 			}
 			const fs::path file = folder / "chimera.lua.sublime-completions";
@@ -127,10 +127,10 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			out << sublimeCompletions();
 			if (!out)
 			{
-				error = "could not write " + file.string();
+				error = tr("session.could_not_write", {file.string()});
 				return {};
 			}
-			status.set("Chimera's Lua completions written to " + file.string());
+			status.set(tr("lua_console.completions_written", {file.string()}));
 			return file.string();
 		});
 	expose("recentSessions", "sessions opened or saved, newest first, a line each", recentSessions, true);
@@ -173,7 +173,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 	command("saveSession", "the list written to the session's file", {}, [this](const Args &, std::string &error) -> Value {
 		if (sessionPath.get().empty())
 		{
-			error = "the session has no file yet: Save Session As";
+			error = tr("lua_console.session_no_file");
 			return {};
 		}
 		saveSession(sessionPath.get(), error);
@@ -192,14 +192,14 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			std::string p;
 			if (!arg(a, 0, p, error)) return {};
 			std::error_code ec;
-			std::string body = kTemplate;
+			std::string body = tr(kTemplate);
 			if (!luaFolder.get().empty())
 			{
 				const fs::path tmpl = pathOf(luaFolder.get()) / ".template.lua";
 				if (!fs::exists(tmpl, ec))
 				{
 					fs::create_directories(pathOf(luaFolder.get()), ec);
-					std::ofstream(tmpl, std::ios::binary) << kTemplate;
+					std::ofstream(tmpl, std::ios::binary) << tr(kTemplate);
 				}
 				std::ifstream in(tmpl, std::ios::binary);
 				if (in)
@@ -213,7 +213,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			out << body;
 			if (!out)
 			{
-				error = "cannot write " + p;
+				error = tr("session.could_not_write", {p});
 				return {};
 			}
 			out.close();
@@ -316,7 +316,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			out << ss.str();
 			if (!in || !out)
 			{
-				error = "cannot copy " + e.path + " to " + p;
+				error = tr("lua_console.cannot_copy", {e.path, p});
 				return {};
 			}
 			out.close();
@@ -371,7 +371,7 @@ LuaConsoleViewModel::LuaConsoleViewModel(Dispatcher &dispatcher, LuaBridge &lua,
 			}
 			else if (r < 0 || r >= n)
 			{
-				error = "no row " + std::to_string(r);
+				error = tr("cache.no_row", {std::to_string(r)});
 				return {};
 			}
 			else if (mode == "toggle")
@@ -813,7 +813,7 @@ bool LuaConsoleViewModel::loadSession(const std::string &path, std::string &erro
 	std::ifstream in(pathOf(path), std::ios::binary);
 	if (!in)
 	{
-		error = "cannot read " + path;
+		error = tr("new_project.cannot_read", {path});
 		return false;
 	}
 	removeAll();
@@ -877,14 +877,14 @@ bool LuaConsoleViewModel::saveSession(const std::string &path, std::string &erro
 	out << body;
 	if (!out)
 	{
-		error = "Failed to save " + fileName(abs);
-		status.set("Lua session could not be saved to " + fileName(abs));
+		error = tr("ram_search.save_failed", {fileName(abs)});
+		status.set(tr("lua_console.session_not_saved", {fileName(abs)}));
 		return false;
 	}
 	sessionPath.set(abs);
 	changes.set(false);
 	addRecent(recentSessions, abs);
-	status.set(fileName(abs) + " saved.");
+	status.set(tr("ram_watch.saved", {fileName(abs)}));
 	return true;
 }
 
@@ -931,8 +931,8 @@ void LuaConsoleViewModel::refresh()
 		active++;
 		paused += lua_.state(e.script) == LuaBridge::State::Paused;
 	}
-	std::string s = std::to_string(total) + (total == 1 ? " script" : " scripts");
-	if (total != 0) s += " (" + std::to_string(active) + " active, " + std::to_string(paused) + " paused)";
+	std::string s = tr("lua_console.scripts", total);
+	if (total != 0) s += " " + tr("lua_console.scripts_state", {std::to_string(active), std::to_string(paused)});
 	if (s != summary.get())
 	{
 		summary.set(s);
@@ -1077,7 +1077,7 @@ void LuaConsoleViewModel::append(const std::string &written)
 	if (forAgent_.size() > kMostForAgent) forAgent_.erase(0, forAgent_.size() - kMostForAgent);
 	if (++messages_ > kMostMessages) return;
 	std::string t = written;
-	if (messages_ == kMostMessages) t += "\nFlood warning! Message cap reached, suppressing output.\n";
+	if (messages_ == kMostMessages) t += "\n" + tr("lua_console.flood") + "\n";
 	const auto before = static_cast<int64_t>(output_.size());
 	bool grewLast = false;
 	size_t at = 0;

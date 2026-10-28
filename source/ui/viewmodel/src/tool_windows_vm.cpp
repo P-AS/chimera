@@ -1,4 +1,5 @@
 #include "chimera/vm/tool_windows_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/vm/json.hpp"
 
@@ -108,7 +109,7 @@ ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("
 			if (!arg(a, 0, tool, error) || !arg(a, 1, name, error) || !arg(a, 2, on, error)) return {};
 			if (!known(name))
 			{
-				error = "no option " + name + ": save, top or float";
+				error = tr("tool_windows.no_option", {name});
 				return {};
 			}
 			Json all = read(settings.get());
@@ -169,13 +170,12 @@ ToolWindowsViewModel::ToolWindowsViewModel(Dispatcher &dispatcher) : ViewModel("
 			{
 				if (kinds[k].empty()) continue;
 				if (kinds[k].size() > 1)
-					out += "say\t" + std::to_string(kinds[k].size()) + " files of one kind were dropped; drop them one at a time\n";
+					out += "say\t" + tr("tool_windows.dropped_many", {std::to_string(kinds[k].size())}) + "\n";
 				else if (k == 1 || k == 5)
 				{
 					const std::string &path = kinds[k][0];
 					const size_t slash = path.find_last_of("/\\");
-					out += "say\t" + (slash == std::string::npos ? path : path.substr(slash + 1)) +
-						": Chimera does not open this kind of file by dropping it\n";
+					out += "say\t" + tr("tool_windows.not_dropped", {slash == std::string::npos ? path : path.substr(slash + 1)}) + "\n";
 				}
 				else
 					out += std::string("open\t") + order[k] + "\t" + kinds[k][0] + "\n";

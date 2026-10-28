@@ -679,7 +679,7 @@ ApplicationWindow {
                         saveDataDialog.files = list.length
                         // one file under its own name; more in a zip named for the game
                         saveDataDialog.selectedFile = "file:///" + (list.length === 1 ? list[0].replace(/^.*[\\/]/, "")
-                                                                                       : root.session.gameName + " (save data).zip")
+                                                                                       : qsTrId("main.save_data_file").arg(root.session.gameName))
                         saveDataDialog.open()
                     }
                 }
@@ -1783,7 +1783,7 @@ ApplicationWindow {
         Label {
             x: (parent.width - width) / 2; y: 166
             textFormat: Text.RichText
-            text: "<a href=\"" + root.help.siteUrl + "\">toolAssisted.run</a>"
+            text: "<a href=\"" + root.help.siteUrl + "\">" + root.help.siteUrl.replace(/^https?:\/\//, "") + "</a>"
             onLinkActivated: (link) => Qt.openUrlExternally(link)
         }
         Button {

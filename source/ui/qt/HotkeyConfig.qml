@@ -24,6 +24,7 @@ ApplicationWindow {
     transientParent: win.mainWindow
 
     readonly property var groups: JSON.parse(win.hotkeys.groups)
+    readonly property var groupKeys: JSON.parse(win.hotkeys.groupKeys)
 
     onVisibleChanged: {
         if (visible) {
@@ -89,6 +90,8 @@ ApplicationWindow {
                     required property string group
                     required property string action
                     required property string keys
+                    required property string labelKey
+                    required property string labelNumber
                     active: entry.group === page.group
                     visible: active
                     function focusBox() { if (entry.item) entry.item.focusBox() }
@@ -96,7 +99,10 @@ ApplicationWindow {
                         width: 250
                         height: 23
                         function focusBox() { box.focusField() }
-                        Label { text: entry.action; width: 120; topPadding: 4; elide: Text.ElideRight }
+                        Label {
+                            text: entry.labelNumber !== "" ? qsTrId(entry.labelKey).arg(entry.labelNumber) : qsTrId(entry.labelKey)
+                            width: 120; topPadding: 4; elide: Text.ElideRight
+                        }
                         BindingBox {
                             id: box
                             width: 120
@@ -144,7 +150,7 @@ ApplicationWindow {
                     event.accepted = true
                     suggestionsPopup.close()
                     if (!win.findAction(search.text) && search.suggestions.length > 0) {
-                        search.text = search.suggestions[0]
+                        search.text = search.suggestions[0].label
                         win.findAction(search.text)
                     }
                 }
@@ -158,11 +164,11 @@ ApplicationWindow {
                         clip: true
                         model: search.suggestions
                         delegate: ItemDelegate {
-                            required property string modelData
+                            required property var modelData
                             width: ListView.view.width
-                            text: modelData
+                            text: modelData.label
                             padding: 3
-                            onClicked: { suggestionsPopup.close(); search.text = modelData; win.findAction(modelData) }
+                            onClicked: { suggestionsPopup.close(); search.text = modelData.label; win.findAction(modelData.action) }
                         }
                     }
                 }
@@ -173,7 +179,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Repeater {
                 model: win.groups
-                delegate: TabButton { required property string modelData; text: modelData; width: implicitWidth }
+                delegate: TabButton { required property int index; text: qsTrId(win.groupKeys[index]); width: implicitWidth }
             }
         }
         Frame {

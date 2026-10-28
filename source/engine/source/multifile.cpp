@@ -9,6 +9,7 @@
  */
 
 #include "chimera/engine.h"
+#include "language.hpp"
 
 #include "file_io.hpp"
 #include "manifest_util.hpp"
@@ -68,19 +69,19 @@ bool validRole(const std::string &r)
  * descriptor a descriptor, independent of what is on disk. */
 bool checkStructure(const std::vector<Entry> &entries, std::string &err)
 {
-	if (entries.empty()) { err = "the descriptor lists no files"; return false; }
+	if (entries.empty()) { err = chimera::lang::tr("multifile.no_files"); return false; }
 	int images = 0, savedata = 0;
 	for (size_t i = 0; i < entries.size(); i++)
 	{
 		const Entry &e = entries[i];
 		if (!bareName(e.name))
 		{
-			err = "file name '" + e.name + "' is not a bare name (files live in the descriptor's folder)";
+			err = chimera::lang::tr("multifile.not_bare", {e.name});
 			return false;
 		}
 		if (!validRole(e.role))
 		{
-			err = "file '" + e.name + "' has unknown role '" + e.role + "'";
+			err = chimera::lang::tr("multifile.unknown_role", {e.name, e.role});
 			return false;
 		}
 		if (e.role == "image") images++;
@@ -89,13 +90,13 @@ bool checkStructure(const std::vector<Entry> &entries, std::string &err)
 		{
 			if (entries[j].name == e.name)
 			{
-				err = "file '" + e.name + "' is listed twice";
+				err = chimera::lang::tr("project.listed_twice", {e.name});
 				return false;
 			}
 		}
 	}
-	if (images == 0) { err = "the descriptor lists no image to load"; return false; }
-	if (savedata > 1) { err = "the descriptor lists more than one savedata file"; return false; }
+	if (images == 0) { err = chimera::lang::tr("multifile.no_image"); return false; }
+	if (savedata > 1) { err = chimera::lang::tr("multifile.savedata_twice"); return false; }
 	return true;
 }
 
@@ -114,8 +115,7 @@ bool checkCueClosure(const std::vector<Entry> &entries, std::string &err)
 			}
 			if (!listed)
 			{
-				err = "'" + e.name + "' references '" + ref +
-					"', which the descriptor does not list - unlisted bytes would reach the machine unhashed";
+				err = chimera::lang::tr("multifile.unlisted_reference", {e.name, ref});
 				return false;
 			}
 		}
@@ -148,16 +148,16 @@ ce_multifile *ce_multifile_open(const char *descriptor_path, const char **error_
 	std::vector<uint8_t> raw;
 	if (!chimera::readFile(descriptor_path, raw))
 	{
-		return fail(std::string("cannot read ") + descriptor_path);
+		return fail(chimera::lang::tr("new_project.cannot_read", {descriptor_path}));
 	}
 
 	cJSON *root = cJSON_ParseWithLength(reinterpret_cast<const char *>(raw.data()), raw.size());
-	if (root == nullptr) return fail("the descriptor is not valid JSON");
+	if (root == nullptr) return fail(chimera::lang::tr("multifile.not_json"));
 	cJSON *files = cJSON_GetObjectItemCaseSensitive(root, "files");
 	if (!cJSON_IsArray(files))
 	{
 		cJSON_Delete(root);
-		return fail("the descriptor has no \"files\" array");
+		return fail(chimera::lang::tr("multifile.no_array"));
 	}
 
 	std::vector<Entry> entries;
@@ -169,7 +169,7 @@ ce_multifile *ce_multifile_open(const char *descriptor_path, const char **error_
 		if (!cJSON_IsString(name) || !cJSON_IsString(sha1) || !cJSON_IsString(role))
 		{
 			cJSON_Delete(root);
-			return fail("every file entry needs string \"name\", \"sha1\" and \"role\"");
+			return fail(chimera::lang::tr("multifile.entry_fields"));
 		}
 		Entry e;
 		e.name = name->valuestring;
@@ -179,7 +179,7 @@ ce_multifile *ce_multifile_open(const char *descriptor_path, const char **error_
 		{
 			std::string bad = e.name;
 			cJSON_Delete(root);
-			return fail("file '" + bad + "' has a malformed sha1");
+			return fail(chimera::lang::tr("project.file_sha1", {bad}));
 		}
 		entries.push_back(std::move(e));
 	}
@@ -342,7 +342,7 @@ int32_t ce_multifile_save(
 		e.path = folder + e.name;
 		if (!hashEntry(e, e.sha1))
 		{
-			return fail("file '" + e.name + "' is not in the descriptor's folder");
+			return fail(chimera::lang::tr("multifile.not_in_folder", {e.name}));
 		}
 	}
 	if (!checkCueClosure(entries, err)) return fail(std::move(err));
@@ -359,7 +359,7 @@ int32_t ce_multifile_save(
 	}
 	char *text = cJSON_Print(root);
 	cJSON_Delete(root);
-	if (text == nullptr) return fail("could not serialize the descriptor");
+	if (text == nullptr) return fail(chimera::lang::tr("multifile.not_serialized"));
 	std::string out = text;
 	cJSON_free(text);
 	out += "\n";
@@ -367,7 +367,7 @@ int32_t ce_multifile_save(
 	if (!chimera::writeFile(descriptor_path,
 		reinterpret_cast<const uint8_t *>(out.data()), out.size()))
 	{
-		return fail(std::string("cannot write ") + descriptor_path);
+		return fail(chimera::lang::tr("session.could_not_write", {descriptor_path}));
 	}
 	return 0;
 }

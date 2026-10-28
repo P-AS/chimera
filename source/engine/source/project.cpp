@@ -22,8 +22,11 @@
 #include "project_check.hpp"
 #include "sha1.hpp"
 #include "thread_string.hpp"
+#include "language.hpp"
 
 #include "../../extern/cjson/cJSON.h"
+
+using chimera::lang::tr;
 
 #include <algorithm>
 #include <cctype>
@@ -381,17 +384,18 @@ static cJSON *inputsOf(const std::string &lump, int depth)
 	return out;
 }
 
-/* "inputs" back to the text block; false with why for one that is not one */
-static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
+/* "inputs" back to the text block; false with why for one that is not one: the
+ * key of a sentence whose %1 is the field, and its %2 an unknown key's name */
+static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why, std::string &unknown)
 {
 	if (!cJSON_IsObject(inputs))
 	{
-		why = "is not an object";
+		why = "project.inputs_not_object";
 		return false;
 	}
 	if (const char *k = unknownKey(inputs, { "columns", "key", "entries" }))
 	{
-		why = std::string("has an unknown key \"") + k + "\"";
+		why = "project.inputs_unknown_key"; unknown = k;
 		return false;
 	}
 	const cJSON *columns = cJSON_GetObjectItemCaseSensitive(inputs, "columns");
@@ -399,7 +403,7 @@ static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
 	const cJSON *entries = cJSON_GetObjectItemCaseSensitive(inputs, "entries");
 	if (columns != nullptr && key != nullptr)
 	{
-		why = "has both \"columns\" and \"key\"";
+		why = "project.inputs_columns_and_key";
 		return false;
 	}
 	lump = "[Input]\n";
@@ -408,14 +412,14 @@ static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
 		std::vector<std::vector<std::string>> groups;
 		if (!cJSON_IsArray(columns))
 		{
-			why = "\"columns\" is not a list of groups";
+			why = "project.inputs_columns_not_list";
 			return false;
 		}
 		for (const cJSON *g = columns->child; g != nullptr; g = g->next)
 		{
 			if (!cJSON_IsArray(g))
 			{
-				why = "\"columns\" holds a group that is not a list of names";
+				why = "project.inputs_group_not_list";
 				return false;
 			}
 			groups.emplace_back();
@@ -423,7 +427,7 @@ static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
 			{
 				if (!cJSON_IsString(n))
 				{
-					why = "\"columns\" holds a name that is not a string";
+					why = "project.inputs_name_not_string";
 					return false;
 				}
 				groups.back().push_back(n->valuestring);
@@ -435,7 +439,7 @@ static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
 	{
 		if (!cJSON_IsString(key))
 		{
-			why = "\"key\" is not a string";
+			why = "project.inputs_key_not_string";
 			return false;
 		}
 		lump += std::string("LogKey:") + key->valuestring + "\n";
@@ -444,7 +448,7 @@ static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
 	{
 		if (!cJSON_IsArray(entries))
 		{
-			why = "\"entries\" is not a list";
+			why = "project.inputs_entries_not_list";
 			return false;
 		}
 		for (const cJSON *e = entries->child; e != nullptr; e = e->next)
@@ -452,7 +456,7 @@ static bool lumpOf(const cJSON *inputs, std::string &lump, std::string &why)
 			/* a line that is not an entry would be dropped when the movie is read */
 			if (!cJSON_IsString(e) || e->valuestring[0] != '|' || std::strchr(e->valuestring, '\n') != nullptr)
 			{
-				why = "\"entries\" holds one that is not a frame's input (\"|...|\")";
+				why = "project.inputs_entry_not_input";
 				return false;
 			}
 			lump += std::string(e->valuestring) + "\n";
@@ -469,19 +473,19 @@ static ce_project *openProject(const char *path, const char **error_out)
 	std::vector<uint8_t> raw;
 	if (!chimera::readFile(path, raw))
 	{
-		fail(std::string("cannot read ") + path, error_out);
+		fail(tr("new_project.cannot_read", {path}), error_out);
 		return nullptr;
 	}
 	cJSON *root = cJSON_ParseWithLength(reinterpret_cast<const char *>(raw.data()), raw.size());
 	if (root == nullptr)
 	{
-		fail("the project is not valid JSON", error_out);
+		fail(tr("project.not_json"), error_out);
 		return nullptr;
 	}
 	if (!cJSON_IsObject(root))
 	{
 		cJSON_Delete(root);
-		fail("the project is not a JSON object", error_out);
+		fail(tr("project.not_object"), error_out);
 		return nullptr;
 	}
 
@@ -504,7 +508,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 		{
 			if (item->string != nullptr && std::strcmp(item->string, k) == 0) { ok = true; break; }
 		}
-		if (!ok) return reject(std::string("unknown project key \"") + (item->string != nullptr ? item->string : "") + "\"");
+		if (!ok) return reject(tr("project.unknown_key", {item->string != nullptr ? item->string : ""}));
 	}
 
 	auto *p = new ce_project();
@@ -517,7 +521,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 	cJSON *j;
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "id")) != nullptr)
 	{
-		if (!cJSON_IsString(j)) return rejectP("\"id\" must be a string");
+		if (!cJSON_IsString(j)) return rejectP(tr("project.must_be_string", {"id"}));
 		p->id = j->valuestring;
 	}
 	/* A project written before ids, or by hand, has none. It gets one made
@@ -536,117 +540,117 @@ static ce_project *openProject(const char *path, const char **error_out)
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "title")) != nullptr)
 	{
-		if (!cJSON_IsString(j)) return rejectP("\"title\" is not a string");
+		if (!cJSON_IsString(j)) return rejectP(tr("project.not_string", {"title"}));
 		p->title = j->valuestring;
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "description")) != nullptr)
 	{
-		if (!cJSON_IsString(j)) return rejectP("\"description\" is not a string");
+		if (!cJSON_IsString(j)) return rejectP(tr("project.not_string", {"description"}));
 		p->description = j->valuestring;
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "core")) != nullptr)
 	{
-		if (!cJSON_IsObject(j)) return rejectP("\"core\" is not an object");
-		if (const char *k = unknownKey(j, { "name", "version", "sha1" })) return rejectP(std::string("unknown key \"") + k + "\" in \"core\"");
+		if (!cJSON_IsObject(j)) return rejectP(tr("project.field_not_object", {"core"}));
+		if (const char *k = unknownKey(j, { "name", "version", "sha1" })) return rejectP(tr("project.unknown_key_in", {k, "\"core\""}));
 		cJSON *name = cJSON_GetObjectItemCaseSensitive(j, "name");
 		cJSON *version = cJSON_GetObjectItemCaseSensitive(j, "version");
 		cJSON *sha1 = cJSON_GetObjectItemCaseSensitive(j, "sha1");
 		if (!cJSON_IsString(name) || !cJSON_IsString(version) || !cJSON_IsString(sha1))
 		{
-			return rejectP("\"core\" needs string \"name\", \"version\" and \"sha1\"");
+			return rejectP(tr("project.core_fields"));
 		}
 		p->coreName = name->valuestring;
 		p->coreVersion = version->valuestring;
 		p->coreSha1 = upperHex(sha1->valuestring);
 		if (!p->coreSha1.empty() && !validSha1(p->coreSha1))
 		{
-			return rejectP("the core's sha1 is malformed");
+			return rejectP(tr("project.core_sha1"));
 		}
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "rerecords")) != nullptr)
 	{
-		if (!cJSON_IsNumber(j) || j->valuedouble < 0) return rejectP("\"rerecords\" is not a count");
+		if (!cJSON_IsNumber(j) || j->valuedouble < 0) return rejectP(tr("project.rerecords"));
 		p->rerecords = static_cast<uint64_t>(j->valuedouble);
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "clockStart")) != nullptr)
 	{
 		if (!cJSON_IsString(j) || !parseUtcSecond(j->valuestring, p->clockStart))
-			return rejectP("\"clockStart\" is not a time written as 2017-05-27T12:44:28Z between 1970 and 2200");
+			return rejectP(tr("project.clock_start"));
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "files")) != nullptr)
 	{
-		if (!cJSON_IsArray(j)) return rejectP("\"files\" is not an array");
+		if (!cJSON_IsArray(j)) return rejectP(tr("project.not_array", {"files"}));
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
-			if (const char *k = unknownKey(item, { "name", "sha1", "slot" })) return rejectP(std::string("unknown key \"") + k + "\" in a file");
+			if (const char *k = unknownKey(item, { "name", "sha1", "slot" })) return rejectP(tr("project.unknown_key_in", {k, tr("project.a_file")}));
 			cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
 			cJSON *sha1 = cJSON_GetObjectItemCaseSensitive(item, "sha1");
 			cJSON *slot = cJSON_GetObjectItemCaseSensitive(item, "slot");
 			if (!cJSON_IsString(name) || !cJSON_IsString(sha1) || !cJSON_IsString(slot))
 			{
-				return rejectP("every file entry needs string \"name\", \"sha1\" and \"slot\"");
+				return rejectP(tr("project.file_fields"));
 			}
 			FileEntry e;
 			e.name = name->valuestring;
 			e.sha1 = upperHex(sha1->valuestring);
 			e.slot = slot->valuestring;
-			if (!bareName(e.name)) return rejectP("file name '" + e.name + "' is not a bare name");
-			if (!validSha1(e.sha1)) return rejectP("file '" + e.name + "' has a malformed sha1");
-			if (!validSlot(e.slot)) return rejectP("file '" + e.name + "' has a malformed slot id '" + e.slot + "'");
+			if (!bareName(e.name)) return rejectP(tr("project.not_bare", {e.name}));
+			if (!validSha1(e.sha1)) return rejectP(tr("project.file_sha1", {e.name}));
+			if (!validSlot(e.slot)) return rejectP(tr("project.file_slot", {e.name, e.slot}));
 			for (const FileEntry &prior : p->files)
 			{
-				if (prior.name == e.name) return rejectP("file '" + e.name + "' is listed twice");
+				if (prior.name == e.name) return rejectP(tr("project.listed_twice", {e.name}));
 			}
 			p->files.push_back(std::move(e));
 		}
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "settings")) != nullptr)
 	{
-		if (!cJSON_IsObject(j)) return rejectP("\"settings\" is not an object");
+		if (!cJSON_IsObject(j)) return rejectP(tr("project.field_not_object", {"settings"}));
 		cJSON_Delete(p->settings);
 		p->settings = cJSON_Duplicate(j, 1);
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "firmware")) != nullptr)
 	{
-		if (!cJSON_IsArray(j)) return rejectP("\"firmware\" is not an array");
+		if (!cJSON_IsArray(j)) return rejectP(tr("project.not_array", {"firmware"}));
 		cJSON_Delete(p->firmware);
 		p->firmware = cJSON_Duplicate(j, 1);
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "coreCache")) != nullptr)
 	{
-		if (!cJSON_IsArray(j)) return rejectP("\"coreCache\" is not an array");
+		if (!cJSON_IsArray(j)) return rejectP(tr("project.not_array", {"coreCache"}));
 		cJSON_Delete(p->coreCache);
 		p->coreCache = cJSON_Duplicate(j, 1);
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "tastudio")) != nullptr)
 	{
-		if (!cJSON_IsObject(j)) return rejectP("\"tastudio\" is not an object");
+		if (!cJSON_IsObject(j)) return rejectP(tr("project.field_not_object", {"tastudio"}));
 		p->tastudio = cJSON_Duplicate(j, 1);
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "inputs")) != nullptr)
 	{
 		std::string why;
-		if (!lumpOf(j, p->log, why)) return rejectP("\"inputs\" " + why);
+		if (std::string unknown; !lumpOf(j, p->log, why, unknown)) return rejectP(tr(why.c_str(), {"\"inputs\"", unknown}));
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "markers")) != nullptr)
 	{
-		if (!cJSON_IsArray(j)) return rejectP("\"markers\" is not an array");
+		if (!cJSON_IsArray(j)) return rejectP(tr("project.not_array", {"markers"}));
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
-			if (const char *k = unknownKey(item, { "frame", "text", "keepState" })) return rejectP(std::string("unknown key \"") + k + "\" in a marker");
+			if (const char *k = unknownKey(item, { "frame", "text", "keepState" })) return rejectP(tr("project.unknown_key_in", {k, tr("project.a_marker")}));
 			cJSON *frame = cJSON_GetObjectItemCaseSensitive(item, "frame");
 			cJSON *text = cJSON_GetObjectItemCaseSensitive(item, "text");
 			cJSON *keep = cJSON_GetObjectItemCaseSensitive(item, "keepState");
 			if (!cJSON_IsNumber(frame) || !cJSON_IsString(text))
 			{
-				return rejectP("every marker needs number \"frame\" and string \"text\"");
+				return rejectP(tr("project.marker_fields"));
 			}
 			Marker m;
 			m.frame = static_cast<int64_t>(frame->valuedouble);
 			m.text = text->valuestring;
 			if (keep != nullptr)
 			{
-				if (!cJSON_IsBool(keep)) return rejectP("a marker's \"keepState\" is not a boolean");
+				if (!cJSON_IsBool(keep)) return rejectP(tr("project.marker_keep_state"));
 				m.keepState = cJSON_IsTrue(keep);
 			}
 			p->markers.push_back(std::move(m));
@@ -667,10 +671,10 @@ static ce_project *openProject(const char *path, const char **error_out)
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "branches")) != nullptr)
 	{
-		if (!cJSON_IsArray(j)) return rejectP("\"branches\" is not an array");
+		if (!cJSON_IsArray(j)) return rejectP(tr("project.not_array", {"branches"}));
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
-			if (const char *k = unknownKey(item, { "name", "frame", "inputs", "time", "markers" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch");
+			if (const char *k = unknownKey(item, { "name", "frame", "inputs", "time", "markers" })) return rejectP(tr("project.unknown_key_in", {k, tr("project.a_branch")}));
 			cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
 			cJSON *frame = cJSON_GetObjectItemCaseSensitive(item, "frame");
 			cJSON *inputs = cJSON_GetObjectItemCaseSensitive(item, "inputs");
@@ -678,29 +682,29 @@ static ce_project *openProject(const char *path, const char **error_out)
 			cJSON *markers = cJSON_GetObjectItemCaseSensitive(item, "markers");
 			if (!cJSON_IsString(name) || !cJSON_IsNumber(frame) || inputs == nullptr)
 			{
-				return rejectP("every branch needs string \"name\", number \"frame\" and its \"inputs\"");
+				return rejectP(tr("project.branch_fields"));
 			}
 			Branch b;
 			b.name = name->valuestring;
 			b.frame = static_cast<int64_t>(frame->valuedouble);
-			if (std::string why; !lumpOf(inputs, b.log, why)) return rejectP("a branch's \"inputs\" " + why);
+			if (std::string why, unknown; !lumpOf(inputs, b.log, why, unknown)) return rejectP(tr(why.c_str(), {tr("project.branch_inputs"), unknown}));
 			if (time != nullptr)
 			{
-				if (!cJSON_IsString(time)) return rejectP("a branch's \"time\" is not a string");
+				if (!cJSON_IsString(time)) return rejectP(tr("project.branch_time"));
 				b.time = time->valuestring;
 			}
 			if (markers != nullptr)
 			{
-				if (!cJSON_IsArray(markers)) return rejectP("a branch's \"markers\" is not an array");
+				if (!cJSON_IsArray(markers)) return rejectP(tr("project.branch_markers"));
 				for (cJSON *m = markers->child; m != nullptr; m = m->next)
 				{
-					if (const char *k = unknownKey(m, { "frame", "text", "keepState" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch's marker");
+					if (const char *k = unknownKey(m, { "frame", "text", "keepState" })) return rejectP(tr("project.unknown_key_in", {k, tr("project.a_branch_marker")}));
 					cJSON *mFrame = cJSON_GetObjectItemCaseSensitive(m, "frame");
 					cJSON *mText = cJSON_GetObjectItemCaseSensitive(m, "text");
 					cJSON *mKeep = cJSON_GetObjectItemCaseSensitive(m, "keepState");
 					if (!cJSON_IsNumber(mFrame) || !cJSON_IsString(mText))
 					{
-						return rejectP("every branch marker needs number \"frame\" and string \"text\"");
+						return rejectP(tr("project.branch_marker_fields"));
 					}
 					Marker mk;
 					mk.frame = static_cast<int64_t>(mFrame->valuedouble);
@@ -708,7 +712,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 					/* as for the project's own markers: written only when false */
 					if (mKeep != nullptr)
 					{
-						if (!cJSON_IsBool(mKeep)) return rejectP("a branch marker's \"keepState\" is not a boolean");
+						if (!cJSON_IsBool(mKeep)) return rejectP(tr("project.branch_marker_keep_state"));
 						mk.keepState = cJSON_IsTrue(mKeep);
 					}
 					b.markers.push_back(std::move(mk));
@@ -719,19 +723,19 @@ static ce_project *openProject(const char *path, const char **error_out)
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "subtitles")) != nullptr)
 	{
-		if (!cJSON_IsArray(j)) return rejectP("\"subtitles\" is not an array");
+		if (!cJSON_IsArray(j)) return rejectP(tr("project.not_array", {"subtitles"}));
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
-			if (!cJSON_IsString(item)) return rejectP("every subtitle is a string");
+			if (!cJSON_IsString(item)) return rejectP(tr("project.subtitle_string"));
 			p->subtitles.push_back(item->valuestring);
 		}
 	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "headers")) != nullptr)
 	{
-		if (!cJSON_IsObject(j)) return rejectP("\"headers\" is not an object");
+		if (!cJSON_IsObject(j)) return rejectP(tr("project.field_not_object", {"headers"}));
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
-			if (!cJSON_IsString(item)) return rejectP("every header value is a string");
+			if (!cJSON_IsString(item)) return rejectP(tr("project.header_string"));
 			p->headers.emplace_back(item->string != nullptr ? item->string : "", item->valuestring);
 		}
 	}
@@ -749,7 +753,7 @@ ce_project *ce_project_open(const char *path, const char **error_out)
 	}
 	catch (const std::bad_alloc &)
 	{
-		*g_error = "there was not enough memory to read the project";
+		*g_error = tr("project.no_memory");
 		if (error_out != nullptr) *error_out = g_error->c_str();
 		return nullptr;
 	}
@@ -773,8 +777,7 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 			}
 			if (!listed)
 			{
-				return failInt("'" + e.name + "' references '" + ref +
-					"', which the project does not list - unlisted bytes would reach the machine unhashed", error_out);
+				return failInt(tr("project.unlisted_reference", {e.name, ref}), error_out);
 			}
 		}
 	}
@@ -867,14 +870,14 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 
 	char *text = cJSON_Print(root);
 	cJSON_Delete(root);
-	if (text == nullptr) return failInt("could not serialize the project", error_out);
+	if (text == nullptr) return failInt(tr("project.not_serialized"), error_out);
 	std::string out = text;
 	cJSON_free(text);
 	out += "\n";
 
 	if (!chimera::writeFile(path, reinterpret_cast<const uint8_t *>(out.data()), out.size()))
 	{
-		return failInt(std::string("cannot write ") + path, error_out);
+		return failInt(tr("session.could_not_write", {path}), error_out);
 	}
 	return 0;
 }
@@ -927,7 +930,7 @@ int32_t ce_project_set_settings_text(ce_project *p, const char *json, const char
 	if (parsed == nullptr || !cJSON_IsObject(parsed))
 	{
 		cJSON_Delete(parsed);
-		return failInt("settings must be a JSON object", error_out);
+		return failInt(tr("project.must_be", {"settings", tr("project.json_object")}), error_out);
 	}
 	cJSON_Delete(p->settings);
 	p->settings = parsed;
@@ -950,7 +953,7 @@ int32_t ce_project_set_core_cache_text(ce_project *p, const char *json, const ch
 	if (parsed == nullptr || !cJSON_IsArray(parsed))
 	{
 		cJSON_Delete(parsed);
-		return failInt("coreCache must be a JSON array", error_out);
+		return failInt(tr("project.must_be", {"coreCache", tr("project.json_array")}), error_out);
 	}
 	cJSON_Delete(p->coreCache);
 	p->coreCache = parsed;
@@ -979,7 +982,7 @@ int32_t ce_project_set_tastudio_text(ce_project *p, const char *json, const char
 	if (parsed == nullptr || !cJSON_IsObject(parsed))
 	{
 		cJSON_Delete(parsed);
-		return failInt("tastudio must be a JSON object", error_out);
+		return failInt(tr("project.must_be", {"tastudio", tr("project.json_object")}), error_out);
 	}
 	cJSON_Delete(p->tastudio);
 	p->tastudio = parsed;
@@ -1002,7 +1005,7 @@ int32_t ce_project_set_firmware_text(ce_project *p, const char *json, const char
 	if (parsed == nullptr || !cJSON_IsArray(parsed))
 	{
 		cJSON_Delete(parsed);
-		return failInt("firmware must be a JSON array", error_out);
+		return failInt(tr("project.must_be", {"firmware", tr("project.json_array")}), error_out);
 	}
 	cJSON_Delete(p->firmware);
 	p->firmware = parsed;
@@ -1242,16 +1245,15 @@ int32_t ce_project_file_add(ce_project *p, const char *name, const char *slot, c
 	FileEntry e;
 	e.name = name != nullptr ? name : "";
 	e.slot = slot != nullptr ? slot : "";
-	if (!bareName(e.name)) return failInt("file name '" + e.name + "' is not a bare name", error_out);
-	if (!validSlot(e.slot)) return failInt("'" + e.name + "' has a malformed slot id '" + e.slot + "'", error_out);
+	if (!bareName(e.name)) return failInt(tr("project.not_bare", {e.name}), error_out);
+	if (!validSlot(e.slot)) return failInt(tr("project.file_slot", {e.name, e.slot}), error_out);
 	for (const FileEntry &prior : p->files)
 	{
-		if (prior.name == e.name) return failInt("file '" + e.name + "' is already listed", error_out);
+		if (prior.name == e.name) return failInt(tr("project.already_listed", {e.name}), error_out);
 	}
 	if (source_path == nullptr || !chimera::sha1HexOfFile(source_path, &e.size, e.actualSha1))
 	{
-		return failInt("cannot read '" + e.name + "' from " +
-			(source_path != nullptr ? source_path : "(null)"), error_out);
+		return failInt(tr("project.cannot_read_from", {e.name, source_path != nullptr ? source_path : tr("engine.no_path")}), error_out);
 	}
 	e.sha1 = e.actualSha1;
 	e.status = 0;
@@ -1281,14 +1283,14 @@ int32_t ce_project_file_add(ce_project *p, const char *name, const char *slot, c
 		if (listed) continue;
 		if (!bareName(ref))
 		{
-			return failCue("'" + cueName + "': the cue references '" + ref + "', which is not a bare name");
+			return failCue(tr("project.cue_not_bare", {cueName, ref}));
 		}
 		FileEntry s;
 		s.name = ref;
 		s.slot = "support";
 		if (!chimera::sha1HexOfFile((folder + ref).c_str(), &s.size, s.actualSha1))
 		{
-			return failCue("'" + cueName + "' references '" + ref + "', which is not next to it - a cue's files are added together");
+			return failCue(tr("project.cue_not_beside", {cueName, ref}));
 		}
 		s.sha1 = s.actualSha1;
 		s.status = 0;
@@ -1357,12 +1359,12 @@ int32_t ce_project_file_resolve(ce_project *p, int32_t index, const char *path, 
 	if (error_out != nullptr) *error_out = nullptr;
 	if (index < 0 || index >= ce_project_file_count(p))
 	{
-		return failInt("no such file entry", error_out);
+		return failInt(tr("project.no_file_entry"), error_out);
 	}
 	FileEntry &e = p->files[index];
 	if (path == nullptr || !chimera::sha1HexOfFile(path, &e.size, e.actualSha1))
 	{
-		return failInt("cannot read '" + e.name + "' from " + (path != nullptr ? path : "(null)"), error_out);
+		return failInt(tr("project.cannot_read_from", {e.name, path != nullptr ? path : tr("engine.no_path")}), error_out);
 	}
 	e.status = e.actualSha1 == e.sha1 ? 0 : 2;
 	e.sourcePath = path;
@@ -1438,15 +1440,13 @@ std::vector<std::string> ceFirmwarePinMismatches(const ce_project *p,
 		const std::string pinned = chimera::manifest::upperHex(sha1->valuestring);
 		if (given < 0)
 		{
-			out.push_back(std::string("the project pins the firmware '") + id->valuestring + "' (SHA-1 " + pinned
-				+ "), and none was given: the machine may not be the one the movie was made on");
+			out.push_back(tr("project.firmware_missing", {id->valuestring, pinned}));
 			continue;
 		}
 		const std::string actual = data[given] != nullptr ? chimera::sha1Hex(data[given], lens[given]) : std::string();
 		if (chimera::manifest::upperHex(actual) != pinned)
 		{
-			out.push_back(std::string("the firmware '") + id->valuestring + "' given is not the one the project pins (pinned "
-				+ pinned + ", given " + chimera::manifest::upperHex(actual) + "): expect the movie to desync");
+			out.push_back(tr("project.firmware_other", {id->valuestring, pinned, chimera::manifest::upperHex(actual)}));
 		}
 	}
 	return out;
@@ -1464,15 +1464,15 @@ int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t 
 {
 	if (settings == nullptr) settings = p->settings;
 	if (error_out != nullptr) *error_out = nullptr;
-	if (slots_json == nullptr) return failInt("no slot declaration given", error_out);
+	if (slots_json == nullptr) return failInt(tr("project.no_slots"), error_out);
 
 	cJSON *root = cJSON_ParseWithLength(slots_json, static_cast<size_t>(slots_len));
-	if (root == nullptr) return failInt("the slot declaration is not valid JSON", error_out);
+	if (root == nullptr) return failInt(tr("project.slots_not_json"), error_out);
 	cJSON *slots = cJSON_GetObjectItemCaseSensitive(root, "slots");
 	if (!cJSON_IsArray(slots))
 	{
 		cJSON_Delete(root);
-		return failInt("the slot declaration has no \"slots\" array", error_out);
+		return failInt(tr("project.slots_no_array"), error_out);
 	}
 
 	struct Decl
@@ -1488,7 +1488,7 @@ int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t 
 		if (!cJSON_IsString(id))
 		{
 			cJSON_Delete(root);
-			return failInt("every declared slot needs a string \"id\"", error_out);
+			return failInt(tr("project.slot_id"), error_out);
 		}
 		Decl d;
 		d.id = id->valuestring;
@@ -1522,7 +1522,7 @@ int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t 
 		{
 			if (d.id == e.slot) { found = &d; break; }
 		}
-		if (found == nullptr) return failV("file '" + e.name + "' fills slot '" + e.slot + "', which this core does not declare");
+		if (found == nullptr) return failV(tr("project.undeclared_slot", {e.name, e.slot}));
 		if (!found->formats.empty())
 		{
 			std::string ext = lowerExt(e.name);
@@ -1531,7 +1531,7 @@ int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t 
 			{
 				if (f == ext) { ok = true; break; }
 			}
-			if (!ok) return failV("file '" + e.name + "' is not a format slot '" + e.slot + "' accepts");
+			if (!ok) return failV(tr("project.wrong_format", {e.name, e.slot}));
 		}
 	}
 
@@ -1569,8 +1569,7 @@ int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t 
 				std::string bad = e.name;
 				std::string slotName = id->valuestring;
 				cJSON_Delete(slotMap);
-				return failV("file '" + bad + "' sits in slot '" + slotName
-					+ "', which these files make unavailable");
+				return failV(tr("project.slot_unavailable", {bad, slotName}));
 			}
 		}
 		cJSON_Delete(slotMap);
@@ -1587,13 +1586,11 @@ int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t 
 		}
 		if (count < d.min && unexposed.find(d.id) == unexposed.end())
 		{
-			return failV("slot '" + d.id + "' needs at least " + std::to_string(d.min) +
-				" file(s), " + std::to_string(count) + " given");
+			return failV(tr("project.slot_needs", d.min, {d.id, std::to_string(count)}));
 		}
 		if (d.max >= 0 && count > d.max)
 		{
-			return failV("slot '" + d.id + "' takes at most " + std::to_string(d.max) +
-				" file(s), " + std::to_string(count) + " given");
+			return failV(tr("project.slot_takes", d.max, {d.id, std::to_string(count)}));
 		}
 	}
 
@@ -1617,7 +1614,7 @@ int32_t ceProjectValidate(const ce_project *p, const char *slots_json, uint64_t 
 					if (e.slot == id->valuestring) count++;
 				}
 			}
-			if (count == 0) return failV("at least one file is needed across: " + names);
+			if (count == 0) return failV(tr("new_project.one_across", {names}));
 		}
 	}
 

@@ -823,6 +823,19 @@ CE_API const uint8_t *ce_package_entry(ce_package *p, const char *name, uint64_t
  * Invalidated by the next call on the same package. */
 CE_API const char *ce_package_last_error(ce_package *p);
 
+/* A declaration file (waterbox.config, file_slots.json) with its texts in
+ * the language in use: every string in it that is a key of the package's
+ * table for that language (languages/<code>.json) is that key's text. A
+ * package with no table for the language: the file as written. Invalidated
+ * as ce_package_entry is.
+ * _language_problems: what keeps the package's languages from being
+ * Chimera's, a line each - a table missing, a key missing or not English's,
+ * a text whose placeholders differ, a field a person reads that holds no key
+ * (docs/translations.md). "" when nothing does; per-thread, until the next
+ * call on the thread. */
+CE_API const uint8_t *ce_package_entry_texts(ce_package *p, const char *name, uint64_t *len_out);
+CE_API const char *ce_package_language_problems(ce_package *p);
+
 /* ---- the session ----
  *
  * A running waterboxed machine: a core package's guest, loaded through the

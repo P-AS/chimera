@@ -1,4 +1,5 @@
 #include "chimera/vm/suggestion.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -37,7 +38,7 @@ std::vector<AskFile> askFilesOf(const std::string &package, const std::string &g
 	{
 		uint64_t len = 0;
 		Json decl;
-		if (const uint8_t *d = ce_package_entry(pk, "file_slots.json", &len);
+		if (const uint8_t *d = ce_package_entry_texts(pk, "file_slots.json", &len);
 			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), decl, error))
 			if (const Json *list = decl.find("slots"); list != nullptr && !list->items.empty())
 			{
@@ -65,14 +66,14 @@ ce_project *askingProject(const std::string &package, const std::vector<AskFile>
 	ce_package *pk = ce_package_open(package.c_str(), &error);
 	if (pk == nullptr)
 	{
-		why = error != nullptr ? error : package + ": not a core package";
+		why = error != nullptr ? error : tr("suggestion.not_package", {package});
 		return nullptr;
 	}
 	{
 		uint64_t len = 0;
 		Json cfg;
 		std::string parseError;
-		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+		if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len);
 			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, parseError))
 		{
 			if (const Json *n = cfg.find("coreName")) coreName = n->text;
@@ -87,14 +88,14 @@ ce_project *askingProject(const std::string &package, const std::vector<AskFile>
 		if (f.slot.empty()) continue;
 		if (ce_project_file_add(p, f.name.c_str(), f.slot.c_str(), f.path.c_str(), &error) != 0)
 		{
-			why = std::string(f.name) + ": " + (error != nullptr ? error : "not taken");
+			why = tr("session.named_reason", {f.name, error != nullptr ? error : tr("suggestion.not_taken")});
 			ce_project_free(p);
 			return nullptr;
 		}
 	}
 	if (!settingsJson.empty() && settingsJson != "{}" && ce_project_set_settings_text(p, settingsJson.c_str(), &error) != 0)
 	{
-		why = std::string("settings: ") + (error != nullptr ? error : "not taken");
+		why = tr("suggestion.settings", {error != nullptr ? error : tr("suggestion.not_taken")});
 		ce_project_free(p);
 		return nullptr;
 	}
@@ -111,7 +112,7 @@ bool saveAskingProject(const std::string &package, const std::vector<AskFile> &f
 	ce_project_free(p);
 	if (!saved)
 	{
-		why = error != nullptr ? error : "the project could not be written";
+		why = error != nullptr ? error : tr("suggestion.not_written");
 		return false;
 	}
 	for (const AskFile &f : files)
@@ -134,7 +135,7 @@ std::string askForSuggestion(const std::string &package, const std::string &game
 	ce_project_free(project);
 	if (answer == nullptr)
 	{
-		why = error != nullptr ? error : "the core could not be asked";
+		why = error != nullptr ? error : tr("suggestion.not_asked");
 		return {};
 	}
 	return std::string(answer, static_cast<size_t>(len));

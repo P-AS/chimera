@@ -1,4 +1,5 @@
 #include "chimera/vm/subprocess.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -168,7 +169,7 @@ bool Subprocess::start(const std::string &program, const std::vector<std::string
 	HANDLE inRead = nullptr, inWrite = nullptr, errRead = nullptr, errWrite = nullptr;
 	if (!CreatePipe(&inRead, &inWrite, &sa, 1 << 20) || !CreatePipe(&errRead, &errWrite, &sa, 0))
 	{
-		error = "no pipe to the program";
+		error = tr("subprocess.no_pipe");
 		return false;
 	}
 	/* this side's ends are not the child's */
@@ -192,7 +193,7 @@ bool Subprocess::start(const std::string &program, const std::vector<std::string
 	{
 		CloseHandle(inWrite);
 		CloseHandle(errRead);
-		error = "could not start " + program + " (error " + std::to_string(GetLastError()) + ")";
+		error = tr("subprocess.not_started_code", {program, std::to_string(GetLastError())});
 		return false;
 	}
 	CloseHandle(pi.hThread);
@@ -251,7 +252,7 @@ bool Subprocess::start(const std::string &program, const std::vector<std::string
 	int in[2], err[2];
 	if (pipe(in) != 0 || pipe(err) != 0)
 	{
-		error = "no pipe to the program";
+		error = tr("subprocess.no_pipe");
 		return false;
 	}
 	posix_spawn_file_actions_t fa;
@@ -277,7 +278,7 @@ bool Subprocess::start(const std::string &program, const std::vector<std::string
 	{
 		::close(in[1]);
 		::close(err[0]);
-		error = "could not start " + program + ": " + std::strerror(rc);
+		error = tr("subprocess.not_started", {program, std::strerror(rc)});
 		return false;
 	}
 	fcntl(in[1], F_SETFD, FD_CLOEXEC);

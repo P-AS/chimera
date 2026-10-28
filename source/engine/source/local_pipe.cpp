@@ -1,6 +1,7 @@
 /* local_pipe.cpp - see local_pipe.hpp. */
 
 #include "local_pipe.hpp"
+#include "language.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -45,9 +46,9 @@ bool takeLine(std::string &buffer, std::string &line)
 	return true;
 }
 
-const char *const kNoServer = "Chimera's MCP server is not started";
-const char *const kOtherServer = "another Chimera of this user already has its MCP server started";
-const char *const kOtherClient = "another agent is already connected to Chimera's MCP server";
+const char *const kNoServer = "pipe.no_server";
+const char *const kOtherServer = "pipe.other_server";
+const char *const kOtherClient = "pipe.other_client";
 
 } // namespace
 
@@ -95,9 +96,9 @@ std::string narrow(const std::wstring &wide)
 	return out;
 }
 
-std::string lastErrorText(const char *what, DWORD code)
+std::string lastErrorText(const std::string &what, DWORD code)
 {
-	return std::string(what) + " (Windows error " + std::to_string(static_cast<unsigned long>(code)) + ")";
+	return chimera::lang::tr("pipe.windows_error", {what, std::to_string(static_cast<unsigned long>(code))});
 }
 
 /* A security descriptor that lets this user in and nobody else. The default
@@ -278,7 +279,7 @@ bool PipeServer::open(std::string &error)
 	PSECURITY_DESCRIPTOR sd = onlyThisUser();
 	if (sd == nullptr)
 	{
-		error = "the pipe could not be limited to this user, so it was not made";
+		error = chimera::lang::tr("pipe.not_private");
 		return false;
 	}
 	SECURITY_ATTRIBUTES sa{};
@@ -293,7 +294,7 @@ bool PipeServer::open(std::string &error)
 	if (impl->pipe == INVALID_HANDLE_VALUE)
 	{
 		error = code == ERROR_ACCESS_DENIED || code == ERROR_PIPE_BUSY
-			? std::string(kOtherServer) : lastErrorText("the pipe could not be made", code);
+			? chimera::lang::tr(kOtherServer) : lastErrorText(chimera::lang::tr("pipe.not_made"), code);
 		return false;
 	}
 	impl->listen();
@@ -371,7 +372,7 @@ bool PipeClient::connect(std::string &error)
 			if (serverIsThisUser(impl->pipe)) return true;
 			CloseHandle(impl->pipe);
 			impl->pipe = INVALID_HANDLE_VALUE;
-			error = "the pipe Chimera serves on was made by another user of this machine, so nothing was sent to it";
+			error = chimera::lang::tr("pipe.other_user");
 			return false;
 		}
 		code = GetLastError();
@@ -380,9 +381,9 @@ bool PipeClient::connect(std::string &error)
 		 * more before calling it another agent */
 		if (code != ERROR_PIPE_BUSY || WaitNamedPipeW(name.c_str(), 300) == 0) break;
 	}
-	error = code == ERROR_FILE_NOT_FOUND ? std::string(kNoServer)
-		: code == ERROR_PIPE_BUSY ? std::string(kOtherClient)
-		: lastErrorText("the pipe could not be opened", code);
+	error = code == ERROR_FILE_NOT_FOUND ? chimera::lang::tr(kNoServer)
+		: code == ERROR_PIPE_BUSY ? chimera::lang::tr(kOtherClient)
+		: lastErrorText(chimera::lang::tr("pipe.not_opened"), code);
 	return false;
 }
 
@@ -545,18 +546,18 @@ bool PipeServer::open(std::string &error)
 	impl->dir = pipeDir();
 	if (mkdir(impl->dir.c_str(), 0700) != 0 && errno != EEXIST)
 	{
-		error = "the folder " + impl->dir + " could not be made: " + std::strerror(errno);
+		error = chimera::lang::tr("pipe.folder_not_made", {impl->dir, std::strerror(errno)});
 		return false;
 	}
 	if (!dirIsOurs(impl->dir))
 	{
-		error = "the folder " + impl->dir + " is not a folder that only this user can open";
+		error = chimera::lang::tr("pipe.folder_not_private", {impl->dir});
 		return false;
 	}
 	impl->lockFd = ::open((impl->dir + "/server.lock").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
 	if (impl->lockFd < 0 || flock(impl->lockFd, LOCK_EX | LOCK_NB) != 0)
 	{
-		error = impl->lockFd < 0 ? "the folder " + impl->dir + " cannot be written to" : std::string(kOtherServer);
+		error = impl->lockFd < 0 ? chimera::lang::tr("pipe.folder_not_writable", {impl->dir}) : chimera::lang::tr(kOtherServer);
 		if (impl->lockFd >= 0) ::close(impl->lockFd);
 		impl->lockFd = -1;
 		return false;
@@ -566,14 +567,14 @@ bool PipeServer::open(std::string &error)
 	unlink(impl->out().c_str());
 	if (mkfifo(impl->in().c_str(), 0600) != 0 || mkfifo(impl->out().c_str(), 0600) != 0)
 	{
-		error = std::string("the pipe could not be made: ") + std::strerror(errno);
+		error = chimera::lang::tr("pipe.not_made_why", {std::strerror(errno)});
 		close();
 		return false;
 	}
 	impl->reopenIn();
 	if (impl->inFd < 0)
 	{
-		error = std::string("the pipe could not be opened: ") + std::strerror(errno);
+		error = chimera::lang::tr("pipe.not_opened_why", {std::strerror(errno)});
 		close();
 		return false;
 	}
@@ -665,14 +666,14 @@ PipeClient::~PipeClient() { close(); delete impl; }
 bool PipeClient::connect(std::string &error)
 {
 	close();
-	error = kNoServer;
+	error = chimera::lang::tr(kNoServer);
 	for (const std::string &dir : pipeDirsToTry())
 	{
 		if (!dirIsOurs(dir)) continue;
 		impl->lockFd = ::open((dir + "/client.lock").c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
 		if (impl->lockFd < 0 || flock(impl->lockFd, LOCK_EX | LOCK_NB) != 0)
 		{
-			if (impl->lockFd >= 0) error = kOtherClient;
+			if (impl->lockFd >= 0) error = chimera::lang::tr(kOtherClient);
 			close();
 			continue;
 		}

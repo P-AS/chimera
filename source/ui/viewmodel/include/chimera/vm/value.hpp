@@ -3,6 +3,8 @@
  * script, the MCP server or a test: nothing, a truth, a whole number, a real
  * number or a text. Nothing richer crosses, so every driver can speak it. */
 
+#include "chimera/vm/tr.hpp"
+
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -67,7 +69,7 @@ inline bool fromValue(const Value &v, std::string &out)
 /* for messages: the value as a person would write it */
 inline std::string describe(const Value &v)
 {
-	if (std::holds_alternative<std::monostate>(v)) return "nothing";
+	if (std::holds_alternative<std::monostate>(v)) return tr("value.nothing");
 	if (const bool *b = std::get_if<bool>(&v)) return *b ? "true" : "false";
 	if (const int64_t *i = std::get_if<int64_t>(&v)) return std::to_string(*i);
 	if (const double *d = std::get_if<double>(&v)) return std::to_string(*d);

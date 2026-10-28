@@ -38,6 +38,7 @@
  * merely suffered.
  */
 #include "chimera/engine.h"
+#include "language.hpp"
 
 #include <cstdio>   /* snprintf: both flavours report why there is no context */
 #include <cstdlib>
@@ -126,7 +127,7 @@ bool create_context(char *err, int errlen)
 		0, 0, 64, 64, nullptr, nullptr, wc.hInstance, nullptr);
 	if (s_window == nullptr)
 	{
-		snprintf(err, errlen, "could not make a window to take a pixel format from");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.no_window").c_str());
 		return false;
 	}
 
@@ -144,7 +145,7 @@ bool create_context(char *err, int errlen)
 	int format = ChoosePixelFormat(s_dc, &pfd);
 	if (format == 0 || !SetPixelFormat(s_dc, format, &pfd))
 	{
-		snprintf(err, errlen, "no pixel format this driver will draw into");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.no_pixel_format").c_str());
 		return false;
 	}
 
@@ -153,14 +154,14 @@ bool create_context(char *err, int errlen)
 	s_context = wglCreateContext(s_dc);
 	if (s_context == nullptr || !wglMakeCurrent(s_dc, s_context))
 	{
-		snprintf(err, errlen, "the driver would not make a context current");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.not_current_win").c_str());
 		return false;
 	}
 
 	s_opengl32 = LoadLibraryA("opengl32.dll");
 	if (s_opengl32 == nullptr)
 	{
-		snprintf(err, errlen, "opengl32.dll would not load");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.no_opengl32").c_str());
 		return false;
 	}
 
@@ -289,19 +290,19 @@ bool create_context(char *err, int errlen)
 		s_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
 	if (s_display == EGL_NO_DISPLAY)
 	{
-		snprintf(err, errlen, "no EGL display");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.no_egl_display").c_str());
 		return false;
 	}
 
 	if (!eglInitialize(s_display, nullptr, nullptr))
 	{
-		snprintf(err, errlen, "EGL would not initialise");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.egl_not_started").c_str());
 		return false;
 	}
 
 	if (!eglBindAPI(EGL_OPENGL_API))
 	{
-		snprintf(err, errlen, "this EGL has no desktop OpenGL");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.no_desktop_gl").c_str());
 		return false;
 	}
 
@@ -314,7 +315,7 @@ bool create_context(char *err, int errlen)
 	EGLint configCount = 0;
 	if (!eglChooseConfig(s_display, configAttribs, &config, 1, &configCount) || configCount == 0)
 	{
-		snprintf(err, errlen, "no EGL config offers desktop OpenGL");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.no_egl_config").c_str());
 		return false;
 	}
 
@@ -332,13 +333,13 @@ bool create_context(char *err, int errlen)
 	}
 	if (s_context == EGL_NO_CONTEXT)
 	{
-		snprintf(err, errlen, "the driver would not make an OpenGL 3.3 context");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.no_context").c_str());
 		return false;
 	}
 
 	if (!eglMakeCurrent(s_display, EGL_NO_SURFACE, EGL_NO_SURFACE, s_context))
 	{
-		snprintf(err, errlen, "the driver would not make the context current");
+		snprintf(err, errlen, "%s", chimera::lang::tr("gl.not_current").c_str());
 		return false;
 	}
 
@@ -1147,7 +1148,8 @@ static uintptr_t glRefused(uintptr_t op, const char *name, const char *why)
 }
 #define CHIMERA_GL_UNSUPPLIED(op, name) glRefused((op), (name), "this GL driver does not provide it")
 #define GL_PROVIDED_OR_REFUSE(fn) do { if (glad_##fn == nullptr) return glRefused(op, #fn, "this GL driver does not provide it"); } while (0)
-static const char kBadPointer[] = "the core handed it memory it does not have";
+/* the reason glRefused logs for a pointer outside the guest */
+#define CE_GL_BAD_POINTER "the core handed it memory it does not have"
 
 /* ---------------------------------------------------------------------------
  * Sync objects are NAMED to the guest, never handed to it.
@@ -2155,25 +2157,25 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		case CHIMERA_GL_OP_glBufferData:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glBufferData *>(a);
-			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferData", kBadPointer);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferData", CE_GL_BAD_POINTER);
 			break;
 		}
 		case CHIMERA_GL_OP_glBufferSubData:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glBufferSubData *>(a);
-			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferSubData", kBadPointer);
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferSubData", CE_GL_BAD_POINTER);
 			break;
 		}
 		case CHIMERA_GL_OP_glNamedBufferData:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glNamedBufferData *>(a);
-			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferData", kBadPointer);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferData", CE_GL_BAD_POINTER);
 			break;
 		}
 		case CHIMERA_GL_OP_glNamedBufferSubData:
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glNamedBufferSubData *>(a);
-			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferSubData", kBadPointer);
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferSubData", CE_GL_BAD_POINTER);
 			break;
 		}
 		default:
@@ -2266,7 +2268,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glBufferStorage *>(a);
 			GL_PROVIDED_OR_REFUSE(glBufferStorage);
-			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferStorage", kBadPointer);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glBufferStorage", CE_GL_BAD_POINTER);
 			glBufferStorage(p->target, p->size, p->data, p->flags);
 			if (glPool()) bufferPool().noteImmutable(boundBuffer(p->target), true);
 			if (poolTrace())
@@ -2278,7 +2280,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glNamedBufferStorage *>(a);
 			GL_PROVIDED_OR_REFUSE(glNamedBufferStorage);
-			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferStorage", kBadPointer);
+			if (p->data != nullptr && p->size > 0 && !guestCan(p->data, (size_t)p->size, false)) return glRefused(op, "glNamedBufferStorage", CE_GL_BAD_POINTER);
 			glNamedBufferStorage(p->buffer, p->size, p->data, p->flags);
 			bufferPool().noteImmutable(p->buffer, true);
 			return 0;
@@ -2299,7 +2301,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			auto *p = reinterpret_cast<ChimeraGlArgs_glGetBufferSubData *>(a);
 			GL_PROVIDED_OR_REFUSE(glGetBufferSubData);
 			/* size is exactly the bytes written - no computation to get wrong */
-			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, true)) return glRefused(op, "glGetBufferSubData", kBadPointer);
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, true)) return glRefused(op, "glGetBufferSubData", CE_GL_BAD_POINTER);
 			if (p->data == nullptr || p->size <= 0)
 			{
 				glGetBufferSubData(p->target, p->offset, p->size, p->data);
@@ -2327,7 +2329,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			if (pixelReadGuarded(p->format, p->type, p->width, p->height, p->pixels, &tight, &scratch, &shape)
 				&& (buf = bounceFor(scratch)) != nullptr)
 			{
-				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glReadPixels", kBadPointer);
+				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glReadPixels", CE_GL_BAD_POINTER);
 				glReadPixels(p->x, p->y, p->width, p->height, p->format, p->type, buf);
 				bounceCheckCanary(scratch, "glReadPixels");
 				copyRows(p->pixels, buf, shape);
@@ -2338,7 +2340,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			GLint packBuffer = 0;
 			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
 			if (packBuffer == 0 && p->pixels != nullptr && !guestCan(p->pixels, 1, true))
-				return glRefused(op, "glReadPixels", kBadPointer);
+				return glRefused(op, "glReadPixels", CE_GL_BAD_POINTER);
 			glReadPixels(p->x, p->y, p->width, p->height, p->format, p->type, p->pixels);
 			return 0;
 		}
@@ -2351,7 +2353,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 		{
 			auto *p = reinterpret_cast<ChimeraGlArgs_glGetNamedBufferSubData *>(a);
 			GL_PROVIDED_OR_REFUSE(glGetNamedBufferSubData);
-			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, true)) return glRefused(op, "glGetNamedBufferSubData", kBadPointer);
+			if (p->size > 0 && !guestCan(p->data, (size_t)p->size, true)) return glRefused(op, "glGetNamedBufferSubData", CE_GL_BAD_POINTER);
 			uint8_t *scratch = p->data != nullptr && p->size > 0 ? bounceFor((size_t)p->size) : nullptr;
 			if (scratch == nullptr)
 			{
@@ -2374,7 +2376,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			if (pixelReadGuarded(p->format, p->type, p->width, p->height, p->data, &tight, &scratch, &shape)
 				&& p->bufSize >= 0 && tight <= (size_t)p->bufSize && (buf = bounceFor(scratch)) != nullptr)
 			{
-				if (!guestCan(p->data, tight, true)) return glRefused(op, "glReadnPixels", kBadPointer);
+				if (!guestCan(p->data, tight, true)) return glRefused(op, "glReadnPixels", CE_GL_BAD_POINTER);
 				glReadnPixels(p->x, p->y, p->width, p->height, p->format, p->type, (GLsizei)scratch, buf);
 				bounceCheckCanary(scratch, "glReadnPixels");
 				copyRows(p->data, buf, shape);
@@ -2383,7 +2385,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			GLint packBuffer = 0;
 			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
 			if (packBuffer == 0 && p->data != nullptr && p->bufSize > 0 && !guestCan(p->data, (size_t)p->bufSize, true))
-				return glRefused(op, "glReadnPixels", kBadPointer);
+				return glRefused(op, "glReadnPixels", CE_GL_BAD_POINTER);
 			glReadnPixels(p->x, p->y, p->width, p->height, p->format, p->type, p->bufSize, p->data);
 			return 0;
 		}
@@ -2399,7 +2401,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 				&& pixelReadGuarded(p->format, p->type, p->width, p->height, p->pixels, &tight, &scratch, &shape)
 				&& p->bufSize >= 0 && tight <= (size_t)p->bufSize && (buf = bounceFor(scratch)) != nullptr)
 			{
-				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glGetTextureSubImage", kBadPointer);
+				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glGetTextureSubImage", CE_GL_BAD_POINTER);
 				glGetTextureSubImage(p->texture, p->level, p->xoffset, p->yoffset, p->zoffset, p->width, p->height, p->depth,
 					p->format, p->type, (GLsizei)scratch, buf);
 				bounceCheckCanary(scratch, "glGetTextureSubImage");
@@ -2409,7 +2411,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			GLint packBuffer = 0;
 			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
 			if (packBuffer == 0 && p->pixels != nullptr && p->bufSize > 0 && !guestCan(p->pixels, (size_t)p->bufSize, true))
-				return glRefused(op, "glGetTextureSubImage", kBadPointer);
+				return glRefused(op, "glGetTextureSubImage", CE_GL_BAD_POINTER);
 			glGetTextureSubImage(p->texture, p->level, p->xoffset, p->yoffset, p->zoffset, p->width, p->height, p->depth,
 				p->format, p->type, p->bufSize, p->pixels);
 			return 0;
@@ -2434,7 +2436,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 				&& pixelReadGuarded(p->format, p->type, w, h, p->pixels, &tight, &scratch, &shape)
 				&& (buf = bounceFor(scratch)) != nullptr)
 			{
-				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glGetTexImage", kBadPointer);
+				if (!guestCan(p->pixels, tight, true)) return glRefused(op, "glGetTexImage", CE_GL_BAD_POINTER);
 				glGetTexImage(p->target, p->level, p->format, p->type, buf);
 				bounceCheckCanary(scratch, "glGetTexImage");
 				copyRows(p->pixels, buf, shape);
@@ -2443,7 +2445,7 @@ static uintptr_t ce_gl_dispatch_one(uintptr_t op, uintptr_t a, uintptr_t b,
 			GLint packBuffer = 0;
 			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
 			if (packBuffer == 0 && p->pixels != nullptr && !guestCan(p->pixels, 1, true))
-				return glRefused(op, "glGetTexImage", kBadPointer);
+				return glRefused(op, "glGetTexImage", CE_GL_BAD_POINTER);
 			glGetTexImage(p->target, p->level, p->format, p->type, p->pixels);
 			return 0;
 		}
@@ -2751,7 +2753,7 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 		destroy_context();
 		return_current();
 		if (error_out && error_len > 0)
-			snprintf(error_out, error_len, "the driver's entry points would not load");
+			snprintf(error_out, error_len, "%s", chimera::lang::tr("gl.no_entry_points").c_str());
 		return 0;
 	}
 
@@ -2762,9 +2764,8 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 	GLint profile = 0;
 	if (GLAD_VERSION_MAJOR(g_version) > 3 || (GLAD_VERSION_MAJOR(g_version) == 3 && GLAD_VERSION_MINOR(g_version) >= 2))
 		glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
-	snprintf(g_description, sizeof g_description, "%s on %s, %s profile",
-		version ? version : "?", renderer ? renderer : "?",
-		(profile & GL_CONTEXT_CORE_PROFILE_BIT) != 0 ? "core" : "compatibility");
+	snprintf(g_description, sizeof g_description, "%s", chimera::lang::tr((profile & GL_CONTEXT_CORE_PROFILE_BIT) != 0 ? "gl.description_core" : "gl.description_compatibility",
+		{version ? version : "?", renderer ? renderer : "?"}).c_str());
 
 	/* Every renderer here is written for OpenGL 3.3 or later, and saying a
 	 * driver offers less here is kinder than a null call in the middle of a
@@ -2776,8 +2777,7 @@ extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 		destroy_context();
 		return_current();
 		if (error_out && error_len > 0)
-			snprintf(error_out, error_len, "the driver offers OpenGL %d.%d, and this needs 3.3",
-				GLAD_VERSION_MAJOR(g_version), GLAD_VERSION_MINOR(g_version));
+			snprintf(error_out, error_len, "%s", chimera::lang::tr("gl.too_old", {std::to_string(GLAD_VERSION_MAJOR(g_version)) + "." + std::to_string(GLAD_VERSION_MINOR(g_version))}).c_str());
 		return 0;
 	}
 
@@ -2909,7 +2909,7 @@ extern "C" uintptr_t ce_gl_dispatch(uintptr_t, uintptr_t, uintptr_t, uintptr_t, 
 extern "C" int32_t ce_gl_start(char *error_out, int32_t error_len)
 {
 	if (error_out && error_len > 0)
-		snprintf(error_out, error_len, "this build has no GPU bridge");
+		snprintf(error_out, error_len, "%s", chimera::lang::tr("gl.no_bridge").c_str());
 	return 0;
 }
 extern "C" void ce_gl_stop(void) {}

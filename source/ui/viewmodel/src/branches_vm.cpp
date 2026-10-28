@@ -1,4 +1,5 @@
 #include "chimera/vm/branches_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 
@@ -83,7 +84,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 		switch (undo_)
 		{
 		case Undo::None:
-			error = "nothing to undo";
+			error = tr("branches.nothing_to_undo");
 			return {};
 		case Undo::Load:
 		{
@@ -93,7 +94,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			undoText.set("");
 			session_.loadBranch(b, [this, b](bool, const std::string &) {
 				session_.forgetBranch(b);
-				status.set("Branch Load canceled");
+				status.set(tr("branches.load_canceled"));
 			});
 			roll_.replaceAll(b.markers);
 			return {};
@@ -106,7 +107,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 					const SessionViewModel::Branch replaced = branches_[i];
 					branches_[i] = backup_;
 					if (undo_ == Undo::Update && replaced.id != backup_.id) session_.forgetBranch(replaced);
-					status.set(undo_ == Undo::Update ? "Branch Update canceled" : "Branch Text Edit canceled");
+					status.set(tr(undo_ == Undo::Update ? "branches.update_canceled" : "branches.text_edit_canceled"));
 					break;
 				}
 			break;
@@ -117,7 +118,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			/* the branch loaded is the one it was: it moved down with the removal */
 			if (current.get() >= at) current.set(current.get() + 1);
 			previewing.set(-1);
-			status.set("Branch Removal canceled");
+			status.set(tr("branches.removal_canceled"));
 			break;
 		}
 		}
@@ -173,7 +174,7 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			if (!arg(a, 0, i, error)) return {};
 			if (i < 0)
 			{
-				error = "no branch " + std::to_string(i);
+				error = tr("branches.no_branch", {std::to_string(i)});
 				return {};
 			}
 			return keepRun(i, "");
@@ -194,12 +195,12 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			/* its state when it has one, else the engine takes the branch's
 			 * movie, keeps the states before the first frame where the two
 			 * differ, and replays from there */
-			status.set("Loading " + b.name + "...");
+			status.set(tr("branches.loading", {b.name}));
 			/* the run as it is now, kept so Undo can put it back */
 			keepLoadBackup();
 			session_.loadBranch(b, [this, name = b.name, i](bool fromState, const std::string &why) {
-				status.set("Loaded " + name + (fromState ? " from its state" : ", replayed to") +
-					(why.empty() ? "" : " (its state could not be loaded: " + why + ")") + std::exchange(loadWarning_, std::string()));
+				status.set(tr(fromState ? "branches.loaded_from_state" : "branches.loaded_replayed", {name}) +
+					(why.empty() ? "" : " " + tr("branches.state_not_loaded", {why})) + std::exchange(loadWarning_, std::string()));
 				loadedFromState.set(fromState);
 				loads.set(loads.get() + 1);
 				branchLoaded.emit(static_cast<int64_t>(i));
@@ -217,15 +218,14 @@ BranchesViewModel::BranchesViewModel(Dispatcher &dispatcher, InputLog &inputs, S
 			const int64_t was = current.get();
 			if (was >= 0 && was < static_cast<int64_t>(branches_.size()) && was != static_cast<int64_t>(i) &&
 				differsFrom(static_cast<size_t>(was)))
-				loadWarning_ = "; branch " + std::to_string(was + 1) +
-					" did not hold the changes made since it was loaded or updated (Undo Branch Load brings them back)";
+				loadWarning_ = tr("branches.load_warning", {std::to_string(was + 1)});
 			run("load", {static_cast<int64_t>(i)}, error);
 			return {};
 		}, &session_.isOpen);
 	command("remove", "forgets a branch", {"index"}, [this](const Args &a, std::string &error) -> Value {
 		size_t i = 0;
 		if (!index(a, i, error)) return {};
-		status.set("Removed " + branches_[i].name);
+		status.set(tr("branches.removed", {branches_[i].name}));
 		const SessionViewModel::Branch gone = branches_[i];
 		branches_.erase(branches_.begin() + static_cast<long>(i));
 		if (current.get() == static_cast<int64_t>(i)) current.set(-1);
@@ -304,13 +304,13 @@ int64_t BranchesViewModel::keepRun(int64_t slot, std::string name)
 	}
 	else
 	{
-		b.name = name.empty() ? "Branch " + std::to_string(branches_.size() + 1) : name;
+		b.name = name.empty() ? tr("branches.default_name", {std::to_string(branches_.size() + 1)}) : name;
 		branches_.push_back(b);
 		at = static_cast<int64_t>(branches_.size()) - 1;
 		changed();
 	}
 	current.set(at);
-	status.set("Making " + b.name + "...");
+	status.set(tr("new_project.making_at", {b.name}));
 	session_.makeBranch(b.name, b.time, [this, id = b.id](SessionViewModel::Branch done, const std::string &why) {
 		for (SessionViewModel::Branch &x : branches_)
 			if (x.id == id)
@@ -321,9 +321,9 @@ int64_t BranchesViewModel::keepRun(int64_t slot, std::string name)
 				x.state = done.state;
 				x.picture = done.picture;
 				changed();
-				status.set("Made " + x.name + " at frame " + std::to_string(x.frame) +
-					(!why.empty() ? "; its state could not be kept (" + why + "), so loading it replays"
-					 : x.state.empty() ? "" : ", its state kept"));
+				status.set(!why.empty() ? tr("branches.made_no_state", {x.name, std::to_string(x.frame), why})
+						   : x.state.empty() ? tr("branches.made", {x.name, std::to_string(x.frame)})
+											 : tr("branches.made_with_state", {x.name, std::to_string(x.frame)}));
 				branchSaved.emit(static_cast<int64_t>(&x - branches_.data()));
 				break;
 			}
@@ -374,10 +374,8 @@ void BranchesViewModel::keepBackup(Undo kind, SessionViewModel::Branch b, int64_
 	undo_ = kind;
 	backup_ = std::move(b);
 	backupAt_ = at;
-	undoText.set(kind == Undo::Load     ? "Undo Branch Load"
-		: kind == Undo::Update ? "Undo Branch Update"
-		: kind == Undo::Text   ? "Undo Branch Text Edit"
-							   : "Undo Branch Removal");
+	undoText.set(tr(kind == Undo::Load ? "branches.undo_load" : kind == Undo::Update ? "branches.undo_update"
+					: kind == Undo::Text ? "branches.undo_text_edit" : "branches.undo_removal"));
 }
 
 void BranchesViewModel::keepLoadBackup()
@@ -386,7 +384,7 @@ void BranchesViewModel::keepLoadBackup()
 	 * the machine's state when it gets to it */
 	SessionViewModel::Branch b;
 	b.time = now();
-	b.name = "Before the load";
+	b.name = tr("branches.before_the_load");
 	b.frame = session_.frame.get();
 	b.text = inputs_.text();
 	b.frames = inputs_.size();
@@ -414,7 +412,7 @@ bool BranchesViewModel::index(const Args &a, size_t &out, std::string &error) co
 	if (!arg(a, 0, i, error)) return false;
 	if (i < 0 || i >= static_cast<int64_t>(branches_.size()))
 	{
-		error = "no branch " + std::to_string(i);
+		error = tr("branches.no_branch", {std::to_string(i)});
 		return false;
 	}
 	out = static_cast<size_t>(i);

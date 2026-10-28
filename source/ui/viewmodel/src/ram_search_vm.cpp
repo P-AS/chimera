@@ -1,4 +1,5 @@
 #include "chimera/vm/ram_search_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -38,7 +39,7 @@ constexpr const char *kNewLine = "\r\n";
 constexpr const char *kNewLine = "\n";
 #endif
 
-std::string addresses(int64_t n) { return std::to_string(n) + (n == 1 ? " address" : " addresses"); }
+std::string addresses(int64_t n) { return tr("ram_search.addresses", n); }
 
 std::string utf8(const std::filesystem::path &p)
 {
@@ -97,7 +98,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 		const int32_t sz = static_cast<int32_t>(size.get());
 		if (sz != 1 && sz != 2 && sz != 4)
 		{
-			error = "size is 1, 2 or 4";
+			error = tr("ram_search.size_values");
 			return {};
 		}
 		const std::string d = domain.get();
@@ -124,7 +125,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 	command("undo", "takes the last search or removal back", {}, [this](const Args &, std::string &) -> Value {
 		onSearch([](ce_ramsearch *rs) {
 			const int64_t n = ce_ramsearch_undo(rs);
-			return addresses(n < 0 ? -n : n) + " restored";
+			return tr("ram_search.restored", {addresses(n < 0 ? -n : n)});
 		});
 		previewCleared_ = true;
 		return {};
@@ -132,7 +133,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 	command("redo", "does a search taken back again", {}, [this](const Args &, std::string &) -> Value {
 		onSearch([](ce_ramsearch *rs) {
 			const int64_t n = ce_ramsearch_redo(rs);
-			return addresses(n < 0 ? -n : n) + " removed";
+			return tr("ram_search.removed", {addresses(n < 0 ? -n : n)});
 		});
 		previewCleared_ = true;
 		return {};
@@ -164,7 +165,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 		if (rows.empty()) return {};
 		onSearch([rows](ce_ramsearch *rs) {
 			ce_ramsearch_remove_indices(rs, rows.data(), static_cast<int64_t>(rows.size()));
-			return addresses(static_cast<int64_t>(rows.size())) + " removed";
+			return tr("ram_search.removed", {addresses(static_cast<int64_t>(rows.size()))});
 		});
 		return {};
 	}, &searching);
@@ -172,7 +173,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 		onSearch([](ce_ramsearch *rs) {
 			const int64_t before = ce_ramsearch_count(rs);
 			ce_ramsearch_remove_out_of_range(rs);
-			return addresses(before - ce_ramsearch_count(rs)) + " removed";
+			return tr("ram_search.removed", {addresses(before - ce_ramsearch_count(rs))});
 		});
 		return {};
 	}, &searching);
@@ -208,7 +209,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 			}
 			else if (r < 0 || r >= rows_)
 			{
-				error = "no row " + std::to_string(r);
+				error = tr("cache.no_row", {std::to_string(r)});
 				return {};
 			}
 			else if (mode == "toggle")
@@ -248,7 +249,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 				if (column == names[i]) c = i;
 			if (c < 0)
 			{
-				error = "no column " + column;
+				error = tr("piano_roll.no_column", {column});
 				return {};
 			}
 			if (column != sortedBy_) sortReverse_ = false;
@@ -289,7 +290,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 		"Exclude RAM Watch List, then taken out of the search", {}, [this](const Args &, std::string &error) -> Value {
 			if (ramWatch_ == nullptr)
 			{
-				error = "RAM Watch is not here";
+				error = tr("ram_search.no_ram_watch");
 				return {};
 			}
 			std::string lines;
@@ -332,10 +333,10 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 			const int s = static_cast<int>(size.get());
 			out.members.emplace_back("addresses", json::Json::string(list));
 			out.members.emplace_back("domain", json::Json::string(searchedDomain.get()));
-			out.members.emplace_back("size", json::Json::string(s == 1 ? "Byte" : s == 2 ? "Word" : "DWord"));
+			out.members.emplace_back("size", json::Json::string(tr(s == 1 ? "watch.size_byte" : s == 2 ? "watch.size_word" : "watch.size_dword")));
 			out.members.emplace_back("display", json::Json::string(watch::displayName(way())));
 			out.members.emplace_back("hex", json::Json::boolean_(way() == watch::Display::Hex));
-			out.members.emplace_back("endian", json::Json::string(bigEndian.get() ? "Big Endian" : "Little Endian"));
+			out.members.emplace_back("endian", json::Json::string(tr(bigEndian.get() ? "watch.big_endian" : "watch.little_endian")));
 			out.members.emplace_back("value", json::Json::string(value));
 			out.members.emplace_back("mixed", json::Json::boolean_(false));
 			out.members.emplace_back("property", json::Json::boolean_(false));
@@ -390,7 +391,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 			uint32_t v = 0;
 			if (!watch::parse(text, way(), v))
 			{
-				error = "An error occurred when writing Value.";
+				error = tr("ram_search.write_failed");
 				return false;
 			}
 			const int s = static_cast<int>(size.get());
@@ -408,7 +409,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 				std::string why;
 				if (!session_.run("writeMemory", {searchedDomain.get(), static_cast<int64_t>(at), bytes}, why))
 				{
-					error = "An error occurred when writing Value.";
+					error = tr("ram_search.write_failed");
 					return false;
 				}
 				/* a frozen address is frozen at what was poked, as Chimera's RAM Poke does */
@@ -434,7 +435,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 			std::ifstream in(std::filesystem::u8path(file), std::ios::binary);
 			if (!in)
 			{
-				error = "cannot read " + file;
+				error = tr("new_project.cannot_read", {file});
 				return {};
 			}
 			std::vector<uint64_t> found;
@@ -458,11 +459,11 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 				if (truncate)
 				{
 					ce_ramsearch_remove_addresses(rs, found.data(), static_cast<int64_t>(found.size()), 1);
-					return addresses(static_cast<int64_t>(found.size())) + " removed";
+					return tr("ram_search.removed", {addresses(static_cast<int64_t>(found.size()))});
 				}
 				ce_ramsearch_add_addresses(rs, found.data(), static_cast<int64_t>(found.size()), append ? 1 : 0);
 				if (!append) ce_ramsearch_clear_history(rs);
-				return name + " loaded";
+				return tr("ram_search.loaded", {name});
 			});
 			if (!truncate) currentFile.set(file);
 			addRecent(file);
@@ -474,7 +475,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 			if (!a.empty() && !arg(a, 0, file, error)) return {};
 			if (file.empty())
 			{
-				error = "the search has no file yet: give it one";
+				error = tr("ram_search.no_file");
 				return {};
 			}
 			std::string text = "SystemID " + session_.systemId.get() + kNewLine;
@@ -497,13 +498,13 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 			const std::string name = utf8(std::filesystem::u8path(file).filename());
 			if (!out)
 			{
-				status.set("Failed to save " + name);
-				error = "cannot write " + file;
+				status.set(tr("ram_search.save_failed", {name}));
+				error = tr("session.could_not_write", {file});
 				return {};
 			}
 			currentFile.set(file);
 			addRecent(file);
-			status.set(name + " saved");
+			status.set(tr("ram_search.saved", {name}));
 			return {};
 		}, &searching);
 	command("restoreDefaults", "RAM Search's settings back to Chimera's: the preview on, Auto-Search and lag frames as at first, "
@@ -566,7 +567,7 @@ RamSearchViewModel::RamSearchViewModel(Dispatcher &dispatcher, SessionViewModel 
 		paramsChanged();
 		if (searching.get())
 			onSearch([t](ce_ramsearch *rs) {
-				return ce_ramsearch_set_previous_type(rs, t) != 0 ? std::string("Not enough memory to track the last change of this many addresses")
+				return ce_ramsearch_set_previous_type(rs, t) != 0 ? tr("ram_search.no_memory_previous")
 																   : std::string();
 			}, true);
 	});
@@ -665,7 +666,7 @@ void RamSearchViewModel::fastIfLarge()
 			if (bytes >= kMaxDetailedSize && !fast.get())
 			{
 				fast.set(true);
-				status.set("Large domain, switching to fast mode");
+				status.set(tr("ram_search.fast_mode"));
 			}
 		});
 	});
@@ -686,16 +687,17 @@ bool RamSearchViewModel::params(Params &p, std::string &error) const
 	/* the engine compares raw, signed or float; every other way is raw */
 	const watch::Display w = way();
 	p.display = w == watch::Display::Signed ? 1 : w == watch::Display::Float ? 2 : 0;
+	/* what is read, named by the end of its key: value, address, changes, difference, different_by */
 	auto read = [&](const std::string &text, watch::Display as, const std::string &what, uint32_t &out) {
 		if (text.empty())
 		{
-			error = "Type " + what + " to compare with";
+			error = tr(("ram_search.type_" + what).c_str());
 			return false;
 		}
 		if (!watch::parse(text, as, out))
 		{
-			error = "\"" + text + "\" is not " + (as == watch::Display::Hex && what == "an address" ? std::string("an address in hex")
-				: what == "a number of changes" ? what : "a value shown as " + std::string(watch::displayName(w)));
+			error = what == "address" ? tr("ram_search.not_hex_address", {text})
+				: what == "changes" ? tr("ram_search.not_changes", {text}) : tr("ram_search.not_shown_as", {text, watch::displayName(w)});
 			return false;
 		}
 		return true;
@@ -703,14 +705,14 @@ bool RamSearchViewModel::params(Params &p, std::string &error) const
 	p.value = 0;
 	switch (p.compare)
 	{
-	case 1: if (!read(specificValue.get(), w, "a value", p.value)) return false; break;
-	case 2: if (!read(specificAddress.get(), watch::Display::Hex, "an address", p.value)) return false; break;
-	case 3: if (!read(specificChanges.get(), watch::Display::Unsigned, "a number of changes", p.value)) return false; break;
-	case 4: if (!read(difference.get(), w, "a difference", p.value)) return false; break;
+	case 1: if (!read(specificValue.get(), w, "value", p.value)) return false; break;
+	case 2: if (!read(specificAddress.get(), watch::Display::Hex, "address", p.value)) return false; break;
+	case 3: if (!read(specificChanges.get(), watch::Display::Unsigned, "changes", p.value)) return false; break;
+	case 4: if (!read(difference.get(), w, "difference", p.value)) return false; break;
 	default: break;
 	}
 	p.differentBy = 0;
-	if (p.op == 6 && !read(differentBy.get(), w, "how different", p.differentBy)) return false;
+	if (p.op == 6 && !read(differentBy.get(), w, "different_by", p.differentBy)) return false;
 	return true;
 }
 
@@ -831,7 +833,7 @@ void RamSearchViewModel::dropOnMachine()
 		searching.set(false);
 		outOfRange.set(0);
 		pickedChanged();
-		status.set("No search: the machine closed");
+		status.set(tr("ram_search.machine_closed"));
 		results_.reset.emit();
 	});
 }
@@ -845,7 +847,7 @@ void RamSearchViewModel::startOnMachine(ce_session *s, const std::string &name, 
 		if (name == ce_session_domain_name(s, i)) index = i;
 	if (index < 0)
 	{
-		later([this, name] { status.set("No domain called " + name); });
+		later([this, name] { status.set(tr("ram_search.no_domain", {name})); });
 		return;
 	}
 	const int64_t bytes = ce_session_domain_size(s, index);
@@ -862,7 +864,7 @@ void RamSearchViewModel::startOnMachine(ce_session *s, const std::string &name, 
 	if (rs == nullptr || ce_ramsearch_start(rs, sz, misaligned ? 1 : 0, be ? 1 : 0, detailed ? 1 : 0) != 0)
 	{
 		if (rs != nullptr) ce_ramsearch_destroy(rs);
-		later([this, name] { status.set("Not enough memory to search " + name); });
+		later([this, name] { status.set(tr("ram_search.no_memory_for", {name})); });
 		return;
 	}
 	ce_ramsearch_set_previous_type(rs, previous);
@@ -896,7 +898,7 @@ void RamSearchViewModel::searchOnMachine(const Params &p)
 		if (rs_ == nullptr) return;
 		removed = ce_ramsearch_search(rs_, p.compare, p.op, p.display, p.value, p.differentBy, p.previousType);
 	}
-	reportOnMachine(removed < 0 ? std::string("Not enough memory for that search") : addresses(removed) + " removed");
+	reportOnMachine(removed < 0 ? tr("ram_search.no_memory") : tr("ram_search.removed", {addresses(removed)}));
 }
 
 void RamSearchViewModel::onSearch(std::function<std::string(ce_ramsearch *)> job, bool keepPicks)
@@ -958,7 +960,7 @@ void RamSearchViewModel::reportOnMachine(const std::string &text, bool keepPicks
 		const bool sameRows = n == rows_;
 		rows_ = n;
 		count.set(n);
-		totalText.set(watch::thousands(n) + (n == 1 ? " address" : " addresses"));
+		totalText.set(tr("ram_search.addresses_counted", n, {watch::thousands(n)}));
 		canUndo.set(u);
 		canRedo.set(r);
 		outOfRange.set(bad);

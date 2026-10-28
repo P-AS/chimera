@@ -527,6 +527,19 @@ open(p, 'wb').write(codecs.BOM_UTF16_LE + t.encode('utf-16-le'))
 			report "E:core-dies-in:init" FAIL "rc=$dirc: $(tail -1 "$work/dies-in-init.log" | cut -c1-120)"
 		fi
 
+		# A CORE'S OWN SENTENCE (docs/translations.md): a refusal the core
+		# gives as a key of its package's tables, with an argument, is shown in
+		# the words of the table. The synthetic core refuses a rom of the four
+		# bytes NO!!.
+		printf 'NO!!' > "$work/refused.testrom"
+		crun_game "$epkg" "$work/refused.testrom" "$here/movies/gridWalker.win.txt" > "$work/refused.log" 2>&1; rfrc=$?
+		if [ "$rfrc" -ne 0 ] && grep -q "Synth: The synthetic core refuses this game of 4 bytes." "$work/refused.log" \
+			&& ! grep -q "error.refused" "$work/refused.log"; then
+			report "E:core-text" PASS "a core's refusal, a key of its package's tables with an argument, reads: $(grep -o 'The synthetic core refuses.*' "$work/refused.log" | head -1)"
+		else
+			report "E:core-text" FAIL "rc=$rfrc: $(tail -1 "$work/refused.log" | cut -c1-120)"
+		fi
+
 		# CHIMERA-RUN SAYS WHAT IT WAS ASKED (2026-10-18): --final-screenshot is
 		# the last frame's own picture, in a plain run and after a seek (it was
 		# a blank buffer, or the first pass's picture); a number that is not

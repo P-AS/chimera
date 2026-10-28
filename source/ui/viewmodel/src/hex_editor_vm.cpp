@@ -1,4 +1,5 @@
 #include "chimera/vm/hex_editor_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -84,7 +85,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 		if (!arg(a, 0, address, error)) return {};
 		if (address < 0 || address >= domainSize_)
 		{
-			error = "the domain has no address " + watch::hex(address, 1);
+			error = tr("hex.no_address", {watch::hex(address, 1)});
 			return {};
 		}
 		secondary_.clear();
@@ -100,21 +101,21 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			uint32_t value = 0;
 			if (text.size() > static_cast<size_t>(sz * 2) || !watch::parse(text, watch::Display::Hex, value))
 			{
-				error = "\"" + text + "\" is not a value of " + std::to_string(sz) + (sz == 1 ? " byte" : " bytes") + " in hex";
+				error = tr("hex.not_value_of", sz, {text});
 				return {};
 			}
 			if (!writable.get())
 			{
-				error = domain.get() + " cannot be written";
+				error = tr("session.domain_read_only", {domain.get()});
 				return {};
 			}
 			if (address < 0 || address + sz > domainSize_)
 			{
-				error = "the domain has no address " + watch::hex(address, 1);
+				error = tr("hex.no_address", {watch::hex(address, 1)});
 				return {};
 			}
 			if (!writeValue(address, value, error)) return {};
-			status.set("Wrote at " + watch::hex(address, digits()));
+			status.set(tr("hex.wrote_at", {watch::hex(address, digits())}));
 			return {};
 		});
 	command("find", "Find Next: the next place these bytes (hex) are, after the address highlighted", {"bytes"},
@@ -124,7 +125,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			std::vector<uint8_t> want;
 			if (!hexBytes(text, want))
 			{
-				error = "\"" + text + "\" is not bytes in hex";
+				error = tr("hex.not_bytes", {text});
 				return {};
 			}
 			const auto got = run("findNext", {text}, error);
@@ -143,7 +144,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			std::vector<uint8_t> want;
 			if (!hexBytes(digitsOnly, want))
 			{
-				error = "\"" + text + "\" is not bytes in hex";
+				error = tr("hex.not_bytes", {text});
 				return {};
 			}
 			const int sz = static_cast<int>(size.get());
@@ -158,7 +159,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			if (hit < 0) hit = findBytes(want, false, at < 0 ? domainSize_ - sz - n : at - 1);
 			if (hit < 0)
 			{
-				status.set("Not found");
+				status.set(tr("hex.not_found"));
 				return int64_t{-1};
 			}
 			/* kept for Find Next only when found, as Chimera keeps it */
@@ -265,7 +266,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			}
 			else
 			{
-				error = "no key " + key;
+				error = tr("hex.no_key", {key});
 				return {};
 			}
 			titles();
@@ -388,17 +389,17 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			std::vector<uint8_t> all;
 			if (!readNow(0, domainSize_, all))
 			{
-				error = "cannot read " + domain.get();
+				error = tr("new_project.cannot_read", {domain.get()});
 				return {};
 			}
 			std::ofstream out(std::filesystem::u8path(file), std::ios::binary | std::ios::trunc);
 			out.write(reinterpret_cast<const char *>(all.data()), static_cast<std::streamsize>(all.size()));
 			if (!out)
 			{
-				error = "cannot write " + file;
+				error = tr("session.could_not_write", {file});
 				return {};
 			}
-			status.set("Saved " + file);
+			status.set(tr("hex.saved", {file}));
 			return {};
 		});
 	command("saveText", "the domain written to a file as text: sixteen bytes a line in hex, a space after each", {"path"},
@@ -408,7 +409,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			std::vector<uint8_t> all;
 			if (!readNow(0, domainSize_, all))
 			{
-				error = "cannot read " + domain.get();
+				error = tr("new_project.cannot_read", {domain.get()});
 				return {};
 			}
 #ifdef _WIN32
@@ -428,10 +429,10 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			out << text;
 			if (!out)
 			{
-				error = "cannot write " + file;
+				error = tr("session.could_not_write", {file});
 				return {};
 			}
-			status.set("Saved " + file);
+			status.set(tr("hex.saved", {file}));
 			return {};
 		});
 	command("importBinary", "Import as binary: a file's bytes written into the domain from its start", {"path"},
@@ -440,13 +441,13 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			if (!arg(a, 0, file, error)) return {};
 			if (!writable.get())
 			{
-				error = "This Memory Domain can't be Poked; so importing can't work";
+				error = tr("hex.cannot_poke");
 				return {};
 			}
 			std::ifstream in(std::filesystem::u8path(file), std::ios::binary);
 			if (!in)
 			{
-				error = "cannot read " + file;
+				error = tr("new_project.cannot_read", {file});
 				return {};
 			}
 			std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -461,7 +462,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			std::ifstream in(std::filesystem::u8path(file), std::ios::binary);
 			if (!in)
 			{
-				error = "cannot read " + file;
+				error = tr("new_project.cannot_read", {file});
 				return {};
 			}
 			std::map<int, char> read;
@@ -488,7 +489,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 	command("addToRamWatch", "the addresses highlighted added to RAM Watch, at the size shown, in hex", {}, [this](const Args &, std::string &error) -> Value {
 		if (ramWatch_ == nullptr)
 		{
-			error = "RAM Watch is not here";
+			error = tr("ram_search.no_ram_watch");
 			return {};
 		}
 		std::string lines;
@@ -510,10 +511,10 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			const int sz = static_cast<int>(size.get());
 			out.members.emplace_back("addresses", json::Json::string(list));
 			out.members.emplace_back("domain", json::Json::string(domain.get()));
-			out.members.emplace_back("size", json::Json::string(sz == 1 ? "Byte" : sz == 2 ? "Word" : "DWord"));
+			out.members.emplace_back("size", json::Json::string(tr(sz == 1 ? "watch.size_byte" : sz == 2 ? "watch.size_word" : "watch.size_dword")));
 			out.members.emplace_back("display", json::Json::string(watch::displayName(watch::Display::Hex)));
 			out.members.emplace_back("hex", json::Json::boolean_(true));
-			out.members.emplace_back("endian", json::Json::string(bigEndian.get() ? "Big Endian" : "Little Endian"));
+			out.members.emplace_back("endian", json::Json::string(tr(bigEndian.get() ? "watch.big_endian" : "watch.little_endian")));
 			out.members.emplace_back("value", json::Json::string(upperHex(valueAt(all.front()), sz * 2)));
 			out.members.emplace_back("mixed", json::Json::boolean_(false));
 			out.members.emplace_back("property", json::Json::boolean_(false));
@@ -526,13 +527,13 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			uint32_t v = 0;
 			if (!watch::parse(text, watch::Display::Hex, v))
 			{
-				error = "An error occurred when writing Value.";
+				error = tr("ram_search.write_failed");
 				return false;
 			}
 			for (const int64_t at : highlightedAll())
 				if (!writeValue(at, v, error))
 				{
-					error = "An error occurred when writing Value.";
+					error = tr("ram_search.write_failed");
 					return false;
 				}
 			return true;
@@ -544,7 +545,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 			static const char *const roles[] = {"Background", "Foreground", "MenuBar", "Freeze", "Highlight", "HighlightFreeze"};
 			if (std::find_if(std::begin(roles), std::end(roles), [&](const char *r) { return role == r; }) == std::end(roles))
 			{
-				error = "no colour " + role;
+				error = tr("hex.no_colour", {role});
 				return {};
 			}
 			json::Json all;
@@ -732,13 +733,13 @@ bool HexEditorViewModel::writeNow(int64_t at, const std::vector<uint8_t> &bytes,
 {
 	if (at < 0 || at + static_cast<int64_t>(bytes.size()) > domainSize_)
 	{
-		error = "the domain has no address " + watch::hex(at, 1);
+		error = tr("hex.no_address", {watch::hex(at, 1)});
 		return false;
 	}
 	/* every write goes through here: Lua and agents as well as the window */
 	if (!writable.get())
 	{
-		error = "the domain " + domain.get() + " cannot be written";
+		error = tr("session.domain_read_only", {domain.get()});
 		return false;
 	}
 	const std::string name = domain.get();
@@ -746,14 +747,14 @@ bool HexEditorViewModel::writeNow(int64_t at, const std::vector<uint8_t> &bytes,
 	session_.onMachineWait([&](ce_session *s) {
 		if (s == nullptr)
 		{
-			why = "no machine is running";
+			why = tr("session.no_machine_running");
 			return;
 		}
 		const int32_t i = domainIndex(s, name);
 		const uint64_t ptr = i >= 0 ? ce_session_domain_ptr(s, i) : 0;
 		if (ptr == 0)
 		{
-			why = name + " has no memory that can be written directly";
+			why = tr("hex.not_writable", {name});
 			return;
 		}
 		auto *mem = reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(ptr));
@@ -836,7 +837,7 @@ void HexEditorViewModel::found(int64_t at, size_t length)
 	const int64_t more = static_cast<int64_t>(length * 2) / (sz * 2) - 1;
 	for (int64_t i = 0; i < more; i += sz) secondary_.insert(at + sz + i);
 	highlight(at);
-	status.set("Found at " + watch::hex(at, digits()));
+	status.set(tr("hex.found_at", {watch::hex(at, digits())}));
 }
 
 int64_t HexEditorViewModel::findBytes(const std::vector<uint8_t> &want, bool forward, int64_t from)
@@ -882,18 +883,18 @@ void HexEditorViewModel::titles()
 		title.set("Hex Editor");
 	else
 	{
-		std::string t = "Hex Editor - Editing Address 0x" + upperHex(static_cast<uint32_t>(picked.get()), digits());
+		std::string t = tr("hex.title_editing", {upperHex(static_cast<uint32_t>(picked.get()), digits())});
 		if (!secondary_.empty())
 		{
 			const size_t n = secondary_.size() + (secondary_.count(picked.get()) ? 0 : 1);
-			t += " (Selected 0x" + upperHex(static_cast<uint32_t>(n), 1) + ")";
+			t += " " + tr("hex.title_selected", {upperHex(static_cast<uint32_t>(n), 1)});
 		}
 		title.set(t);
 	}
 	std::string count = upperHex(static_cast<uint32_t>(domainSize_ / sz), 8);
 	count.erase(0, std::min(count.find_first_not_of('0'), count.size()));
-	std::string box = session_.systemId.get() + " " + domain.get() + (writable.get() ? "" : " (READ-ONLY)") + "  -  0x" + count + " addresses";
-	if (!nibbles.get().empty()) box += "  Typing: (" + nibbles.get() + ")";
+	std::string box = tr(writable.get() ? "hex.box" : "hex.box_read_only", {session_.systemId.get(), domain.get(), count});
+	if (!nibbles.get().empty()) box += "  " + tr("hex.typing", {nibbles.get()});
 	boxTitle.set(box);
 	header.set(sz == 1 ? "0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F" : sz == 2 ? "0    2    4    6    8    A    C    E" : "0        4        8        C");
 }

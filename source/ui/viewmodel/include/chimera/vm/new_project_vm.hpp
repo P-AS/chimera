@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "chimera/vm/cores_vm.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/firmware.hpp"
 #include "chimera/vm/json.hpp"
 #include "chimera/vm/session_vm.hpp"
@@ -64,7 +65,7 @@ public:
 	static std::string clockText(int64_t unixSeconds);
 	static std::optional<int64_t> parseClockText(const std::string &text);
 	/* what keeps the project from being made, a line each; "" when ready */
-	Property<std::string> problems{"Choose a core"};
+	Property<std::string> problems{tr("new_project.choose_core")};
 	Property<bool> ready{false};
 	Property<std::string> status;
 	/* Chimera's wizard, a page at a time: whether the files page and the
@@ -87,6 +88,7 @@ public:
 	Property<std::string> importMovie;
 	Property<std::string> importNotes;
 	Property<bool> imported{false};
+	Property<bool> clockWrong{false};
 	/* how the last import went, for Chimera's Import window: why it was not
 	 * taken ("" when it was), what the core said of it when it noted
 	 * anything (Chimera's message: "<core> read a <format> movie of <n>

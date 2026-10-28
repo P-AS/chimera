@@ -6,6 +6,7 @@
  * knows no setting by name: a row is whatever the package declared. */
 
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/settings_form.hpp"
 #include "chimera/vm/session_vm.hpp"
 #include "chimera/vm/view_model.hpp"
@@ -22,7 +23,7 @@ public:
 	/* edits not applied yet */
 	Property<bool> pending{false};
 	Property<int64_t> shown{0};
-	Property<std::string> status{"No machine is open"};
+	Property<std::string> status{tr("session.no_machine")};
 	/* File > Project Settings (issue 370): the start of the project's clock, as
 	 * the New Project window writes it (UTC); whether anything the machine is
 	 * made from differs from what it was made from (each setting at its value
@@ -33,6 +34,7 @@ public:
 	Property<bool> canRestart{false};
 	/* what is in the way of restarting, "" when nothing is */
 	Property<std::string> restartNote;
+	Property<bool> clockWrong{false};
 
 	/* which of a declaration's settings apply (SettingsForm's rule) */
 	static std::vector<size_t> applicable(const std::vector<json::Json> &decl, const std::string &slots,

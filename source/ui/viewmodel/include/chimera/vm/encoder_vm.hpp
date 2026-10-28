@@ -31,7 +31,8 @@ public:
 	static const char *const kDefaultCommand;
 	struct Preset
 	{
-		const char *name, *command;
+		/* its name's key in the language tables */
+		const char *key, *command;
 	};
 	static const std::vector<Preset> &presets();
 	/* the container the command names (-f), as the file's extension; "" for none */
@@ -76,12 +77,12 @@ private:
 	public:
 		int64_t rowCount() const override { return static_cast<int64_t>(presets().size()); }
 		int32_t columnCount() const override { return 2; }
-		std::string columnName(int32_t column) const override { return column == 0 ? "name" : column == 1 ? "command" : ""; }
+		std::string columnName(int32_t column) const override { return column == 0 ? "key" : column == 1 ? "command" : ""; }
 		Value cell(int64_t row, int32_t column) const override
 		{
 			if (row < 0 || row >= rowCount()) return {};
 			const Preset &p = presets()[static_cast<size_t>(row)];
-			return std::string(column == 0 ? p.name : p.command);
+			return std::string(column == 0 ? p.key : p.command);
 		}
 	};
 	struct Job;

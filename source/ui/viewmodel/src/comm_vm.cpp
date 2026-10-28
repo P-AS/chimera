@@ -1,4 +1,5 @@
 #include "chimera/vm/comm_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -64,7 +65,7 @@ CommViewModel::CommViewModel(Dispatcher &dispatcher, std::function<std::string()
 			const std::string png = screenshot_ ? screenshot_() : std::string();
 			if (png.empty())
 			{
-				error = "there is no picture yet";
+				error = tr("session.no_picture");
 				return {};
 			}
 			const int64_t n = write(screenshotFile.get(), png, error);
@@ -96,7 +97,7 @@ int64_t CommViewModel::write(const std::string &name, const std::string &bytes, 
 {
 	if (name.empty())
 	{
-		error = "a memory-mapped file needs a name";
+		error = tr("comm.needs_name");
 		return -1;
 	}
 	const int64_t n = static_cast<int64_t>(bytes.size());
@@ -113,7 +114,7 @@ int64_t CommViewModel::write(const std::string &name, const std::string &bytes, 
 			static_cast<DWORD>(n & 0xFFFFFFFF), wide(name).c_str());
 		if (m->handle == nullptr)
 		{
-			error = "could not make the memory-mapped file " + name;
+			error = tr("comm.not_made", {name});
 			return -1;
 		}
 		m->size = n;
@@ -122,7 +123,7 @@ int64_t CommViewModel::write(const std::string &name, const std::string &bytes, 
 	void *view = MapViewOfFile(m->handle, FILE_MAP_WRITE, 0, 0, static_cast<SIZE_T>(n));
 	if (view == nullptr)
 	{
-		error = "could not write the memory-mapped file " + name;
+		error = tr("comm.not_written", {name});
 		return -1;
 	}
 	std::memcpy(view, bytes.data(), bytes.size());
@@ -133,7 +134,7 @@ int64_t CommViewModel::write(const std::string &name, const std::string &bytes, 
 		m->fd = shm_open(shmName(name).c_str(), O_RDWR | O_CREAT, 0600);
 		if (m->fd < 0)
 		{
-			error = "could not make the memory-mapped file " + name + ": " + std::strerror(errno);
+			error = tr("comm.not_made_why", {name, std::strerror(errno)});
 			return -1;
 		}
 	}
@@ -141,7 +142,7 @@ int64_t CommViewModel::write(const std::string &name, const std::string &bytes, 
 	fstat(m->fd, &st);
 	if (st.st_size < n && ftruncate(m->fd, n) != 0)
 	{
-		error = "could not grow the memory-mapped file " + name + ": " + std::strerror(errno);
+		error = tr("comm.not_grown", {name, std::strerror(errno)});
 		return -1;
 	}
 	m->size = std::max<int64_t>(st.st_size, n);
@@ -149,7 +150,7 @@ int64_t CommViewModel::write(const std::string &name, const std::string &bytes, 
 	void *view = mmap(nullptr, static_cast<size_t>(n), PROT_WRITE, MAP_SHARED, m->fd, 0);
 	if (view == MAP_FAILED)
 	{
-		error = "could not write the memory-mapped file " + name + ": " + std::strerror(errno);
+		error = tr("comm.not_written_why", {name, std::strerror(errno)});
 		return -1;
 	}
 	std::memcpy(view, bytes.data(), bytes.size());
@@ -162,7 +163,7 @@ bool CommViewModel::read(const std::string &name, int64_t size, std::string &out
 {
 	if (size < 0)
 	{
-		error = "no size below 0";
+		error = tr("comm.size_negative");
 		return false;
 	}
 	out.assign(static_cast<size_t>(size), '\0');
@@ -171,14 +172,14 @@ bool CommViewModel::read(const std::string &name, int64_t size, std::string &out
 	HANDLE h = OpenFileMappingW(FILE_MAP_READ, FALSE, wide(name).c_str());
 	if (h == nullptr)
 	{
-		error = "there is no memory-mapped file " + name;
+		error = tr("comm.none", {name});
 		return false;
 	}
 	const void *view = MapViewOfFile(h, FILE_MAP_READ, 0, 0, static_cast<SIZE_T>(size));
 	if (view == nullptr)
 	{
 		CloseHandle(h);
-		error = "the memory-mapped file " + name + " is smaller than " + std::to_string(size) + " bytes";
+		error = tr("comm.too_small", {name, std::to_string(size)});
 		return false;
 	}
 	std::memcpy(out.data(), view, out.size());
@@ -188,7 +189,7 @@ bool CommViewModel::read(const std::string &name, int64_t size, std::string &out
 	const int fd = shm_open(shmName(name).c_str(), O_RDONLY, 0);
 	if (fd < 0)
 	{
-		error = "there is no memory-mapped file " + name;
+		error = tr("comm.none", {name});
 		return false;
 	}
 	struct stat st{};
@@ -196,14 +197,14 @@ bool CommViewModel::read(const std::string &name, int64_t size, std::string &out
 	if (st.st_size < size)
 	{
 		::close(fd);
-		error = "the memory-mapped file " + name + " is smaller than " + std::to_string(size) + " bytes";
+		error = tr("comm.too_small", {name, std::to_string(size)});
 		return false;
 	}
 	const void *view = mmap(nullptr, static_cast<size_t>(size), PROT_READ, MAP_SHARED, fd, 0);
 	::close(fd);
 	if (view == MAP_FAILED)
 	{
-		error = "could not read the memory-mapped file " + name;
+		error = tr("comm.not_read", {name});
 		return false;
 	}
 	std::memcpy(out.data(), view, out.size());

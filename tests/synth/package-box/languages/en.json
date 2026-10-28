@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "The synthetic core refuses this game of %1 bytes.",
+		"game_firmware.gamelogo": "Game logo",
+		"game_setting.gamelogo": "Game Logo",
+		"game_setting.gamelogo.about": "This game's own: shows its logo, from a file of its own.",
+		"game_setting.not_the_package_s": "Not the package's",
+		"import.game_missing": "the game %1 is not at hand",
+		"import.no_movie": "no movie: the file \"movie\" is not mounted",
+		"import.note": "imported by the synth core",
+		"import.which_game": "which game was this movie made on? (importRom)",
+		"property.cursor_x": "Column of the cell the cursor is in",
+		"property.letter": "What the core left in its mailbox",
+		"property.status": "Every test rom's result byte",
+		"property.steps": "Moves made; past 1000 the game is lost",
+		"setting.initfillbyte": "Initial RAM Fill",
+		"setting.initfillbyte.about": "Byte the machine's RAM is filled with before the rom runs. Shapes the machine, so it is a sync setting.",
+		"slot.rom": "Game",
+		"slot.rom.help": "The test game the synthetic core runs.",
+		"suggest.fill": "The synthetic core suggests a fill of 9.",
+		"suggest.fill_disks": {
+			"one": "The synthetic core suggests a fill of 9. It sees %n disk, at disk speed %2.",
+			"other": "The synthetic core suggests a fill of 9. It sees %n disks, at disk speed %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "The synthetic core suggests a fill of 9. It sees %n disk and the track of disk1.cue, at disk speed %2.",
+			"other": "The synthetic core suggests a fill of 9. It sees %n disks and the track of disk1.cue, at disk speed %2."
+		},
+		"suggest.nothing": "The synthetic core suggests nothing for this game."
+	}
+}

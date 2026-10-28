@@ -50,6 +50,6 @@ bool displayFromLetter(char c, Display &out);
 /* a count as Chimera writes one, thousands apart: "1,024" */
 std::string thousands(int64_t n);
 /* the names the window shows, as Chimera writes them ("Hex", "Fixed Point 12.4") */
-const char *displayName(Display display);
+std::string displayName(Display display);
 
 } // namespace chimera::vm::watch

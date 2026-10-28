@@ -94,6 +94,7 @@ struct Package
 	Json cfg, keybinds;
 	bool hasKeybinds = false;
 	std::map<std::string, std::string> entries; /* what was asked of it, by name */
+	std::string languageProblems;               /* ce_package_language_problems: "" when none */
 };
 
 std::string entryText(ce_package *p, const char *name)
@@ -116,6 +117,7 @@ Package readPackage(const std::string &path)
 		return k;
 	}
 	k.waterbox = ce_package_is_waterbox(p) != 0;
+	k.languageProblems = ce_package_language_problems(p);
 	if (!k.waterbox) k.error = "no core.wbx and waterbox.config at its top level";
 	std::string jerr;
 	if (k.waterbox && !chimera::vm::json::parse(entryText(p, "waterbox.config"), k.cfg, jerr))
@@ -377,6 +379,22 @@ void checkPackages(const std::vector<Package> &all)
 		for (const Package *k : readable)
 			if (const std::string why = CoresViewModel::abiRefusal(k->cfg); !why.empty()) wrong.push_back(k->name + ": " + why);
 		report("every package is built for a guest ABI this Chimera runs", wrong);
+	}
+	{
+		/* the package's texts are keys of its own language tables, one for
+		 * every language Chimera has, every key in each (docs/translations.md) */
+		std::vector<std::string> wrong;
+		for (const Package *k : readable)
+		{
+			std::string line;
+			for (const char c : k->languageProblems)
+			{
+				if (c != '\n') { line += c; continue; }
+				wrong.push_back(k->name + ": " + line);
+				line.clear();
+			}
+		}
+		report("every package's texts are in every language Chimera has", wrong);
 	}
 	{
 		/* what the window takes from a package: its core's name, its machines,

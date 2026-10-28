@@ -1,4 +1,5 @@
 #include "chimera/vm/session_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/vm/cores_vm.hpp"
 #include "chimera/vm/sha256.hpp"
@@ -69,7 +70,7 @@ void requestGpu(const std::string &package, const std::string &settings)
 		{
 			uint64_t len = 0;
 			json::Json cfg;
-			if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len))
+			if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len))
 				json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, error);
 			ce_package_free(pk);
 			if (const json::Json *list = cfg.find("settings"))
@@ -136,12 +137,12 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				}
 				if (p == nullptr || index < 0 || index >= fileCount)
 				{
-					why = "no such file";
+					why = tr("session.no_such_file");
 					return;
 				}
 				const char *err = nullptr;
 				if (ce_project_file_resolve(p, static_cast<int32_t>(index), path.c_str(), &err) != 0)
-					why = "Cannot read that file: " + std::string(err != nullptr ? err : "no reason given");
+					why = tr("session.cannot_read_file", {err != nullptr ? err : tr("common.no_reason")});
 				publishProjectFilesOnMachine();
 			});
 			if (!why.empty())
@@ -237,11 +238,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			for (const ProjectFile &f : projectFiles_) missing = missing || f.status == 1;
 			if (missing)
 			{
-				error = "a file is still not found";
+				error = tr("session.file_still_missing");
 				return {};
 			}
 			resolvingFiles.set(false);
-			status.set("Opening...");
+			status.set(tr("session.opening"));
 			submit([this] {
 				PendingOpen o = std::move(pendingOpenM_);
 				pendingOpenM_ = PendingOpen{};
@@ -265,7 +266,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			later([this] {
 				projectFiles_.clear();
 				projectFileRows_.reset.emit();
-				status.set("The project was not opened");
+				status.set(tr("session.not_opened"));
 			});
 		});
 		return {};
@@ -309,8 +310,9 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		}
 		cv_.notify_all();
 		/* as Chimera says it */
-		static const char *const types[] = {":Clock", ":Sound", ":Vsync", ":(none)"};
-		status.set(std::string(unthrottled.get() ? "Unthrottled" : "Throttled") + types[mode] + (mode == 2 ? (vsyncEnabled.get() ? "[ena]" : "[dis]") : ""));
+		static const char *const types[] = {"session.throttle_clock", "session.throttle_sound", "session.throttle_vsync", "session.throttle_none"};
+		status.set(tr(unthrottled.get() ? "session.unthrottled_by" : "session.throttled_by", {tr(types[mode])})
+			+ (mode == 2 ? tr(vsyncEnabled.get() ? "session.vsync_on" : "session.vsync_off") : std::string()));
 	});
 	soundOnWatch_ = soundOn.changed.connect([this] { soundOnM_ = soundOn.get(); });
 	expose("fastForwardPercent", "how fast fast forward runs, a percent of the machine's rate (Chimera's alternate speed)",
@@ -381,7 +383,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			if (!arg(a, 0, mb, error) || !arg(a, 1, stride, error)) return {};
 			if ((mb != 0 && mb < 64) || stride < 0 || stride > 32)
 			{
-				error = "a memory budget is 64 MB or more, and the closeness 1 to 32 (0 for every project's)";
+				error = tr("session.budget_range");
 				return {};
 			}
 			bool open = false;
@@ -406,7 +408,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			if (!open)
 			{
-				error = "no project is open";
+				error = tr("session.no_project");
 				return {};
 			}
 			projectBudgetMb.set(mb);
@@ -454,7 +456,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 					break;
 				}
 		speedPercent.set(next);
-		status.set("Speed: " + std::to_string(next) + "%");
+		status.set(tr("session.speed", {std::to_string(next)}));
 	};
 	command("speedUp", "the next of Chimera's speeds up", {}, [speedStep](const Args &, std::string &) -> Value {
 		speedStep(1);
@@ -471,22 +473,22 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	});
 	command("toggleThrottle", "as fast as it can, or at its speed again", {}, [this](const Args &, std::string &) -> Value {
 		unthrottled.set(!unthrottled.get());
-		status.set(unthrottled.get() ? "Unthrottled" : "Throttled");
+		status.set(tr(unthrottled.get() ? "session.unthrottled" : "session.throttled"));
 		return {};
 	});
 	command("toggleSound", "the sound on or off", {}, [this](const Args &, std::string &) -> Value {
 		soundOn.set(!soundOn.get());
-		status.set(soundOn.get() ? "Sound on" : "Sound off");
+		status.set(tr(soundOn.get() ? "session.sound_on" : "session.sound_off"));
 		return {};
 	});
 	command("volumeUp", "the volume up by ten", {}, [this](const Args &, std::string &) -> Value {
 		volume.set(std::min<int64_t>(100, volume.get() + 10));
-		status.set("Volume " + std::to_string(volume.get()));
+		status.set(tr("session.volume", {std::to_string(volume.get())}));
 		return {};
 	});
 	command("volumeDown", "the volume down by ten", {}, [this](const Args &, std::string &) -> Value {
 		volume.set(std::max<int64_t>(0, volume.get() - 10));
-		status.set("Volume " + std::to_string(volume.get()));
+		status.set(tr("session.volume", {std::to_string(volume.get())}));
 		return {};
 	});
 	expose("showFps", "the speed is shown over the picture", showFps, true);
@@ -523,7 +525,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			char when[32];
 			std::strftime(when, sizeof when, "%Y-%m-%d %H.%M.%S", std::localtime(&now));
 			const std::string core = isOpen.get() && !coreName.get().empty() ? coreName.get() : "Chimera";
-			return core + " core log " + when + ".txt";
+			return tr("session.core_log_file", {core, when});
 		});
 	command("startCoreLog", "keeps what the cores write in this file from now on (a session opened from now notes its core)",
 		{"path"}, [this](const Args &a, std::string &error) -> Value {
@@ -532,7 +534,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			if (ce_core_log(path.c_str()) != 1)
 			{
 				const char *why = ce_core_log_error();
-				error = "The core log could not be started: " + std::string(why != nullptr ? why : "no reason given");
+				error = tr("session.core_log_not_started", {why != nullptr ? why : tr("common.no_reason")});
 				return {};
 			}
 			coreLogPath.set(path);
@@ -542,7 +544,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		const std::string was = coreLogPath.get();
 		ce_core_log(nullptr);
 		coreLogPath.set("");
-		if (!was.empty()) status.set("The core log is off. It is in " + was + ": attach that file to your issue.");
+		if (!was.empty()) status.set(tr("session.core_log_off", {was}));
 		return was;
 	});
 	command("coreLogSize", "how many bytes the core log has so far", {}, [this](const Args &, std::string &) -> Value {
@@ -566,7 +568,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		});
 		if (!open)
 		{
-			error = "the core open keeps no save data";
+			error = tr("session.no_save_data_kept");
 			return {};
 		}
 		return names;
@@ -580,13 +582,13 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			onMachineWait([&](ce_session *s) {
 				if (s == nullptr || !ce_session_savedata_available(s))
 				{
-					why = "the core open keeps no save data";
+					why = tr("session.no_save_data_kept");
 					return;
 				}
 				const int32_t n = ce_session_savedata_count(s);
 				if (n == 0)
 				{
-					why = "This machine holds no save data yet.";
+					why = tr("session.no_save_data_yet");
 					return;
 				}
 				/* each file read in pieces, as the engine streams it */
@@ -622,7 +624,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				}
 				if (!out)
 				{
-					why = "could not write " + path;
+					why = tr("session.could_not_write", {path});
 					return;
 				}
 				written = n;
@@ -632,7 +634,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				error = why;
 				return {};
 			}
-			status.set("Save data written: " + path);
+			status.set(tr("session.save_data_written", {path}));
 			return written;
 		}, &hasSaveData);
 	command("resetAverageFps", "the average speed counted afresh from now", {}, [this](const Args &, std::string &) -> Value {
@@ -668,7 +670,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		autoholdMask_ = 0;
 		autofireMask_ = 0;
 		stickyChanged();
-		status.set("Autohold keys cleared");
+		status.set(tr("session.autohold_cleared"));
 		return {};
 	});
 	command("toggleAutohold", "a button held by autohold, or no longer", {"button"}, [this](const Args &a, std::string &error) -> Value {
@@ -681,7 +683,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				stickyChanged();
 				return {};
 			}
-		error = "no button " + name;
+		error = tr("session.no_button", {name});
 		return {};
 	});
 	command("toggleAutofire", "a button fired by autofire, or no longer", {"button"}, [this](const Args &a, std::string &error) -> Value {
@@ -696,7 +698,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				stickyChanged();
 				return {};
 			}
-		error = "no button " + name;
+		error = tr("session.no_button", {name});
 		return {};
 	});
 	expose("catchingPad", "waiting for a gamepad input to be pressed (catchPad)", catchingPad);
@@ -740,12 +742,12 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			const int64_t to = choice == "back" ? stoppedSafePoint.get() : choice == "restart" ? int64_t{0} : -1;
 			if ((choice == "back" && to < 0) || (choice == "restart" && !stoppedCanRestart.get()))
 			{
-				error = "the state history holds no state to go back to";
+				error = tr("session.nothing_to_go_back_to");
 				return {};
 			}
 			if (!choice.empty() && choice != "back" && choice != "restart" && choice != "keepWork")
 			{
-				error = "no choice " + choice;
+				error = tr("session.no_choice", {choice});
 				return {};
 			}
 			stoppedAt.set(-1);
@@ -807,7 +809,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		const bool same = std::all_of(freezes_.begin(), freezes_.end(), [first](const Freeze &f) { return f.enabled == first; });
 		for (Freeze &f : freezes_) f.enabled = !f.enabled;
 		syncFreezes();
-		status.set(std::string("Freezes toggled (") + (same ? (first ? "off" : "on") : "mixed") + ")");
+		status.set(tr(!same ? "session.freezes_mixed" : first ? "session.freezes_off" : "session.freezes_on"));
 		return {};
 	});
 	expose("greenzonePeriod", "which frames the greenzone stores: 1 every frame, N one in N, 0 none (saved with the project)",
@@ -854,12 +856,12 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			const std::string copy = recoveredCopy.get();
 			if (copy.empty())
 			{
-				error = "no recovered work is waiting";
+				error = tr("session.no_recovered_work");
 				return {};
 			}
 			recoveredCopy.set("");
 			recoveredUpTo.set("");
-			status.set("Opening...");
+			status.set(tr("session.opening"));
 			submit([this, open, copy] {
 				PendingOpen o = std::move(pendingOpenM_);
 				pendingOpenM_ = PendingOpen{};
@@ -876,8 +878,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 					else
 					{
 						/* the project as it was saved, then; the copy is still there */
-						const std::string why = err != nullptr ? err : "no reason given";
-						later([this, why, copy] { status.set("The recovered work could not be opened (" + why + "); it is kept as " + copy); });
+						const std::string why = err != nullptr ? err : tr("common.no_reason");
+						later([this, why, copy] { status.set(tr("session.recovered_not_opened", {why, copy})); });
 					}
 				}
 				findFilesAndBootOnMachine(std::move(o));
@@ -889,12 +891,12 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		[this](const Args &, std::string &error) -> Value {
 			if (projectPath.get().empty())
 			{
-				error = hasProject.get() ? "this project has not been saved yet" : "no project is open";
+				error = tr(hasProject.get() ? "session.not_saved_yet" : "session.no_project");
 				return {};
 			}
 			if (backupFolder.get().empty())
 			{
-				error = "no backup folder is set";
+				error = tr("session.no_backup_folder");
 				return {};
 			}
 			const std::string path = backupPathFor(projectPath.get());
@@ -917,7 +919,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		{"keepIn"}, [this](const Args &a, std::string &error) -> Value {
 			std::string keepIn;
 			if (!a.empty() && !arg(a, 0, keepIn, error)) return {};
-			status.set("Checking the state history...");
+			status.set(tr("session.checking_history"));
 			submit([this, keepIn] { checkHistoryOnMachine(keepIn); });
 			return {};
 		}, &isOpen);
@@ -984,7 +986,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			onMachineWait([&](ce_session *s) {
 				if (s == nullptr)
 				{
-					why = "no machine is running";
+					why = tr("session.no_machine_running");
 					return;
 				}
 				for (int32_t i = 0; i < ce_session_domain_count(s); i++)
@@ -994,14 +996,14 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 					const int64_t size = ce_session_domain_size(s, i);
 					if (address < 0 || length < 0 || address + length > size)
 					{
-						why = domain + " has no address " + std::to_string(address + length - 1);
+						why = tr("session.no_address", {domain, std::to_string(address + length - 1)});
 						return;
 					}
 					bytes.resize(static_cast<size_t>(length));
 					ce_session_domain_read(s, i, address, reinterpret_cast<uint8_t *>(bytes.data()), length);
 					return;
 				}
-				why = "no memory domain " + domain;
+				why = tr("session.no_domain", {domain});
 			});
 			if (!why.empty())
 			{
@@ -1019,7 +1021,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			onMachineWait([&](ce_session *s) {
 				if (s == nullptr)
 				{
-					why = "no machine is running";
+					why = tr("session.no_machine_running");
 					return;
 				}
 				for (int32_t i = 0; i < ce_session_domain_count(s); i++)
@@ -1030,19 +1032,19 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 					const uint64_t ptr = ce_session_domain_writable(s, i) != 0 ? ce_session_domain_ptr(s, i) : 0;
 					if (ptr == 0)
 					{
-						why = domain + " cannot be written";
+						why = tr("session.domain_read_only", {domain});
 						return;
 					}
 					if (address < 0 || address + static_cast<int64_t>(bytes.size()) > size)
 					{
-						why = domain + " has no address " + std::to_string(address + static_cast<int64_t>(bytes.size()) - 1);
+						why = tr("session.no_address", {domain, std::to_string(address + static_cast<int64_t>(bytes.size()) - 1)});
 						return;
 					}
 					std::memcpy(reinterpret_cast<uint8_t *>(ptr) + address, bytes.data(), bytes.size());
 					dropStatesAfterOnMachine(frameM_);
 					return;
 				}
-				why = "no memory domain " + domain;
+				why = tr("session.no_domain", {domain});
 			});
 			if (!why.empty())
 			{
@@ -1133,7 +1135,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			if (!arg(a, 0, count, error)) return {};
 			if (count < 0)
 			{
-				error = "a rerecord count is not negative";
+				error = tr("session.rerecords_negative");
 				return {};
 			}
 			onMachineWait([&](ce_session *s) {
@@ -1260,7 +1262,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				const auto it = std::find(names.begin(), names.end(), name);
 				if (it == names.end() || it - names.begin() >= 64)
 				{
-					error = "no button " + name;
+					error = tr("session.no_button", {name});
 					return {};
 				}
 				mask |= uint64_t{1} << (it - names.begin());
@@ -1281,7 +1283,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				const auto it = std::find(names.begin(), names.end(), name);
 				if (it == names.end() || it - names.begin() >= 64)
 				{
-					error = "no button " + name;
+					error = tr("session.no_button", {name});
 					return {};
 				}
 				mask |= uint64_t{1} << (it - names.begin());
@@ -1299,7 +1301,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				if (axes[i].name == name) axis = i;
 			if (axis == axes.size())
 			{
-				error = "no analog control " + name;
+				error = tr("session.no_analog", {name});
 				return {};
 			}
 			bool held = false;
@@ -1332,7 +1334,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			if (!read)
 			{
-				error = "not a line this machine's movie can read: " + line;
+				error = tr("session.unreadable_line", {line});
 				return {};
 			}
 			scriptHeld_.store(buttons);
@@ -1345,7 +1347,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("stopMovie", "Chimera's Stop Movie under TAStudio: a new project of the same core, files, settings and "
 		"firmware with an empty movie, written nowhere until its first save (the window asks about changes not saved first)",
 		{}, [this](const Args &, std::string &) -> Value {
-			status.set("Starting a new movie...");
+			status.set(tr("session.starting_movie"));
 			submit([this] {
 				if (projectM_ == nullptr) return;
 				ce_project *p = ce_project_new();
@@ -1362,7 +1364,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 					const char *source = ce_project_file_source_path(projectM_, i);
 					const char *name = ce_project_file_name(projectM_, i);
 					if (source == nullptr || *source == '\0' || ce_project_file_add(p, name, slot.c_str(), source, &error) != 0)
-						why = std::string(name) + ": " + (error != nullptr ? error : "its file is not where it was read from");
+						why = tr("session.named_reason", {name, error != nullptr ? error : tr("session.file_moved")});
 				}
 				uint64_t len = 0;
 				if (const char *t = ce_project_settings_text(projectM_, &len); why.empty() && t != nullptr && len != 0)
@@ -1374,7 +1376,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 				if (!why.empty())
 				{
 					ce_project_free(p);
-					later([this, why] { status.set("No new movie: " + why); });
+					later([this, why] { status.set(tr("session.no_new_movie", {why})); });
 					return;
 				}
 				openMadeProjectOnMachine(p, package_);
@@ -1392,11 +1394,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			ce_project *probe = ce_project_open(project.c_str(), &unreadable);
 			if (probe == nullptr)
 			{
-				status.set("Could not open " + project + ": " + (unreadable != nullptr ? unreadable : "no reason given"));
+				status.set(tr("session.could_not_open", {project, unreadable != nullptr ? unreadable : tr("common.no_reason")}));
 				return false;
 			}
 			ce_project_free(probe);
-			status.set("Opening " + project + "...");
+			status.set(tr("session.opening_project", {project}));
 			submit([this, project, package] { openProjectOnMachine(project, package, false); });
 			return true;
 		});
@@ -1409,7 +1411,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			ce_project *probe = ce_project_open(project.c_str(), &unreadable);
 			if (probe == nullptr)
 			{
-				status.set("Could not open " + project + ": " + (unreadable != nullptr ? unreadable : "no reason given"));
+				status.set(tr("session.could_not_open", {project, unreadable != nullptr ? unreadable : tr("common.no_reason")}));
 				return false;
 			}
 			ce_project_free(probe);
@@ -1428,12 +1430,12 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			if (!a.empty() && !arg(a, 0, path, error)) return {};
 			if (!hasProject.get())
 			{
-				error = "no project is open";
+				error = tr("session.no_project");
 				return {};
 			}
 			if (path.empty() && projectPath.get().empty())
 			{
-				error = "this project has not been saved yet: say where it goes";
+				error = tr("session.say_where");
 				return {};
 			}
 			saveTo(path);
@@ -1561,7 +1563,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			Picture::Frame f;
 			if (!screen.takeIfNewer(UINT64_MAX, f) || f.width <= 0 || f.height <= 0)
 			{
-				error = "there is no picture yet";
+				error = tr("session.no_picture");
 				return {};
 			}
 			/* uncompressed 32-bit, rows bottom-up: the engine's BGRA is what a TGA stores */
@@ -1580,7 +1582,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			file.write(reinterpret_cast<const char *>(out.data()), static_cast<std::streamsize>(out.size()));
 			if (!file)
 			{
-				error = "cannot write " + path;
+				error = tr("session.could_not_write", {path});
 				return {};
 			}
 			return static_cast<int64_t>(f.serial);
@@ -1594,7 +1596,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			const uint8_t *data = ce_session_save_state(s, &len);
 			if (data == nullptr)
 			{
-				error = std::string("the core could not save its state: ") + ce_session_last_error(s);
+				error = tr("session.state_not_saved", {ce_session_last_error(s)});
 				return;
 			}
 			char name[40];
@@ -1603,7 +1605,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			id = name;
 			memoryStatesM_[id] = MemoryState{std::vector<uint8_t>(data, data + len), ce_session_frame(s)};
 		});
-		if (id.empty() && error.empty()) error = "no machine is open";
+		if (id.empty() && error.empty()) error = tr("session.no_machine");
 		if (!error.empty()) return {};
 		return id;
 	}, &isOpen);
@@ -1614,14 +1616,14 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			const auto it = memoryStatesM_.find(id);
 			if (s == nullptr || it == memoryStatesM_.end())
 			{
-				error = "no state " + id + " in memory";
+				error = tr("session.no_state", {id});
 				return;
 			}
 			/* the machine runs on, or stays paused, as it was: as Chimera's, whose scripts load
 			 * one each frame and wait for the next (it was paused here, and such a script waited for ever) */
 			if (ce_session_load_state(s, it->second.bytes.data(), it->second.bytes.size()) != 0)
 			{
-				error = std::string("the core would not load it: ") + ce_session_last_error(s);
+				error = tr("session.state_not_loaded", {ce_session_last_error(s)});
 				return;
 			}
 			/* the engine told which frame of the movie that is, as a branch's state is */
@@ -1648,7 +1650,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			if (!arg(a, 0, target, error)) return {};
 			if (target < 0)
 			{
-				error = "no frame before 0";
+				error = tr("session.no_frame_before_0");
 				return {};
 			}
 			submit([this, target] { seekAsAskedOnMachine(target); });
@@ -1779,11 +1781,12 @@ void SessionViewModel::stickyChanged()
 	};
 	autoheld.set(names(autoholdMask_.load()));
 	autofired.set(names(autofireMask_.load()));
-	std::string text = "Held: ";
+	std::string held;
 	for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-		if (autoholdMask_.load() >> b & 1) text += buttonNames_[b] + " ";
+		if (autoholdMask_.load() >> b & 1) held += buttonNames_[b] + " ";
 	for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-		if (autofireMask_.load() >> b & 1) text += "Auto-" + buttonNames_[b] + " ";
+		if (autofireMask_.load() >> b & 1) held += tr("session.autofired_button", {buttonNames_[b]}) + " ";
+	std::string text = tr("session.held", {held});
 	stickyText.set(text);
 }
 
@@ -2203,13 +2206,13 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 		auto answer = [this, done](bool ok, std::string what) { later([done, ok, what] { done(ok, what); }); };
 		if (s_ == nullptr)
 		{
-			answer(false, "No machine is open");
+			answer(false, tr("session.no_machine"));
 			return;
 		}
 		const int32_t live = ce_session_apply_settings(s_, json.c_str());
 		if (live == 2)
 		{
-			answer(false, std::string("The core refused them: ") + ce_session_last_error(s_));
+			answer(false, tr("session.core_refused_settings", {ce_session_last_error(s_)}));
 			return;
 		}
 		/* kept in the project for the next open */
@@ -2218,21 +2221,21 @@ void SessionViewModel::changeSettings(std::string json, std::function<void(bool,
 			const char *error = nullptr;
 			if (ce_project_set_settings_text(projectM_, json.c_str(), &error) != 0)
 			{
-				answer(false, std::string("The project refused them: ") + (error != nullptr ? error : "?"));
+				answer(false, tr("session.project_refused_settings", {error != nullptr ? error : tr("common.no_reason")}));
 				return;
 			}
 		}
 		if (live == 0)
 		{
-			answer(true, "Applied to the running machine");
+			answer(true, tr("session.settings_applied"));
 			return;
 		}
 		/* the core takes them only at start: open it again with them */
 		runningM_ = false;
 		later([this] { running.set(false); });
 		if (projectM_ != nullptr) openProjectOnMachine(projectPathM_, package_, true, projectM_);
-		answer(s_ != nullptr, s_ != nullptr ? "The machine started again with them, at frame 0"
-											: "The machine would not start again with them");
+		answer(s_ != nullptr, s_ != nullptr ? tr("session.settings_restarted")
+											: tr("session.settings_not_restarted"));
 	});
 }
 
@@ -2405,7 +2408,7 @@ void SessionViewModel::mcpAnswerOpened(uint64_t id)
 	submit([this, id] {
 		if (s_ == nullptr)
 		{
-			mcpAnswerOnMachine(id, "The project was made, but its machine did not start.", true);
+			mcpAnswerOnMachine(id, tr("session.made_not_started"), true);
 			return;
 		}
 		json::Json opened;
@@ -2429,7 +2432,7 @@ void SessionViewModel::mcpSeek(uint64_t id, int64_t frame)
 	submit([this, id, frame] {
 		if (s_ == nullptr)
 		{
-			mcpAnswerOnMachine(id, "No project is open in Chimera.", true);
+			mcpAnswerOnMachine(id, tr("session.no_project_in_chimera"), true);
 			return;
 		}
 		const int64_t start = ce_session_frame(s_);
@@ -2443,14 +2446,14 @@ void SessionViewModel::mcpPlayUntil(uint64_t id, std::string arguments, int64_t 
 	submit([this, id, arguments, most] {
 		if (s_ == nullptr)
 		{
-			mcpAnswerOnMachine(id, "No project is open in Chimera.", true);
+			mcpAnswerOnMachine(id, tr("session.no_project_in_chimera"), true);
 			return;
 		}
 		/* what the condition means is the engine's: it reads the arguments itself */
 		const char *why = nullptr;
 		if (ce_mcp_condition_set(s_, arguments.c_str(), &why) != 1)
 		{
-			mcpAnswerOnMachine(id, why != nullptr ? why : "The condition is not one Chimera understands.", true);
+			mcpAnswerOnMachine(id, why != nullptr ? why : tr("session.condition_not_understood"), true);
 			return;
 		}
 		const int64_t start = ce_session_frame(s_), length = ce_session_movie_length(s_);
@@ -2462,8 +2465,7 @@ void SessionViewModel::mcpPlayUntil(uint64_t id, std::string arguments, int64_t 
 		}
 		if (start >= length)
 		{
-			mcpAnswerOnMachine(id, "The playback position is at the movie's end, frame " + std::to_string(length) +
-				", so there is nothing left to play.", true);
+			mcpAnswerOnMachine(id, tr("session.at_movie_end", {std::to_string(length)}), true);
 			return;
 		}
 		/* played a frame at a time, the condition asked after each; with Turbo
@@ -2484,7 +2486,7 @@ void SessionViewModel::mcpPictures(uint64_t id, std::vector<int64_t> frames)
 	submit([this, id, frames] {
 		if (s_ == nullptr || frames.empty())
 		{
-			mcpAnswerOnMachine(id, "No project is open in Chimera.", true);
+			mcpAnswerOnMachine(id, tr("session.no_project_in_chimera"), true);
 			return;
 		}
 		McpMove move{id, ce_session_frame(s_), frames.front(), McpMove::Pictures, {}};
@@ -2506,7 +2508,7 @@ bool SessionViewModel::mcpMoveOnMachine()
 	bool failed = false;
 	if (s_ == nullptr)
 	{
-		text = "The project was closed while the playback position was moving.";
+		text = tr("session.closed_while_moving");
 		failed = true;
 	}
 	else if (move.kind == McpMove::Pictures)
@@ -2515,13 +2517,12 @@ bool SessionViewModel::mcpMoveOnMachine()
 		const char *why = nullptr;
 		if (at != move.pictures.front())
 		{
-			text = "The playback position stopped on frame " + std::to_string(at) + ", not on frame " + std::to_string(move.pictures.front()) +
-				": the pictures were interrupted.";
+			text = tr("session.pictures_interrupted", {std::to_string(at), std::to_string(move.pictures.front())});
 			failed = true;
 		}
 		else if (ce_mcp_capture(s_, move.id, at, &why) != 1)
 		{
-			text = "The picture of frame " + std::to_string(at) + " was not taken: " + (why != nullptr ? why : "no reason given");
+			text = tr("session.picture_not_taken", {std::to_string(at), why != nullptr ? why : tr("common.no_reason")});
 			failed = true;
 		}
 		else
@@ -2545,8 +2546,7 @@ bool SessionViewModel::mcpMoveOnMachine()
 	}
 	else if (at != move.target)
 	{
-		text = "The playback position stopped on frame " + std::to_string(at) + ", not on frame " + std::to_string(move.target) +
-			": the seek was interrupted.";
+		text = tr("session.seek_interrupted", {std::to_string(at), std::to_string(move.target)});
 		failed = true;
 	}
 	else
@@ -2617,7 +2617,7 @@ void SessionViewModel::mcpOnMachine()
 	mcpBusyM_ = true;
 	later([this, id, t = std::string(tool != nullptr ? tool : ""), a = std::string(arguments != nullptr ? arguments : "{}")] {
 		if (mcpHost_) mcpHost_(id, t, a);
-		else mcpAnswer(id, "Chimera's window cannot be asked.", true);
+		else mcpAnswer(id, tr("session.window_cannot_be_asked"), true);
 	});
 }
 
@@ -2646,9 +2646,9 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 			borrowedM_.store(false);
 			later([done, why] { done(2, why); });
 		};
-		if (s_ == nullptr) return fail("No machine is open.");
-		if (from < 0 || to < from) return fail("The end marker is before the start marker.");
-		if (to >= ce_session_movie_length(s_)) return fail("The movie ends at frame " + std::to_string(ce_session_movie_length(s_) - 1) + ".");
+		if (s_ == nullptr) return fail(tr("session.no_machine"));
+		if (from < 0 || to < from) return fail(tr("session.end_before_start"));
+		if (to >= ce_session_movie_length(s_)) return fail(tr("session.movie_ends_at", {std::to_string(ce_session_movie_length(s_) - 1)}));
 		/* where the person is, kept as a state file the engine writes: a
 		 * machine's state can be bigger than memory holds at once */
 		fs::path folder = projectCacheOnMachine();
@@ -2657,8 +2657,7 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 		fs::create_directories(folder, ec);
 		const fs::path restore = folder / ("encode-restore-" + std::to_string(++borrowCount_) + ".state");
 		if (ce_session_state_save_file(s_, branch_state::utf8(restore).c_str(), nullptr, 0) != 0)
-			return fail(std::string("The encode cannot start: the machine's state could not be kept to come back to (") +
-						ce_session_last_error(s_) + ").");
+			return fail(tr("session.encode_no_state", {ce_session_last_error(s_)}));
 		const int64_t was = ce_session_frame(s_);
 		const bool wasRunning = runningM_, wasRecording = recordingM_.load();
 		Picture::Frame shown;
@@ -2686,14 +2685,14 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 			{
 				/* a script closed the machine or opened another: not an encode that finished */
 				ended = 2;
-				why = "The machine was closed while encoding.";
+				why = tr("session.closed_while_encoding");
 				break;
 			}
 			const int32_t lag = stepOnMachine(false, true, false);
 			if (lag < 0 && diedM_)
 			{
 				ended = 2;
-				why = "The machine stopped.";
+				why = tr("session.machine_stopped");
 				break;
 			}
 			/* the window's counters follow, as what it draws over the picture may be in the video */
@@ -2709,7 +2708,7 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 		if (ended == 0 && s_ == nullptr)
 		{
 			ended = 2;
-			why = "The machine was closed while encoding.";
+			why = tr("session.closed_while_encoding");
 		}
 		if (finishing) finishing();
 		/* given back: the frame, its picture, the greenzone, running or not */
@@ -2726,7 +2725,7 @@ void SessionViewModel::borrowMachine(int64_t from, int64_t to, BorrowFrame frame
 			else
 			{
 				seekOnMachine(was, false);
-				why += (why.empty() ? "" : " ") + std::string("The machine was put back by playing the movie to where it was.");
+				why += (why.empty() ? "" : " ") + tr("session.put_back_by_playing");
 			}
 			runningM_ = wasRunning;
 			due_ = Clock::now();
@@ -3225,8 +3224,7 @@ bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &
 	}
 	auto kept = [this, dir](const std::string &why) {
 		later([this, why, kept = dir.string()] {
-			status.set("Chimera did not close normally the last time this project was open, but its unsaved work could not be "
-				"rebuilt (" + why + "). The recovery files are kept in: " + kept);
+			status.set(tr("session.recovery_not_rebuilt", {why, kept}));
 		});
 		return false;
 	};
@@ -3235,10 +3233,10 @@ bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &
 	 * is never older than either */
 	const fs::path base = hasSnapshot && !(hasProject && writtenAt(projectPath) > writtenAt(snapshot)) ? snapshot
 		: hasProject ? fs::path(projectPath) : fs::path();
-	if (base.empty()) return kept("there is no copy of the project to rebuild the work on");
+	if (base.empty()) return kept(tr("session.no_copy_to_rebuild"));
 	const char *err = nullptr;
 	ce_project *rebuilt = ce_project_open(base.string().c_str(), &err);
-	if (rebuilt == nullptr) return kept(err != nullptr ? err : "the project would not open");
+	if (rebuilt == nullptr) return kept(err != nullptr ? err : tr("session.project_would_not_open"));
 	if (hasJournal)
 	{
 		ce_movie_log *log = ce_movie_log_new();
@@ -3270,11 +3268,11 @@ bool SessionViewModel::recoveredCopyOnMachine(ce_project *p, const std::string &
 	const fs::path folder = !backupFolderM_.empty() ? fs::path(backupFolderM_) : fs::path(recoveryFolderM_) / "recovered";
 	fs::create_directories(folder, ec);
 	const std::string stem = projectPath.empty() ? std::string("project") : fs::path(projectPath).stem().string();
-	const std::string name = stem + ".recovered " + localTime(when, "%Y-%m-%d %H.%M.%S");
+	const std::string name = tr("session.recovered_file", {stem, localTime(when, "%Y-%m-%d %H.%M.%S")});
 	fs::path target = folder / (name + ".chimeraProject");
 	for (int n = 2; fs::exists(target, ec) && n < 100; n++) target = folder / (name + " (" + std::to_string(n) + ").chimeraProject");
 	const bool saved = ce_project_save(rebuilt, target.string().c_str(), &err) == 0;
-	const std::string why = saved ? std::string() : err != nullptr ? err : "it could not be written";
+	const std::string why = saved ? std::string() : err != nullptr ? err : tr("session.not_written");
 	ce_project_free(rebuilt);
 	if (!saved) return kept(why);
 	/* the copy holds the work now, and this session keeps its own */
@@ -3391,7 +3389,7 @@ std::string SessionViewModel::locateFirmwareOnMachine(MissingFirmware &m, const 
 {
 	char sha[41] = {};
 	uint64_t length = 0;
-	if (ce_sha1_file(path.c_str(), sha, &length) != 1) return "Cannot read that file: " + path;
+	if (ce_sha1_file(path.c_str(), sha, &length) != 1) return tr("session.cannot_read_file", {path});
 	/* the hash the project pins, else the package's; a game core takes a
 	 * file of the person's own where the project pins none, as New Project does */
 	const std::string wanted = !m.pinned.empty() ? m.pinned : m.gameCore ? std::string() : m.declared;
@@ -3400,8 +3398,7 @@ std::string SessionViewModel::locateFirmwareOnMachine(MissingFirmware &m, const 
 		return t;
 	};
 	if (!wanted.empty() && upper(wanted) != upper(sha))
-		return std::filesystem::path(path).filename().string() + " is not the firmware the project needs: its hash is " + upper(sha) +
-			", the project needs " + upper(wanted);
+		return tr("session.wrong_firmware", {std::filesystem::path(path).filename().string(), upper(sha), upper(wanted)});
 	m.path = path;
 	m.sha1 = upper(sha);
 	locatedFirmwareM_[m.id] = path;
@@ -3430,9 +3427,8 @@ Value SessionViewModel::ProjectFileRows::cell(int64_t row, int32_t column) const
 	/* Chimera's words for each */
 	case 3:
 		/* a firmware no hash is asked of is taken as chosen */
-		if (f.firmware && f.status == 0 && f.sha1.empty()) return std::string("chosen");
-		return f.status == 0 ? std::string("found, hash matches") : f.status == 2 ? std::string("HASH MISMATCH (not the recorded bytes)")
-																			   : std::string("not found");
+		if (f.firmware && f.status == 0 && f.sha1.empty()) return tr("project_files.chosen");
+		return tr(f.status == 0 ? "project_files.found" : f.status == 2 ? "project_files.mismatch" : "project_files.not_found");
 	case 4: return f.sha1;
 	case 5: return f.actualSha1;
 	default: return {};
@@ -3481,7 +3477,7 @@ void SessionViewModel::keepHistoryOnMachine()
 			uint64_t len = 0;
 			json::Json cfg;
 			std::string jerr;
-			if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+			if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len);
 				d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, jerr))
 				if (const json::Json *video = cfg.find("video"))
 					if (const json::Json *keep = video->find("greenzoneSurvivesReload")) survives = keep->boolean;
@@ -3527,7 +3523,7 @@ void SessionViewModel::makeBranch(std::string name, std::string time, std::funct
 			else if (!branch_state::writeNote(dir / (stem + ".note"),
 						 {machineIdOnMachine(), b.frame, b.picture ? *b.picture : Picture::Frame{}}))
 			{
-				why = "its note could not be written in " + dir.string();
+				why = tr("session.note_not_written", {dir.string()});
 				fs::remove(state, ec);
 			}
 			else
@@ -3669,7 +3665,7 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 	if (ce_package *pk = ce_package_open(package.c_str(), &perr))
 	{
 		uint64_t len = 0;
-		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len))
+		if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len))
 			json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, error);
 		ce_package_free(pk);
 	}
@@ -3717,7 +3713,7 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 			{
 				n.path = f.path;
 				n.sha1 = f.hash();
-				n.how = "given on the command line";
+				n.how = tr("session.from_command_line");
 			}
 	}
 	/* located while the project waited for it (issue 397), its hash checked then */
@@ -3774,7 +3770,7 @@ bool SessionViewModel::firmwareOnMachine(const std::string &package, const std::
 	out.pins = json::write(recorded);
 	if (!missing.empty())
 	{
-		why = "Firmware missing (put it in the firmware folder): " + missing;
+		why = tr("session.firmware_missing", {missing});
 		return false;
 	}
 	return true;
@@ -4028,7 +4024,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 	ce_project *p = reuse != nullptr ? reuse : ce_project_open(path.c_str(), &error);
 	if (p == nullptr)
 	{
-		fail("Could not open " + path + ": " + (error != nullptr ? error : "no reason given"));
+		fail(tr("session.could_not_open", {path, error != nullptr ? error : tr("common.no_reason")}));
 		return;
 	}
 	if (reuse != nullptr) projectM_ = nullptr; /* taken over below, not freed */
@@ -4056,7 +4052,7 @@ void SessionViewModel::openProjectOnMachine(const std::string &path, const std::
 				recoveredCrash.set(crashSaid);
 				recoveredCrashNote.set(crashNote);
 				recoveredCopy.set(copy);
-				status.set("Chimera did not close normally the last time this project was open: its unsaved work was kept");
+				status.set(tr("session.recovered_kept"));
 			});
 			return;
 		}
@@ -4085,7 +4081,7 @@ void SessionViewModel::findFilesAndBootOnMachine(PendingOpen open)
 	{
 		/* not found beside it, nor where this machine last had them: asked
 		 * for, as Chimera's resolution window asks, the project waiting */
-		waitForFilesOnMachine(std::move(open), "Some of the project's files were not found beside it: locate them, or scan a folder");
+		waitForFilesOnMachine(std::move(open), tr("session.files_not_found"));
 		return;
 	}
 	recoveredM_ = open.recovered;
@@ -4148,8 +4144,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		if (package.empty())
 		{
 			ce_project_free(p); /* a reused one too: projectM_ let it go */
-			fail(found.empty() ? "No " + coreName + " core is installed: put its .chimeraCore in the cores folder"
-				: "The " + coreName + " core here cannot run: " + found);
+			fail(found.empty() ? tr("session.core_not_installed", {coreName}) : tr("session.core_cannot_run", {coreName, found}));
 			return;
 		}
 		if (!found.empty()) note = "; " + found;
@@ -4160,7 +4155,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 		if (ce_package *pk = ce_package_open(package.c_str(), &perr))
 		{
 			uint64_t len = 0;
-			const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+			const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len);
 			json::Json cfg;
 			std::string jerr;
 			const std::string refused = d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, jerr)
@@ -4169,7 +4164,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 			if (!refused.empty())
 			{
 				ce_project_free(p);
-				fail("Cannot run " + package + ": " + refused);
+				fail(tr("session.cannot_run_package", {package, refused}));
 				return;
 			}
 		}
@@ -4183,7 +4178,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 			if (sha == nullptr || pinned != sha)
 			{
 				flags |= CE_OPEN_ALLOW_CORE_MISMATCH;
-				note = "; this is not the package the project was made with";
+				note = tr("session.other_package_note");
 			}
 			ce_package_free(pk);
 		}
@@ -4218,7 +4213,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 			/* asked for, as the project's own files are (issue 397), the project waiting */
 			missingFirmwareM_ = std::move(missing);
 			waitForFilesOnMachine(PendingOpen{p, path, packageGiven, keepInputs, reuse, kept, keptRerecords, recovered},
-				"The firmware this project needs was not found: locate it, or scan a folder");
+				tr("session.firmware_not_found"));
 			return;
 		}
 		missingFirmwareM_.clear();
@@ -4257,7 +4252,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	if (s == nullptr)
 	{
 		ce_project_free(p);
-		fail(std::string("Could not open the project's machine: ") + (error != nullptr ? error : "no reason given"));
+		fail(tr("session.machine_not_opened", {error != nullptr ? error : tr("common.no_reason")}));
 		return;
 	}
 
@@ -4403,7 +4398,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	if (recovered)
 		later([this, path] {
 			markChanged();
-			status.set("The recovered work is open, not saved yet: saving writes it to " + path);
+			status.set(tr("session.recovered_open", {path}));
 		});
 	if (columnsLater) later(std::move(columnsLater));
 	{
@@ -4461,7 +4456,7 @@ void SessionViewModel::checkHistoryOnMachine(const std::string &keepIn)
 	const int64_t last = ce_session_greenzone_nearest(s_, INT64_MAX);
 	if (last <= 0)
 	{
-		say("The state history holds nothing to check yet");
+		say(tr("session.check_nothing"));
 		return;
 	}
 	/* From frame 0 as the history keeps it, as Chimera's check starts - and
@@ -4476,7 +4471,7 @@ void SessionViewModel::checkHistoryOnMachine(const std::string &keepIn)
 	{
 		if (ce_session_greenzone_restore(s_, 0) != 0)
 		{
-			say("The state history check could not start: frame 0 is not stored");
+			say(tr("session.check_no_frame_0"));
 			return;
 		}
 		if (i == 0 && stepOnMachine(false, true) < 0) return;
@@ -4501,7 +4496,7 @@ void SessionViewModel::checkHistoryOnMachine(const std::string &keepIn)
 		checked++;
 		if (fresh != kept)
 		{
-			std::string text = "The state history check failed: bad data between frames " + std::to_string(lastState) + " and " + std::to_string(f);
+			std::string text = tr("session.check_failed", {std::to_string(lastState), std::to_string(f)});
 			if (!keepIn.empty())
 			{
 				std::error_code ec;
@@ -4510,7 +4505,7 @@ void SessionViewModel::checkHistoryOnMachine(const std::string &keepIn)
 					.write(reinterpret_cast<const char *>(fresh.data()), static_cast<std::streamsize>(fresh.size()));
 				std::ofstream(std::filesystem::path(keepIn) / "integrity.greenzoned", std::ios::binary)
 					.write(reinterpret_cast<const char *>(kept.data()), static_cast<std::streamsize>(kept.size()));
-				text += "; both states are in " + keepIn;
+				text += tr("session.check_states_kept", {keepIn});
 			}
 			report(-1, -1, -1, -1, -1);
 			say(text);
@@ -4519,7 +4514,7 @@ void SessionViewModel::checkHistoryOnMachine(const std::string &keepIn)
 		lastState = f;
 	}
 	report(-1, -1, -1, -1, -1);
-	say("The state history check passed: " + std::to_string(checked) + (checked == 1 ? " state" : " states") + " put the machine back exactly");
+	say(tr("session.check_passed", checked));
 }
 
 void SessionViewModel::catchPollOnMachine()
@@ -4675,7 +4670,7 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 	const std::string path = to.empty() ? projectPathM_ : to;
 	if (path.empty())
 	{
-		later([this] { status.set("Not saved: this project has no file yet; say where it goes"); });
+		later([this] { status.set(tr("session.not_saved_no_file")); });
 		return false;
 	}
 	/* the movie as the machine keeps it: the engine wrote every line */
@@ -4789,13 +4784,13 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 	const char *error = nullptr;
 	if (ce_project_save(projectM_, path.c_str(), &error) != 0)
 	{
-		const std::string why = error != nullptr ? error : "no reason given";
-		if (!quiet) later([this, path, why] { status.set("Could not save " + path + ": " + why); });
+		const std::string why = error != nullptr ? error : tr("common.no_reason");
+		if (!quiet) later([this, path, why] { status.set(tr("session.could_not_save", {path, why})); });
 		return false;
 	}
 	if (backup)
 	{
-		if (!quiet) later([this, path] { status.set("Backup saved: " + path); });
+		if (!quiet) later([this, path] { status.set(tr("session.backup_saved", {path})); });
 		return true;
 	}
 	const bool first = projectPathM_ != path;
@@ -4806,7 +4801,7 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 	later([this, path, n, first] {
 		projectPath.set(path);
 		if (first) addRecent(path);
-		status.set("Saved " + path + " (" + std::to_string(n) + " frames)");
+		status.set(tr("session.saved_frames", n, {path}));
 	});
 	return true;
 }
@@ -4983,7 +4978,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		uint64_t len = 0;
 		if (const uint8_t *d = ce_package_entry(p, "default_keybinds.json", &len))
 			keybinds.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
-		if (const uint8_t *d = ce_package_entry(p, "waterbox.config", &len))
+		if (const uint8_t *d = ce_package_entry_texts(p, "waterbox.config", &len))
 			config.assign(reinterpret_cast<const char *>(d), static_cast<size_t>(len));
 		ce_package_free(p);
 	}
@@ -5094,9 +5089,9 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 	autofireWasM_ = 0;
 	if (!padsM_) padsM_ = std::make_unique<Gamepads>();
 	padCount_ = 0;
-	std::string padText = padsM_->available() ? "No gamepads" : padsM_->problem();
+	std::string padText = padsM_->available() ? tr("session.no_gamepads") : padsM_->problem();
 	if (!soundM_) soundM_ = std::make_unique<Sound>(soundDeviceM_, static_cast<int32_t>(soundBufferMsM_));
-	const std::string soundText = soundM_->available() ? "Sound on" : soundM_->problem();
+	const std::string soundText = soundM_->available() ? tr("session.sound_on") : soundM_->problem();
 	later([this, padText, soundText] { gamepads.set(padText); sound.set(soundText); });
 
 	const int32_t num = ce_session_vsync_numerator(s), den = ce_session_vsync_denominator(s);
@@ -5163,8 +5158,8 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		opens.set(opens.get() + 1);
 		char hz[32];
 		std::snprintf(hz, sizeof hz, "%.3f", rate);
-		status.set("Opened " + label + " (" + hz + " frames a second, " + std::to_string(bindings_.boundKeys()) +
-			" keys bound" + (bound ? "" : "; the package's bindings are not readable: " + why) + ")");
+		status.set(bound ? tr("session.opened", {label, hz, std::to_string(bindings_.boundKeys())})
+						 : tr("session.opened_unbound", {label, hz, std::to_string(bindings_.boundKeys()), why}));
 		buttonsChanged.emit();
 		if (inputsReplaced) inputsReset.emit();
 		(void)frames;
@@ -5196,7 +5191,7 @@ void SessionViewModel::closeOnMachine()
 		projectId.set("");
 		hasProject.set(false);
 		projectSwitched();
-		status.set("Closed");
+		status.set(tr("session.closed"));
 	});
 }
 
@@ -5227,7 +5222,7 @@ void SessionViewModel::compileCacheOnMachine(const std::string &package, const s
 		uint64_t len = 0;
 		json::Json cfg;
 		std::string err;
-		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+		if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len);
 			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
 			if (const json::Json *v = cfg.find("precompile")) compiles = v->kind == json::Json::Kind::Bool && v->boolean;
 		ce_package_free(pk);
@@ -5245,7 +5240,7 @@ void SessionViewModel::compileCacheOnMachine(const std::string &package, const s
 	 * is removed before this one reads it (compiled_code.hpp) */
 	if (const std::optional<compiled::Build> build = dir.empty() ? std::nullopt : compiled::buildOf(package);
 		build && compiled::claim(dir, *build))
-		later([this] { status.set("This game's compiled code was made by another build of the core and was removed; the core compiles it again as the game needs it"); });
+		later([this] { status.set(tr("session.compiled_code_removed")); });
 	ce_cache_dir(dir.empty() ? nullptr : dir.c_str());
 	later([this, dir] { compileCacheDir.set(dir); });
 }
@@ -5282,7 +5277,7 @@ void SessionViewModel::drainTraceOnMachine()
 	if (overflow != 0)
 	{
 		const char *core = ce_session_core_name(s_);
-		lines.push_back(std::string("[") + (core != nullptr ? core : "core") + ": trace buffer full, lines dropped]");
+		lines.push_back(tr("session.trace_buffer_full", {core != nullptr ? core : tr("session.the_core")}));
 	}
 	later([this, lines = std::move(lines)]() mutable {
 		if (traceSink_) traceSink_(std::move(lines));
@@ -5335,7 +5330,7 @@ void SessionViewModel::reopenSoundOnMachine()
 {
 	soundM_.reset();
 	soundM_ = std::make_unique<Sound>(soundDeviceM_, static_cast<int32_t>(soundBufferMsM_));
-	const std::string text = soundM_->available() ? "Sound on" : soundM_->problem();
+	const std::string text = soundM_->available() ? tr("session.sound_on") : soundM_->problem();
 	later([this, text] { sound.set(text); });
 }
 
@@ -5434,7 +5429,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			if (open.size() != padCount_)
 			{
 				padCount_ = open.size();
-				std::string text = open.empty() ? "No gamepads" : std::to_string(open.size()) + (open.size() == 1 ? " gamepad:" : " gamepads:");
+				std::string text = open.empty() ? tr("session.no_gamepads") : tr("session.gamepads", static_cast<int64_t>(open.size()));
 				for (const std::string &n : open) text += " " + n;
 				later([this, text] { gamepads.set(text); });
 			}
@@ -5622,8 +5617,8 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 				freezesUpdated();
 			});
 		}
-		const std::string why = death != nullptr && *death != '\0' ? std::string("The machine stopped: ") + death
-																	 : std::string("The movie could not be played: ") + ce_session_last_error(s_);
+		const std::string why = death != nullptr && *death != '\0' ? tr("session.machine_stopped_why", {death})
+																	 : tr("session.movie_not_played", {ce_session_last_error(s_)});
 		const bool unplayable = death == nullptr || *death == '\0';
 		later([this, why, unplayable] {
 			running.set(false);
@@ -5719,7 +5714,7 @@ void SessionViewModel::seekOnMachine(int64_t target, bool grow)
 			report(-1, -1, -1, -1, -1);
 			return;
 		}
-		const std::string why = std::string("Could not go to frame ") + std::to_string(target) + ": " + ce_session_last_error(s_);
+		const std::string why = tr("session.could_not_seek", {std::to_string(target), ce_session_last_error(s_)});
 		later([this, why] { status.set(why); });
 		frameM_ = ce_session_frame(s_);
 		report(-1, -1, -1, -1, -1);
@@ -5829,14 +5824,15 @@ static std::string driveEntry(const std::vector<std::string> &names, int32_t ind
 
 std::string SessionViewModel::driveMediaShort(const std::vector<std::string> &names, int32_t selected, int32_t inserted)
 {
-	const std::string in = inserted >= 0 ? driveEntry(names, inserted, 28) : "empty";
-	return inserted == selected ? in : in + " | selected " + driveEntry(names, selected, 28);
+	const std::string in = inserted >= 0 ? driveEntry(names, inserted, 28) : tr("session.drive_empty_short");
+	return inserted == selected ? in : tr("session.drive_selected_short", {in, driveEntry(names, selected, 28)});
 }
 
 std::string SessionViewModel::driveMediaLong(const std::string &drive, const std::vector<std::string> &names, int32_t selected, int32_t inserted)
 {
-	const std::string in = inserted >= 0 ? "in the drive: " + driveEntry(names, inserted, std::string::npos) : "the drive is empty";
-	return inserted == selected ? drive + " - " + in : drive + " - " + in + "; selected, not inserted: " + driveEntry(names, selected, std::string::npos);
+	const std::string in = inserted >= 0 ? tr("session.drive_holds", {driveEntry(names, inserted, std::string::npos)}) : tr("session.drive_empty");
+	return inserted == selected ? tr("session.drive_line", {drive, in})
+								: tr("session.drive_line_selected", {drive, in, driveEntry(names, selected, std::string::npos)});
 }
 
 void SessionViewModel::drivesOnMachine()
@@ -5966,13 +5962,13 @@ void SessionViewModel::tick()
 	{
 		char text[48];
 		ce_game_time_text(gameMs, text, sizeof text);
-		gameTimeText.set(std::string("IGT ") + text);
+		gameTimeText.set(tr("session.game_time", {text}));
 	}
 	if (showAverageFps.get() && average > 0)
 	{
 		char text[48];
-		std::snprintf(text, sizeof text, "avg %.1f fps", average);
-		averageFpsText.set(text);
+		std::snprintf(text, sizeof text, "%.1f", average);
+		averageFpsText.set(tr("session.average_fps", {text}));
 	}
 	soundQueued.set(queued);
 	soundDropped.set(dropped);
@@ -6006,7 +6002,7 @@ bool SessionViewModel::hasState(int64_t frame) const
 void SessionViewModel::updateOverlay(int64_t f, int64_t changedFrom)
 {
 	if (showFps.get())
-		fpsText.set(std::to_string(static_cast<int64_t>(std::llround(fps.get()))) + " fps" +
+		fpsText.set(tr("session.fps", {std::to_string(static_cast<int64_t>(std::llround(fps.get())))}) +
 			(rewindHeld_ ? (fastHeld_ || turboHeld_ ? " <<<<" : " <<") : turboHeld_ ? " >>>>" : fastHeld_ ? " >>" : ""));
 	lagFrame.set(f > 0 && inputs_.lagAt(f - 1));
 	const int64_t size = inputs_.size();
@@ -6200,13 +6196,13 @@ bool SessionViewModel::freeze(const Freeze &f, std::string &error)
 	onMachineWait([&](ce_session *s) {
 		if (s == nullptr)
 		{
-			why = "no machine is running";
+			why = tr("session.no_machine_running");
 			return;
 		}
 		if (addFreezeOnMachine(f) < 0)
 		{
 			const char *e = ce_session_last_error(s);
-			why = e != nullptr && *e != '\0' ? e : (f.property.empty() ? "no memory domain " + f.domain : "no game property " + f.property);
+			why = e != nullptr && *e != '\0' ? e : f.property.empty() ? tr("session.no_domain", {f.domain}) : tr("session.no_property", {f.property});
 			return;
 		}
 		freezesM_ = list;

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "chimera/vm/session_vm.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/view_model.hpp"
 
 namespace chimera::vm {
@@ -24,7 +25,7 @@ public:
 	/* the comments, a line each */
 	Property<std::string> comments;
 	/* the author a new project starts with (Chimera's "default user"), remembered */
-	Property<std::string> defaultAuthor{"default user"};
+	Property<std::string> defaultAuthor{tr("details.default_author")};
 	Property<bool> showSubtitles{true};
 	/* the subtitles on the frame shown, as [{"text", "x", "y", "color"}] */
 	Property<std::string> onScreen{"[]"};

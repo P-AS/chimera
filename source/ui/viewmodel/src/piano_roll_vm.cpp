@@ -1,4 +1,5 @@
 #include "chimera/vm/piano_roll_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/engine.h"
 #include "chimera/vm/json.hpp"
@@ -16,7 +17,7 @@ namespace {
 bool withinFillLimit(int64_t last, std::string &error)
 {
 	if (last < (int64_t{1} << 31)) return true;
-	error = "a movie is at most 2147483648 frames";
+	error = tr("piano_roll.movie_too_long");
 	return false;
 }
 } // namespace
@@ -73,7 +74,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				if (session_.axes()[i].name == name) p = &axisPatterns_[i];
 			if (p == nullptr)
 			{
-				error = "no control " + name;
+				error = tr("piano_roll.no_control", {name});
 				return {};
 			}
 			/* "On x2, Off x1": a value each run, and how many times */
@@ -96,7 +97,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 					/* a number std::stoll cannot hold ended the program */
 					if (run.size() - x - 1 > 9)
 					{
-						error = "\"" + run + "\" repeats too many times (at most 999999999)";
+						error = tr("piano_roll.run_too_long", {run});
 						return {};
 					}
 					times = std::stoll(run.substr(x + 1));
@@ -111,7 +112,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 					else if (w == "off" || w == "0" || w == "false") value = 0;
 					else
 					{
-						error = "\"" + run + "\" is not On or Off";
+						error = tr("piano_roll.run_not_on_off", {run});
 						return {};
 					}
 				}
@@ -121,26 +122,26 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 					const long v = std::strtol(run.c_str(), &stop, 10);
 					if (run.empty() || stop == nullptr || *stop != '\0')
 					{
-						error = "\"" + run + "\" is not a number";
+						error = tr("piano_roll.run_not_number", {run});
 						return {};
 					}
 					value = static_cast<int32_t>(v);
 				}
 				if (times < 1 || times > 100000)
 				{
-					error = "a run is 1 to 100000 frames";
+					error = tr("piano_roll.run_length");
 					return {};
 				}
 				made.values.insert(made.values.end(), static_cast<size_t>(times), value);
 			}
 			if (made.values.empty())
 			{
-				error = "a pattern has a value at least";
+				error = tr("piano_roll.pattern_empty");
 				return {};
 			}
 			if (loop < 0 || loop >= static_cast<int64_t>(made.values.size()))
 			{
-				error = "it goes back to a value it has: 0 to " + std::to_string(made.values.size() - 1);
+				error = tr("piano_roll.loop_range", {std::to_string(made.values.size() - 1)});
 				return {};
 			}
 			made.loop = loop;
@@ -163,7 +164,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			for (int32_t c = 0; c < frames_.columnCount(); c++) known = known || frames_.columnName(c) == name;
 			if (!known)
 			{
-				error = "no column " + name;
+				error = tr("piano_roll.no_column", {name});
 				return {};
 			}
 			const bool on = autoHeld_.count(name) == 0;
@@ -173,7 +174,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 					{
 						if (value < ax.min || value > ax.max)
 						{
-							error = name + " goes from " + std::to_string(ax.min) + " to " + std::to_string(ax.max);
+							error = tr("piano_roll.axis_range", {name, std::to_string(ax.min), std::to_string(ax.max)});
 							return {};
 						}
 						axisHoldValues_[name] = static_cast<int32_t>(value);
@@ -210,7 +211,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 					autoHoldMin.set(axes[x].min);
 					autoHoldMax.set(axes[x].max);
 					autoHoldInitial.set(now);
-					return "Hold " + name + " at (from " + std::to_string(axes[x].min) + " to " + std::to_string(axes[x].max) + "):";
+					return tr("piano_roll.hold_at", {name, std::to_string(axes[x].min), std::to_string(axes[x].max)});
 				}
 			return std::string();
 		});
@@ -275,7 +276,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			out << text;
 			if (!out)
 			{
-				error = "could not write " + path;
+				error = tr("session.could_not_write", {path});
 				return {};
 			}
 			return {};
@@ -289,7 +290,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			std::ifstream in(path, std::ios::binary);
 			if (!in)
 			{
-				error = "could not read " + path;
+				error = tr("new_project.cannot_read", {path});
 				return {};
 			}
 			std::vector<std::string> lines;
@@ -345,7 +346,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (a.size() > 2 && !arg(a, 2, insert, error)) return {};
 			if (frame < 0 || frame > inputs_.size())
 			{
-				error = "no frame " + std::to_string(frame);
+				error = tr("piano_roll.no_frame", {std::to_string(frame)});
 				return {};
 			}
 			/* a line each; Windows line ends too, and a last empty line is not a frame */
@@ -362,7 +363,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			}
 			if (lines.empty())
 			{
-				error = "there is nothing to paste";
+				error = tr("piano_roll.nothing_to_paste");
 				return {};
 			}
 			std::vector<Row> rows;
@@ -389,8 +390,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			});
 			if (rows.size() != lines.size())
 			{
-				error = bad < lines.size() ? "line " + std::to_string(bad + 1) + " is not a frame's input: " + lines[bad]
-										   : "no machine is open";
+				error = bad < lines.size() ? tr("piano_roll.not_input_line", {std::to_string(bad + 1), lines[bad]}) : tr("session.no_machine");
 				return {};
 			}
 			clipboard_ = std::move(rows);
@@ -398,12 +398,12 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			clipboardFrames.set(static_cast<int64_t>(clipboard_.size()));
 			if (insert)
 			{
-				naming_ = "Paste Insert: " + std::to_string(frame);
+				naming_ = tr("piano_roll.step_paste_insert", {std::to_string(frame)});
 				putIn(frame, clipboard_);
 			}
 			else
 			{
-				naming_ = "Copy Over Input: " + std::to_string(frame);
+				naming_ = tr("piano_roll.step_copy_over", {std::to_string(frame)});
 				overwrite(frame, clipboard_);
 			}
 			return {};
@@ -414,7 +414,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, i, error)) return {};
 			if (i < -1 || i >= historyRows_.rowCount())
 			{
-				error = "no step " + std::to_string(i);
+				error = tr("piano_roll.no_step", {std::to_string(i)});
 				return {};
 			}
 			while (static_cast<int64_t>(undo_.size()) - 1 > i) undoOrRedo(true);
@@ -426,7 +426,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, i, error)) return {};
 			if (i < 0 || i >= historyRows_.rowCount())
 			{
-				error = "no step " + std::to_string(i);
+				error = tr("piano_roll.no_step", {std::to_string(i)});
 				return {};
 			}
 			while (static_cast<int64_t>(undo_.size()) - 1 < i && !redo_.empty()) undoOrRedo(false);
@@ -446,7 +446,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, i, error)) return {};
 			if (i < 0 || i >= static_cast<int64_t>(undo_.size()))
 			{
-				error = "only steps done can be forgotten";
+				error = tr("piano_roll.forget_done_only");
 				return {};
 			}
 			undo_.erase(undo_.begin(), undo_.begin() + i + 1);
@@ -498,7 +498,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			}
 			if (!any)
 			{
-				error = "no group " + group;
+				error = tr("piano_roll.no_group", {group});
 				return {};
 			}
 			hiddenChanged();
@@ -521,7 +521,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		if (!arg(a, 0, r, error)) return {};
 		if (r < 0 || r >= rollCount.get())
 		{
-			error = "no input roll " + std::to_string(r);
+			error = tr("piano_roll.no_roll", {std::to_string(r)});
 			return {};
 		}
 		if (r == activeRoll.get()) return {};
@@ -575,7 +575,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (a.size() > 1 && !arg(a, 1, text, error)) return {};
 			if (f < 0)
 			{
-				error = "no frame before 0";
+				error = tr("session.no_frame_before_0");
 				return {};
 			}
 			/* a marker named again keeps what it kept */
@@ -584,7 +584,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			auto before = markers_;
 			markers_[f] = Marker{f, text, keep};
 			markersEdited(f);
-			keepMarkers(std::move(before), "Set Marker at frame " + std::to_string(f));
+			keepMarkers(std::move(before), tr("piano_roll.step_set_marker", {std::to_string(f)}));
 			return {};
 		});
 	command("moveMarker", "Chimera's Edit Marker Frame: a marker moved to another frame, its text and state kept; "
@@ -595,13 +595,13 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			const auto it = markers_.find(from);
 			if (from == 0 || it == markers_.end())
 			{
-				error = permanentAt(from) ? "frame " + std::to_string(from) + "'s marker is the run's own: it cannot be moved"
-										  : "no marker on frame " + std::to_string(from);
+				error = permanentAt(from) ? tr("piano_roll.marker_fixed_move", {std::to_string(from)})
+										  : tr("piano_roll.no_marker", {std::to_string(from)});
 				return {};
 			}
 			if (to < 0 || markers_.count(to) != 0 || permanentAt(to))
 			{
-				error = to < 0 ? "no frame before 0" : "frame " + std::to_string(to) + " has a marker already";
+				error = to < 0 ? tr("session.no_frame_before_0") : tr("piano_roll.marker_there", {std::to_string(to)});
 				return {};
 			}
 			Marker m = it->second;
@@ -610,7 +610,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			markers_.erase(it);
 			markers_[to] = m;
 			markersEdited(std::min(from, to));
-			keepMarkers(std::move(before), "Set Marker at frame " + std::to_string(to));
+			keepMarkers(std::move(before), tr("piano_roll.step_set_marker", {std::to_string(to)}));
 			if (std::max(from, to) < inputs_.size()) frames_.changed.emit(std::max(from, to), std::max(from, to));
 			return {};
 		});
@@ -628,14 +628,14 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			/* the run's own are the movie speaking, and so is a marker on frame 0, as in Chimera */
 			if (f == 0 || markers_.count(f) == 0)
 			{
-				error = permanentAt(f) ? "frame " + std::to_string(f) + "'s marker is the run's own: it cannot be removed"
-									   : "no marker on frame " + std::to_string(f);
+				error = permanentAt(f) ? tr("piano_roll.marker_fixed_remove", {std::to_string(f)})
+									   : tr("piano_roll.no_marker", {std::to_string(f)});
 				return {};
 			}
 			auto before = markers_;
 			markers_.erase(f);
 			markersEdited(f);
-			keepMarkers(std::move(before), "Remove Marker at frame " + std::to_string(f));
+			keepMarkers(std::move(before), tr("piano_roll.step_remove_marker", {std::to_string(f)}));
 			return {};
 		});
 	command("addMarkers", "TAStudio's Set Markers: an unnamed marker on every frame from first to last (one there "
@@ -645,13 +645,13 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, first, error) || !arg(a, 1, last, error)) return {};
 			if (first < 0 || last < first)
 			{
-				error = "frames " + std::to_string(first) + " to " + std::to_string(last) + " are not a range";
+				error = tr("piano_roll.not_a_range", {std::to_string(first), std::to_string(last)});
 				return {};
 			}
 			/* markers are the movie's, and the row after it: a range past that would never end */
 			if (last > inputs_.size())
 			{
-				error = "frame " + std::to_string(last) + " is past the movie's end";
+				error = tr("piano_roll.past_end", {std::to_string(last)});
 				return {};
 			}
 			auto before = markers_;
@@ -662,7 +662,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				markers_[f] = Marker{f, "", keep};
 			}
 			markersEdited(first);
-			keepMarkers(std::move(before), "Set Marker at frame " + std::to_string(first));
+			keepMarkers(std::move(before), tr("piano_roll.step_set_marker", {std::to_string(first)}));
 			if (last != first && last < inputs_.size()) frames_.changed.emit(first, last);
 			return last - first + 1;
 		});
@@ -677,7 +677,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (removed > 0)
 			{
 				markersEdited(first);
-				keepMarkers(std::move(before), "Remove Marker at frame " + std::to_string(first));
+				keepMarkers(std::move(before), tr("piano_roll.step_remove_marker", {std::to_string(first)}));
 				if (last != first) frames_.changed.emit(first, std::min<int64_t>(last, std::max<int64_t>(first, inputs_.size() - 1)));
 			}
 			return removed;
@@ -737,7 +737,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			{
 				if (f < 0 || b < 0 || b >= frames_.columnCount() || (b >= buttonCount() && f >= inputs_.size()))
 				{
-					error = "no such frame or control";
+					error = tr("piano_roll.no_frame_or_control");
 					return {};
 				}
 				/* as Chimera: a button's pattern presses when the cell was not held, else it lets go */
@@ -756,7 +756,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 				const int64_t axis = b - buttonCount();
 				if (axis >= static_cast<int64_t>(session_.axes().size()) || f < 0 || f >= inputs_.size())
 				{
-					error = "no such frame or control";
+					error = tr("piano_roll.no_frame_or_control");
 					return {};
 				}
 				pickAxis(f, axis);
@@ -812,7 +812,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			}
 			if (frame < 0 || lines.empty())
 			{
-				error = "The step to apply is not one the engine makes.";
+				error = tr("piano_roll.unknown_step");
 				return {};
 			}
 			std::vector<Row> rows;
@@ -829,7 +829,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			});
 			if (rows.size() != lines.size())
 			{
-				error = "The step to apply is not one the engine makes.";
+				error = tr("piano_roll.unknown_step");
 				return {};
 			}
 			/* past the end, the movie grows to take them, in the same step */
@@ -859,7 +859,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, frame, error) || !arg(a, 1, count, error) || !arg(a, 2, label, error)) return {};
 			if (frame < 0 || frame > inputs_.size() || count < 1)
 			{
-				error = "The step to apply is not one the engine makes.";
+				error = tr("piano_roll.unknown_step");
 				return {};
 			}
 			Row empty;
@@ -879,7 +879,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, frame, error) || !arg(a, 1, count, error) || !arg(a, 2, label, error)) return {};
 			if (frame < 0 || count < 1 || frame + count > inputs_.size())
 			{
-				error = "The step to apply is not one the engine makes.";
+				error = tr("piano_roll.unknown_step");
 				return {};
 			}
 			agentEditing_ = true;
@@ -986,7 +986,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			else if (how == "min") to = lo;
 			else
 			{
-				error = "no such move: " + how;
+				error = tr("piano_roll.no_move", {how});
 				return {};
 			}
 			to = std::clamp(to, lo, hi);
@@ -1024,14 +1024,14 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (a.size() > 1 && !arg(a, 1, count, error)) return {};
 			if (frame < 0 || frame > inputs_.size() || count < 1 || count > (int64_t{1} << 24))
 			{
-				error = "frames go in at 0 to " + std::to_string(inputs_.size()) + ", 1 to 16777216 of them";
+				error = tr("piano_roll.insert_range", {std::to_string(inputs_.size())});
 				return {};
 			}
 			std::vector<Row> rows(static_cast<size_t>(count));
 			std::vector<int32_t> neutral(static_cast<size_t>(inputs_.axisCount()));
 			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
 			for (Row &r : rows) r.axes = neutral;
-			naming_ = "Insert " + std::to_string(count) + (count == 1 ? " frame: " : " frames: ") + std::to_string(frame);
+			naming_ = tr("piano_roll.step_insert", count, {std::to_string(frame)});
 			putIn(frame, rows);
 			return {};
 		});
@@ -1039,7 +1039,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &a, std::string &error) -> Value {
 			int64_t first = 0, last = 0;
 			if (!range(a, first, last, error)) return {};
-			naming_ = "Delete " + std::to_string(last - first + 1) + " frames from " + std::to_string(first) + "-" + std::to_string(last);
+			naming_ = tr("piano_roll.step_delete", last - first + 1, {std::to_string(first) + "-" + std::to_string(last)});
 			takeOut(first, last);
 			return {};
 		});
@@ -1050,13 +1050,13 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (a.size() > 2 && !arg(a, 2, times, error)) return {};
 			if (times < 1 || times > 100000)
 			{
-				error = "a number of times from 1 to 100000";
+				error = tr("piano_roll.times_range");
 				return {};
 			}
 			std::vector<Row> rows;
 			for (int64_t t = 0; t < times; t++)
 				for (int64_t f = first; f <= last; f++) rows.push_back(readRow(f));
-			naming_ = "Clone " + std::to_string(first) + "-" + std::to_string(last) + (times > 1 ? " x" + std::to_string(times) : std::string());
+			naming_ = times > 1 ? tr("piano_roll.step_clone_times", {std::to_string(first) + "-" + std::to_string(last), std::to_string(times)}) : tr("piano_roll.step_clone", {std::to_string(first) + "-" + std::to_string(last)});
 			putIn(last + 1, rows);
 			return {};
 		});
@@ -1066,7 +1066,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!range(a, first, last, error)) return {};
 			std::vector<int32_t> neutral(static_cast<size_t>(inputs_.axisCount()));
 			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
-			naming_ = "Clear frames " + std::to_string(first) + "-" + std::to_string(last);
+			naming_ = tr("piano_roll.step_clear", {std::to_string(first) + "-" + std::to_string(last)});
 			overwrite(first, std::vector<Row>(static_cast<size_t>(last - first + 1), Row{0, neutral}));
 			return {};
 		});
@@ -1102,7 +1102,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 		[this](const Args &, std::string &error) -> Value {
 			if (clipboard_.empty() || inputs_.size() == 0)
 			{
-				error = "no frames were copied";
+				error = tr("piano_roll.nothing_copied");
 				return {};
 			}
 			const int64_t last = std::min<int64_t>(copiedFrom_ + static_cast<int64_t>(clipboard_.size()) - 1, inputs_.size() - 1);
@@ -1122,7 +1122,7 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			std::string text;
 			for (const std::string &line : inputs_.lines(first, last)) text += line + "\n";
 			clipboardText.set(text);
-			naming_ = "Cut frames " + std::to_string(first) + "-" + std::to_string(last);
+			naming_ = tr("piano_roll.step_cut", {std::to_string(first) + "-" + std::to_string(last)});
 			takeOut(first, last);
 			return clipboardFrames.get();
 		});
@@ -1132,10 +1132,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, frame, error)) return {};
 			if (clipboard_.empty() || frame < 0 || frame > inputs_.size())
 			{
-				error = clipboard_.empty() ? "nothing was copied" : "no frame " + std::to_string(frame);
+				error = clipboard_.empty() ? tr("piano_roll.nothing_copied") : tr("piano_roll.no_frame", {std::to_string(frame)});
 				return {};
 			}
-			naming_ = "Copy Over Input: " + std::to_string(frame);
+			naming_ = tr("piano_roll.step_copy_over", {std::to_string(frame)});
 			overwrite(frame, clipboard_);
 			return {};
 		});
@@ -1145,10 +1145,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, frame, error)) return {};
 			if (clipboard_.empty() || frame < 0 || frame > inputs_.size())
 			{
-				error = clipboard_.empty() ? "nothing was copied" : "no frame " + std::to_string(frame);
+				error = clipboard_.empty() ? tr("piano_roll.nothing_copied") : tr("piano_roll.no_frame", {std::to_string(frame)});
 				return {};
 			}
-			naming_ = "Paste Insert: " + std::to_string(frame);
+			naming_ = tr("piano_roll.step_paste_insert", {std::to_string(frame)});
 			putIn(frame, clipboard_);
 			return {};
 		});
@@ -1158,10 +1158,10 @@ PianoRollViewModel::PianoRollViewModel(Dispatcher &dispatcher, InputLog &inputs,
 			if (!arg(a, 0, frame, error)) return {};
 			if (frame < 0 || frame >= inputs_.size())
 			{
-				error = "no frame " + std::to_string(frame);
+				error = tr("piano_roll.no_frame", {std::to_string(frame)});
 				return {};
 			}
-			naming_ = "Truncate Movie: " + std::to_string(frame);
+			naming_ = tr("piano_roll.step_truncate", {std::to_string(frame)});
 			if (limited()) truncateShown(frame);
 			else takeOut(frame, inputs_.size() - 1);
 			return {};
@@ -1294,7 +1294,7 @@ bool PianoRollViewModel::paint(int64_t first, int64_t last, int64_t b, std::opti
 	if (first > last) std::swap(first, last);
 	if (first < 0 || b < 0 || b >= std::min<int64_t>(buttonCount(), 64))
 	{
-		error = "no such frame or button";
+		error = tr("piano_roll.no_frame_or_button");
 		return false;
 	}
 	const int64_t before = inputs_.size();
@@ -1302,9 +1302,9 @@ bool PianoRollViewModel::paint(int64_t first, int64_t last, int64_t b, std::opti
 	Step step{{}, before, 0};
 	const std::string button = frames_.columnName(static_cast<int32_t>(b));
 	const std::string span = first == last ? std::to_string(first) : std::to_string(first) + "-" + std::to_string(last);
-	step.name = join ? "Paint Bool " + button + " from frame "
-		: held ? "Set " + button + "(" + (*held ? "On" : "Off") + "): " + span
-			   : "Toggle " + button + ": " + span;
+	step.name = join ? tr("piano_roll.step_paint", {button, ""})
+		: held ? tr(*held ? "piano_roll.step_set_on" : "piano_roll.step_set_off", {button, span})
+			   : tr("piano_roll.step_toggle", {button, span});
 	for (int64_t f = first; f <= last; f++)
 	{
 		const uint64_t was = inputs_.at(f);
@@ -1380,11 +1380,11 @@ void PianoRollViewModel::historyChanged()
 std::string PianoRollViewModel::describe(const Step &step)
 {
 	auto range = [](int64_t a, int64_t b) { return a == b ? std::to_string(a) : std::to_string(a) + "-" + std::to_string(b); };
-	if (step.shiftCount > 0) return "Insert " + std::to_string(step.shiftCount) + (step.shiftCount == 1 ? " frame: " : " frames: ") + std::to_string(step.shiftAt);
-	if (step.shiftCount < 0) return "Delete " + std::to_string(-step.shiftCount) + " frames from " + range(step.shiftAt, step.shiftAt - step.shiftCount - 1);
-	if (step.frames.empty() && step.sizeAfter != step.sizeBefore) return "Fill to " + std::to_string(step.sizeAfter) + " frames";
-	if (!step.frames.empty()) return "Change frames " + range(step.frames.begin()->first, step.frames.rbegin()->first);
-	return "Change";
+	if (step.shiftCount > 0) return tr("piano_roll.step_insert", step.shiftCount, {std::to_string(step.shiftAt)});
+	if (step.shiftCount < 0) return tr("piano_roll.step_delete", -step.shiftCount, {range(step.shiftAt, step.shiftAt - step.shiftCount - 1)});
+	if (step.frames.empty() && step.sizeAfter != step.sizeBefore) return tr("piano_roll.step_fill", step.sizeAfter);
+	if (!step.frames.empty()) return tr("piano_roll.step_change_frames", {range(step.frames.begin()->first, step.frames.rbegin()->first)});
+	return tr("piano_roll.step_change");
 }
 
 std::string PianoRollViewModel::HistoryRows::columnName(int32_t column) const
@@ -1510,11 +1510,11 @@ void PianoRollViewModel::rightDragOnTo(int64_t frame)
 	frame = std::max<int64_t>(0, std::min(frame, size - n));
 	rightLow_ = std::min(rightLow_, frame);
 	rightHigh_ = std::max(rightHigh_, frame);
-	std::string name = "Right-Click Edit:";
+	std::string name;
 	if (rightShift_ && rightCtrl_)
 	{
 		/* copies put in after where it came from, as many as frames dragged past it */
-		name += " Extend Input, Insert";
+		name = tr("piano_roll.step_right_extend_insert");
 		const int64_t at = rightStart_ < rightFrame_ ? rightFrame_ : rightFrame_ + 1;
 		const int64_t count = frame - at + 1;
 		if (count <= 0) return;
@@ -1526,7 +1526,7 @@ void PianoRollViewModel::rightDragOnTo(int64_t frame)
 	else if (rightShift_)
 	{
 		/* every frame the drag passed over takes the input, repeated */
-		name += " Extend Input";
+		name = tr("piano_roll.step_right_extend");
 		std::vector<Row> rows;
 		for (int64_t f = rightLow_; f <= std::min(rightHigh_, size - 1); f++) rows.push_back(taken(f));
 		naming_ = name;
@@ -1535,7 +1535,7 @@ void PianoRollViewModel::rightDragOnTo(int64_t frame)
 	else if (rightCtrl_)
 	{
 		/* a copy where the pointer is, the original kept */
-		name += " Copy";
+		name = tr("piano_roll.step_right_copy");
 		if (frame == rightFrame_) return;
 		naming_ = name;
 		overwrite(frame, rightInput_);
@@ -1543,7 +1543,7 @@ void PianoRollViewModel::rightDragOnTo(int64_t frame)
 	else
 	{
 		/* moved where the pointer is, the frames between taking its place */
-		name += " Move";
+		name = tr("piano_roll.step_right_move");
 		if (frame == rightFrame_) return;
 		const int64_t low = std::min(frame, rightFrame_);
 		std::vector<Row> between;
@@ -1850,7 +1850,7 @@ Value PianoRollViewModel::GroupRows::cell(int64_t row, int32_t column) const
 	switch (column)
 	{
 	case 0: return name;
-	case 1: return isKeys ? std::string("Keys") : name;
+	case 1: return isKeys ? tr("piano_roll.group_keys") : name.rfind("Player ", 0) == 0 ? tr("piano_roll.group_player", {name.substr(7)}) : name;
 	/* the keys' groups share one toggle, shown once */
 	case 3: return !isKeys || row == 0 || names[static_cast<size_t>(row) - 1].rfind("Keys (", 0) != 0;
 	case 2:
@@ -1910,13 +1910,13 @@ std::string PianoRollViewModel::macroText(int64_t first, int64_t last, const std
 	if (first > last) std::swap(first, last);
 	if (first < 0 || last >= inputs_.size())
 	{
-		error = "the frames go from 0 to " + std::to_string(inputs_.size() - 1);
+		error = tr("piano_roll.frames_range", {std::to_string(inputs_.size() - 1)});
 		return {};
 	}
 	const std::string key = movieKey();
 	if (key.empty())
 	{
-		error = "the movie names no columns";
+		error = tr("piano_roll.no_columns");
 		return {};
 	}
 	std::vector<std::string> keys;
@@ -1933,7 +1933,7 @@ std::string PianoRollViewModel::macroText(int64_t first, int64_t last, const std
 		if (columns.empty() || std::find(columns.begin(), columns.end(), k) != columns.end()) mine.push_back(k);
 	if (mine.empty())
 	{
-		error = "none of those columns is the movie's";
+		error = tr("piano_roll.columns_not_movie");
 		return {};
 	}
 	int64_t groups = 0;
@@ -1997,13 +1997,13 @@ bool PianoRollViewModel::placeMacroLines(int64_t at, std::vector<std::string> li
 {
 	if (at < 0 || at > inputs_.size())
 	{
-		error = "no frame " + std::to_string(at);
+		error = tr("piano_roll.no_frame", {std::to_string(at)});
 		return false;
 	}
 	while (!lines.empty() && lines.back().empty()) lines.pop_back();
 	if (lines.size() < 4)
 	{
-		error = name + " is not a macro";
+		error = tr("piano_roll.not_macro", {name});
 		return false;
 	}
 	/* its columns, each one the movie has */
@@ -2027,8 +2027,7 @@ bool PianoRollViewModel::placeMacroLines(int64_t at, std::vector<std::string> li
 	for (const std::string &k : keys)
 		if (std::find(movieKeys.begin(), movieKeys.end(), k) == movieKeys.end())
 		{
-			error = "The selected macro is not compatible with the current core.\nMacro controller: " + lines[1] +
-				"\nMacro controller groups (\"players\" + 1) count: " + lines[2];
+			error = tr("piano_roll.macro_incompatible", {lines[1], lines[2]});
 			return false;
 		}
 	auto lower = [](std::string t) {
@@ -2054,7 +2053,7 @@ bool PianoRollViewModel::placeMacroLines(int64_t at, std::vector<std::string> li
 			while (p < entry.size() && entry[p] == '|') p++;
 			if (p >= entry.size())
 			{
-				error = "frame " + std::to_string(i - 4) + " of the macro is shorter than its columns";
+				error = tr("piano_roll.macro_short", {std::to_string(i - 4)});
 				return false;
 			}
 			const auto axis = std::find_if(axes.begin(), axes.end(), [&k](const SessionViewModel::Axis &x) { return x.name == k; });
@@ -2063,7 +2062,7 @@ bool PianoRollViewModel::placeMacroLines(int64_t at, std::vector<std::string> li
 				const size_t end = entry.find(',', p);
 				if (end == std::string::npos)
 				{
-					error = "frame " + std::to_string(i - 4) + " of the macro has no value for " + k;
+					error = tr("piano_roll.macro_no_value", {std::to_string(i - 4), k});
 					return false;
 				}
 				const int32_t v = static_cast<int32_t>(std::strtol(entry.substr(p, end - p).c_str(), nullptr, 10));
@@ -2084,10 +2083,10 @@ bool PianoRollViewModel::placeMacroLines(int64_t at, std::vector<std::string> li
 	}
 	if (rows.empty())
 	{
-		error = name + " has no frames";
+		error = tr("piano_roll.macro_empty", {name});
 		return false;
 	}
-	naming_ = "Place Macro at " + std::to_string(at);
+	naming_ = tr("piano_roll.step_place_macro", {std::to_string(at)});
 	if (replace) overwrite(at, rows);
 	else putIn(at, rows);
 	return true;
@@ -2261,7 +2260,7 @@ bool PianoRollViewModel::paintPattern(int64_t first, int64_t last, bool join, st
 	const Pattern *p = patternOf(patternColumn_);
 	if (p == nullptr || p->values.empty())
 	{
-		error = "no such control";
+		error = tr("piano_roll.no_such_control");
 		return false;
 	}
 	const std::vector<int32_t> values = patternValues(*p, first, last);
@@ -2275,7 +2274,7 @@ bool PianoRollViewModel::paintPattern(int64_t first, int64_t last, bool join, st
 		else ok = paintAxis(f, f, b - buttonCount(), v, joined, error);
 	}
 	if (!join && b < buttonCount() && !undo_.empty())
-		undo_.back().name = "Paint Bool " + frames_.columnName(static_cast<int32_t>(b)) + " from frame " + std::to_string(first);
+		undo_.back().name = tr("piano_roll.step_paint", {frames_.columnName(static_cast<int32_t>(b)), std::to_string(first)});
 	return ok;
 }
 
@@ -2287,7 +2286,7 @@ std::string PianoRollViewModel::runsText(const Pattern &p, bool isButton)
 		size_t n = 1;
 		while (i + n < p.values.size() && p.values[i + n] == p.values[i]) n++;
 		if (!out.empty()) out += ", ";
-		out += (isButton ? std::string(p.values[i] != 0 ? "On" : "Off") : std::to_string(p.values[i])) + " x" + std::to_string(n);
+		out += (isButton ? tr(p.values[i] != 0 ? "common.on" : "common.off") : std::to_string(p.values[i])) + " x" + std::to_string(n);
 		i += n;
 	}
 	return out;
@@ -2380,7 +2379,7 @@ void PianoRollViewModel::putInShown(int64_t at, const std::vector<Row> &rows)
 	 * the end, the shown columns moved later by as many, the new frames'
 	 * shown columns written; the hidden ones stay on their frames */
 	const int64_t before = inputs_.size(), n = static_cast<int64_t>(rows.size());
-	if (naming_.empty()) naming_ = "Insert " + std::to_string(n) + (n == 1 ? " frame: " : " frames: ") + std::to_string(at);
+	if (naming_.empty()) naming_ = tr("piano_roll.step_insert", n, {std::to_string(at)});
 	Step step;
 	step.sizeBefore = before;
 	moveMarkers(step, at, n);
@@ -2410,7 +2409,7 @@ void PianoRollViewModel::takeOutShown(int64_t first, int64_t last)
 	 * keeps its length and the hidden columns their frames */
 	const int64_t size = inputs_.size(), n = last - first + 1;
 	if (naming_.empty())
-		naming_ = "Delete " + std::to_string(n) + " frames from " + std::to_string(first) + "-" + std::to_string(last);
+		naming_ = tr("piano_roll.step_delete", n, {std::to_string(first) + "-" + std::to_string(last)});
 	Step step;
 	step.sizeBefore = size;
 	moveMarkers(step, first, -n);
@@ -2485,20 +2484,20 @@ bool PianoRollViewModel::paintAxis(int64_t first, int64_t last, int64_t axis, in
 	const auto &axes = session_.axes();
 	if (axis < 0 || axis >= static_cast<int64_t>(axes.size()) || first < 0)
 	{
-		error = "no such frame or analog control";
+		error = tr("piano_roll.no_frame_or_analog");
 		return false;
 	}
 	const SessionViewModel::Axis &ax = axes[static_cast<size_t>(axis)];
 	if (value < ax.min || value > ax.max)
 	{
-		error = ax.name + " goes from " + std::to_string(ax.min) + " to " + std::to_string(ax.max);
+		error = tr("piano_roll.axis_range", {ax.name, std::to_string(ax.min), std::to_string(ax.max)});
 		return false;
 	}
 	const int64_t before = inputs_.size();
 	Step step;
 	step.sizeBefore = before;
-	step.name = join ? "Paint Axis " + ax.name + " from frame "
-		: "Set " + ax.name + "(" + std::to_string(value) + "): " + (first == last ? std::to_string(first) : std::to_string(first) + "-" + std::to_string(last));
+	step.name = join ? tr("piano_roll.step_paint_axis", {ax.name, ""})
+		: tr("piano_roll.step_set_axis", {ax.name, std::to_string(value), first == last ? std::to_string(first) : std::to_string(first) + "-" + std::to_string(last)});
 	for (int64_t f = first; f <= last; f++)
 	{
 		const Row was = readRow(f);
@@ -2522,7 +2521,7 @@ bool PianoRollViewModel::range(const Args &a, int64_t &first, int64_t &last, std
 	if (first > last) std::swap(first, last);
 	if (first < 0 || last >= inputs_.size())
 	{
-		error = "the frames go from 0 to " + std::to_string(inputs_.size() - 1);
+		error = tr("piano_roll.frames_range", {std::to_string(inputs_.size() - 1)});
 		return false;
 	}
 	return true;
@@ -2560,7 +2559,7 @@ void PianoRollViewModel::framesRecorded(const std::vector<SessionViewModel::Reco
 		step.sizeBefore = r.appended ? r.frame : r.length;
 		/* frames recorded while the machine runs are one step, named for the first */
 		const bool join = r.running && lastWasRecord_ && !undo_.empty();
-		step.name = join ? "Record Frame: " : "Record Frame: " + std::to_string(r.frame);
+		step.name = tr("piano_roll.step_record", {join ? std::string() : std::to_string(r.frame)});
 		keep(std::move(step), join);
 		/* a frame recorded while paused stands alone; the next run starts a step of its own */
 		lastWasRecord_ = r.running;
@@ -2737,9 +2736,9 @@ void PianoRollViewModel::refreshRun(int64_t frame)
 void PianoRollViewModel::listMarkers()
 {
 	markerList_.clear();
-	markerList_.push_back({0, "Run start", true, true});
-	markerList_.push_back({lastInputFrame.get(), "Last input", true, true});
-	markerList_.push_back({runEndFrame.get(), "Run end", true, true});
+	markerList_.push_back({0, tr("piano_roll.marker_run_start"), true, true});
+	markerList_.push_back({lastInputFrame.get(), tr("piano_roll.marker_last_input"), true, true});
+	markerList_.push_back({runEndFrame.get(), tr("piano_roll.marker_run_end"), true, true});
 	for (const auto &[f, m] : markers_) markerList_.push_back({f, m.text, m.keepState, false});
 	/* by frame; on a shared frame the run's own first, in run order, then the person's */
 	std::stable_sort(markerList_.begin(), markerList_.end(), [](const ListedMarker &a, const ListedMarker &b) {

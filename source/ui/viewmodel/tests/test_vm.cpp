@@ -1309,7 +1309,7 @@ void dataFolder()
 			  what.find("target")->text == (dir / "docs" / "chimera").string() && what.find("choice")->text == "empty" && what.find("size")->text == "1 KB");
 		CHECK(fromValue(data.run("inspect", {(dir / "data").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"same\"") != std::string::npos);
 		fs::create_directories(dir / "other" / "projects");
-		CHECK(fromValue(data.run("inspect", {(dir / "other").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"holds data\"") != std::string::npos);
+		CHECK(fromValue(data.run("inspect", {(dir / "other").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"holdsData\"") != std::string::npos);
 		CHECK(fromValue(data.run("inspect", {(dir / "data" / "inner").string()}, error).value_or(Value()), text) && text.find("\"choice\": \"nested\"") != std::string::npos);
 	}
 	/* into or out of itself, and where it already is */
@@ -3300,8 +3300,8 @@ bool cacheManager(const char *package, const char *rom)
 	}
 	CHECK(caches.total.get().find(" in 3 items") != std::string::npos);
 	/* what Chimera's window says over the list */
-	CHECK(caches.header.get().rfind("3 cached item(s), ", 0) == 0 &&
-		  caches.header.get().find("Everything here can be removed: what it costs is time, never work.\n1 belong to projects that are no longer where they were (") != std::string::npos);
+	CHECK(caches.header.get().rfind("3 cached items, ", 0) == 0 &&
+		  caches.header.get().find("Everything here can be removed: what it costs is time, never work.\n1 belongs to a project that is no longer where it was (") != std::string::npos);
 	/* Chimera's columns: what, the project's id, its file (not found), and what the row means in full */
 	CHECK(text(gone, 14) == "Project" && text(gone, 15) == "00DEADBEEF" && text(gone, 16) == "/no/such/gone.chimeraProject   (not found)" &&
 		  text(unnamed, 16) == "(never recorded)" && text(gone, 17).size() == 16);
@@ -3459,7 +3459,7 @@ bool cacheManager(const char *package, const char *rom)
 		CHECK(limits.run("toggleLock", {rowOf("One")}, error) == Value(false));
 		CHECK(limits.run("cleanNow", {}, error) == Value(int64_t{1}));
 		CHECK(!fs::exists(cache / "C1") && fs::exists(cache / "C2") && fs::exists(cache / "C3"));
-		CHECK(limits.status.get() == "Removed 1 of the oldest unlocked item(s), freeing 0 KB.");
+		CHECK(limits.status.get() == "Removed 1 of the oldest unlocked items, freeing 0 KB.");
 		/* unsaved work a window is still writing is in use: never removed */
 		entry(kept / "R2", 10, 1);
 		std::ofstream(kept / "R2" / "session.json") << "{\"processId\": " << currentProcessId() << ", \"processStarted\": " << processStarted(currentProcessId()) << "}";
@@ -6434,7 +6434,7 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 		/* Find: a name in any case, its tab; and what is typed so far suggests names */
 		CHECK(hotkeys.run("find", {std::string("add BRANCH ")}, error) == Value(std::string("{\"action\": \"Add Branch\", \"group\": \"TAStudio\"}")));
 		CHECK(hotkeys.run("find", {std::string("Fly")}, error) == Value(std::string()));
-		CHECK(hotkeys.run("suggest", {std::string("r")}, error) == Value(std::string("[\"Rewind\"]")));
+		CHECK(hotkeys.run("suggest", {std::string("r")}, error) == Value(std::string("[{\"action\": \"Rewind\", \"label\": \"Rewind\"}]")));
 	}
 	const int before = downs;
 	hotkeys.run("run", {std::string("Frame Advance")}, error);
@@ -7719,7 +7719,7 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.run("scanFolder", {(dir / "scan").string(), false}, error).has_value());
 	CHECK(wizard.status.get() == "scanned 0 files; nothing new matched" && !wizard.ready.get());
 	CHECK(wizard.run("scanFolder", {(dir / "scan").string(), true}, error).has_value());
-	CHECK(wizard.status.get() == "scanned 1 files; 1 requirement resolved" && wizard.ready.get());
+	CHECK(wizard.status.get() == "scanned 1 file; 1 requirement resolved" && wizard.ready.get());
 	CHECK(wizard.firmwareMissing.get().empty() && text("firmware", 0, 8) == "found: boardb.bin");
 	CHECK(text("firmware", 0, 2) == (dir / "scan" / "deeper" / "boardb.bin").string() && text("firmware", 0, 3) == "chosen");
 	CHECK(installed.firmwareFolder.get() == (dir / "scan").string());
@@ -8933,9 +8933,9 @@ bool encodeVideo(const char *package, const char *rom)
 	CHECK(d.until([&] { return session.hasProject.get() && !session.projectPath.get().empty(); }, 20));
 	/* the box follows the command: the preset's name, the container's extension */
 	encoder.run("usePreset", {int64_t{5}}, error);
-	CHECK(encoder.preset.get() == "H.264 4:4:4 (YUV, nearly lossless), MKV" && encoder.output.get() == (dir / "run.mkv").string());
+	CHECK(encoder.preset.get() == "encoder.preset_444" && encoder.output.get() == (dir / "run.mkv").string());
 	encoder.commandLine.set("-c:v ffv1 -c:a pcm_s16le -f matroska");
-	CHECK(encoder.preset.get() == "Your own command");
+	CHECK(encoder.preset.get() == "encoder.preset_own");
 	session.run("seek", {int64_t{20}}, error);
 	CHECK(d.until([&] { return session.frame.get() == 20; }, 30));
 	const int64_t rerecords = session.rerecords.get();
@@ -9096,7 +9096,7 @@ bool encodeVideo(const char *package, const char *rom)
 		CHECK(encode(presets[2].command, dir / "youtube.mp4") && described(dir / "youtube.mp4").find("2880x2160 [SAR 1:1 DAR 4:3]") != std::string::npos);
 		for (const auto &p : presets)
 		{
-			if (std::string(p.name).rfind("Lossless", 0) != 0) continue;
+			if (std::string(p.key).find("_rgb") == std::string::npos && std::string(p.key) != "encoder.preset_ut_video") continue;
 			const fs::path out = dir / "lossless.mkv", raw = dir / "lossless.raw";
 			std::error_code gone;
 			fs::remove(raw, gone);
@@ -9108,7 +9108,7 @@ bool encodeVideo(const char *package, const char *rom)
 			bool same = written && bytes.size() == picture.size() * 4;
 			for (size_t i = 0; same && i < picture.size(); i++)
 				same = (reinterpret_cast<const uint32_t *>(bytes.data())[i] | 0xFF000000u) == picture[i];
-			std::printf("%s: %s\n", p.name, same ? "every pixel kept" : "changed");
+			std::printf("%s: %s\n", p.key, same ? "every pixel kept" : "changed");
 			CHECK(same && described(out).find("Audio: flac") != std::string::npos);
 		}
 	}
@@ -9462,7 +9462,7 @@ bool coreManager(const char *package, const char *slotsPackage, const char *game
 	CHECK(listed() == "Synth|Synth Slots|Synth Game|");
 	CHECK(text(0, 1) == "Emulator" && text(2, 1) == "Game" && text(0, 2) == "Synthetic Witness" && text(1, 2).find(", ") != std::string::npos);
 	CHECK(text(0, 3).find("  (+1 more)") != std::string::npos && text(0, 4).find(" KB") != std::string::npos);
-	CHECK(cores.managerHeader.get() == "Cores folder: " + (dir / "Cores").string() + "   (3 core(s))\n"
+	CHECK(cores.managerHeader.get() == "Cores folder: " + (dir / "Cores").string() + "   (3 cores)\n"
 		"Chimera downloads nothing. Get a core's package (.chimeraCore) from its project, or build it, and put it in this folder.");
 	/* Show: the games, or the emulators */
 	cores.shows.set(2);
@@ -9490,9 +9490,9 @@ bool coreManager(const char *package, const char *slotsPackage, const char *game
 		  got.find("{\"name\": \"Synthetic Witness\", \"id\": \"Synth\", \"cores\": \"Synth, Synth Game, Synth Slots\", \"installed\": true}") != std::string::npos);
 	/* whole cores removed */
 	CHECK(cores.run("removeCores", {std::string("[\"Synth Slots\", \"Synth Game\"]")}, error) == Value(int64_t{2}) &&
-		  cores.managerStatus.get() == "Removed 2 package(s)." && listed() == "Synth|");
+		  cores.managerStatus.get() == "Removed 2 packages." && listed() == "Synth|");
 	cores.run("refreshList", {}, error);
-	CHECK(cores.managerStatus.get() == "1 core(s) in " + (dir / "Cores").string() + ".");
+	CHECK(cores.managerStatus.get() == "1 core in " + (dir / "Cores").string() + ".");
 	fs::remove_all(dir, ec);
 	return true;
 }

@@ -1,0 +1,385 @@
+# Identifiers that are English words (tools/check-texts.py): names kept in
+# config files, project files, bindings or scripts, never shown as they are.
+# Where a person sees one, the window shows its label from the language tables.
+
+# hotkey names and their tabs (hotkeys_vm.cpp: Chimera's order), and the old names a config may give
+Accept Background Input
+Add Branch
+Analog Decr. by 10
+Analog Decrement
+Analog Incr. by 10
+Analog Increment
+Analog Maximum
+Analog Minimum
+Autofire
+Autohold
+Cancel Seek
+Capture Mouse
+Clear Autohold
+Clear Frames
+Clone # Times
+Clone Frames
+Close Project
+Cycle Greenzone
+Decrease Speed
+Delete Branch
+Delete Frames
+Delete Marker
+Display FPS
+Do Search
+Encode Video
+Exit Program
+Fast Forward
+Frame Advance
+Frame Counter
+Frame Inch
+Full Screen
+Game Time
+Hex Editor
+Increase Speed
+Input Display
+Insert # Frames
+Insert Frame
+Lag Counter
+Larger Window
+Load Last Project
+Lua Console
+New Search
+Next Compare To
+Next Operator
+Open Project
+Paste Insert
+Pause
+Play Movie
+Play from beginning
+Previous Compare To
+Previous Operator
+RAM Search
+RAM Watch
+Reboot Core
+Record Movie
+Redo
+Reselect Clip.
+Reset Speed
+Rewind
+Save Movie
+Screen Client to Clipboard
+Screen Raw to Clipboard
+Screenshot
+Seek To Green Arrow
+Seek To Next Marker
+Seek To Prev Marker
+Seek To Selected Frame
+Seek To...
+Sel. bet. Markers
+Select All
+Select Current Frame
+Set Marker
+Show Cursor
+Smaller Window
+Stop Movie
+TAStudio
+Toggle All Freezes
+Toggle Auto-Restore
+Toggle BG Input
+Toggle Display Nothing
+Toggle Follow Cursor
+Toggle Key Priority
+Toggle Last Lua Script
+Toggle Menu
+Toggle Messages
+Toggle Skip Lag Frame
+Toggle Sound
+Toggle Stay on Top
+Toggle Throttle
+Toggle Turbo Seek
+Toggle read-only
+Trace Logger
+Turbo
+Undo
+Volume Down
+Volume Up
+Save Branch 
+Load Branch 
+General
+Movie
+RAM Search
+TAStudio
+Tools
+Open ROM
+Close ROM
+Load Last ROM
+
+# key names as Chimera writes them (key_names.cpp), and the bindings a key cannot give
+Escape
+WMouse L
+WMouse M
+WMouse R
+WMouse 1
+WMouse 2
+Tab
+Equals
+Minus
+Delete
+Insert
+Up
+Down
+Left
+Right
+
+# the folders of Config > Paths, by the names the settings keep
+Firmware
+Movies
+Lua
+Themes
+Screenshots
+Movie backups
+
+# names: the program's, Qt's style, the built-in themes' (data, as the shipped themes' names are)
+Chimera
+Fusion
+Light
+Dark
+
+# a command a person pastes into a terminal (Tools > MCP Server...)
+claude mcp add chimera -- \"
+Menu
+Return
+Enter
+
+# the on-screen elements, by the names their places are kept under
+Fps
+Rerecords
+Messages
+Watches
+
+# formats
+hh:mm:ss
+
+# shipped themes' names, drawn as samples in the theme preview
+Aizome
+Bubblegum Pop
+
+# theme colours named in one word (themes/light.json), and a control name drawn as a sample
+Border
+Selection
+Start
+
+# RAM Watch's and RAM Search's columns, Lua Console's, by the names their widths are kept under
+Address
+Value
+Prev
+Changes
+Diff
+Type
+Domain
+Notes
+Prev,Diff,Type
+Path
+Script
+
+# folders of Config > Paths (paths_vm.cpp), and where Windows keeps its recent files
+Global
+Base
+ROM
+Savestates
+A/V Dumps
+Watch (.wch)
+Debug Logs
+Bug reports
+Macros
+Temp Files
+Microsoft
+Windows
+Recent
+
+# key names and the mouse's axes; Hex Editor's colours, by their settings' names
+Del
+Space
+PageUp
+PageDown
+Home
+End
+WMouse X
+WMouse Y
+Background
+Foreground
+Highlight
+Freeze
+HighlightFreeze
+
+# a font, and the word cores put on their register flags
+Arial
+Flag
+
+# RAM Search's row fields
+Previous
+
+# a project file's header field, TAStudio's saved column fields (Chimera's format)
+Platform
+Columns
+Name
+Visible
+Emphasis
+Text
+Rotatable
+
+# control names and the patterns a core's controls are told apart by (session_vm.cpp)
+Power
+Reset
+Light Sensor
+Disc Select
+Disk Index
+Next Drive
+Next Slot
+Insert Disk
+Eject Disk
+Tilt
+Key 
+Open
+Close
+Tape
+Disk
+Block
+Status
+RMouse X
+RMouse Y
+Waterbox Controller
+
+# what a running session's mark file holds (read by Chimera, not shown)
+a session of this project is running\n
+
+# how a firmware was found (new_project_vm.cpp), kept as words
+your own
+
+# words matched in what a compile session printed (miniBox's message)
+memory block
+
+# the piano roll's column groups by their identifiers, a macro file's fields
+Player 
+Keys (
+Keys
+Pattern
+Loop
+True
+False
+
+# the kinds of cached things (cache_manager_vm.cpp), by the names they are told apart by
+Project cache
+Unsaved work
+
+# RAM Search's .wch header, its hidden columns, ffmpeg arguments by their own names
+SystemID 
+Changes,Diff
+Infinity
+-Infinity
+
+# Lua forms' property names (the scripts' API), Sublime Text's folders
+Top
+Width
+Height
+Enabled
+Checked
+Sublime Text 2
+Packages
+
+# Lua code Chimera runs for a console or an agent (lua_bridge.cpp)
+emu.frameadvance(
+local run, failed = load('return ' .. code, '=input')\n
+if not run then run, failed = load(code, '=input') end\n
+if not run then error(failed, 0) end\n
+__chimera_run_results = table.pack(run())\n
+
+# a theme's origin, a crash note's first line, the registry key Windows reads crash helpers from
+built in
+Chimera crash note
+Software\\Microsoft\\Windows\\Windows Error Reporting\\RuntimeExceptionHelperModules
+return 
+local code = [
+
+# a project file's author field; gamepad buttons and axes as Chimera names them in bindings
+Author
+Back
+Guide
+LeftThumb
+RightThumb
+LeftShoulder
+RightShoulder
+DpadUp
+DpadDown
+DpadLeft
+DpadRight
+Misc
+LeftThumbX Axis
+LeftThumbY Axis
+RightThumbX Axis
+RightThumbY Axis
+LeftTrigger Axis
+RightTrigger Axis
+ Axis
+Axis
+WMouse 
+RMouse 
+Console
+
+# the SQL Lua library's answers (the scripts' API, as BizHawk-era scripts compare them) and its pragmas
+Database Created Successfully
+Database Opened Successfully
+Command ran successfully
+No rows found
+Database not open.
+query is empty
+Could not create 
+PRAGMA journal_mode = 'wal'
+PRAGMA synchronous = 'off'
+PRAGMA read_uncommitted = 1
+out of memory
+
+# file formats: a branch's state note, a NUT file's magic, the controls' JSON fields
+chimera branch state note 1
+machine 
+frame 
+picture 
+nut/multimedia container
+Mult
+Deadzone
+
+# key names as Chimera writes them (customize_vm.cpp)
+LeftCtrl
+RightCtrl
+LeftAlt
+RightAlt
+LeftShift
+RightShift
+Ctrl
+Alt
+Shift
+
+# date formats
+yyyy-MM-dd HH.mm.ss
+
+# the default core name a package without one gets, and the core exports Chimera calls
+Waterbox
+Init
+
+# a state's writer as files record it, the MCP pipe's lock files
+Chimera commit 
+/server.lock
+/client.lock
+Greenzone
+
+# what Linux's /proc/meminfo says, read by these formats; the thread names a debugger shows
+MemAvailable: %llu kB
+MemTotal: %llu kB
+history drainer
+history packer
+history writer
+# the bytes written into a floppy's or a disc's image, the same in every language: its label, boot message, maker
+CHIMERA 
+CHIMERA    
+\r\nThis floppy holds files, not a system to start.\r\n
+Take it out and press a key to start again.\r\n
+CHIMERA REPRODUCIBLE MEDIA MAKER
+# a movie's state line (Chimera's movie format), a function's target (code)
+Frame 
+sha,sse4.1

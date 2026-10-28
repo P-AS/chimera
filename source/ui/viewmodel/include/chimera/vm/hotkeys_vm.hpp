@@ -52,6 +52,7 @@ public:
 	Property<bool> autoTab{true};
 	/* the tabs, in Chimera's order (a JSON array) */
 	Property<std::string> groups{"[]"};
+	Property<std::string> groupKeys{"[]"};
 	/* the window's copy is open: changes wait for save */
 	Property<bool> editing{false};
 	/* every action's keys as they are now, {"action": "keys"}, for a menu
@@ -70,7 +71,7 @@ private:
 	public:
 		explicit Rows(HotkeysViewModel &vm) : vm_(vm) {}
 		int64_t rowCount() const override { return static_cast<int64_t>(vm_.actions_.size()); }
-		int32_t columnCount() const override { return 5; }
+		int32_t columnCount() const override { return 7; }
 		std::string columnName(int32_t column) const override;
 		Value cell(int64_t row, int32_t column) const override;
 

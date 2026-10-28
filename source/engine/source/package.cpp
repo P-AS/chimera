@@ -7,11 +7,13 @@
  */
 
 #include "chimera/engine.h"
+#include "language.hpp"
 #include "file_io.hpp"
 #include "sha1.hpp"
 #include "thread_string.hpp"
 
 #include "../../extern/miniz/miniz.h"
+#include "../../extern/cjson/cJSON.h"
 
 #include <cstdint>
 #include <cstring>
@@ -51,11 +53,33 @@ struct ce_package
 	std::string error;
 	std::vector<uint8_t> entryData;
 
+	/* the package's language tables, read when a declaration's texts are
+	 * first asked for (docs/translations.md) */
+	bool textsRead = false;
+	chimera::lang::PackageTexts texts;
+	std::vector<uint8_t> textsData;
+
 	~ce_package()
 	{
 		if (zipOpen) mz_zip_reader_end(&zip);
 	}
 };
+
+namespace {
+
+thread_local chimera::ThreadString g_problems;   /* never destroyed: see thread_string.hpp */
+
+/* a file of the package, copied: for the language tables and the checks */
+bool entryCopy(ce_package *p, const std::string &name, std::string &bytes)
+{
+	uint64_t len = 0;
+	const uint8_t *data = ce_package_entry(p, name.c_str(), &len);
+	if (data == nullptr) return false;
+	bytes.assign(reinterpret_cast<const char *>(data), static_cast<size_t>(len));
+	return true;
+}
+
+} // namespace
 
 extern "C" {
 
@@ -90,7 +114,7 @@ static ce_package *openPackage(const char *path, const char **error_out)
 		delete p;
 		if (looksLikeZip)
 		{
-			*g_openError = "not a readable zip archive";
+			*g_openError = chimera::lang::tr("package.not_zip");
 			if (error_out != nullptr) *error_out = g_openError->c_str();
 		}
 		return nullptr; // otherwise: not a zip, so not a package - the quiet case
@@ -125,7 +149,7 @@ ce_package *ce_package_open(const char *path, const char **error_out)
 	}
 	catch (const std::bad_alloc &)
 	{
-		*g_openError = "there was not enough memory to read the package";
+		*g_openError = chimera::lang::tr("package.no_memory");
 		if (error_out != nullptr) *error_out = g_openError->c_str();
 		return nullptr;
 	}
@@ -197,7 +221,7 @@ const uint8_t *ce_package_entry(ce_package *p, const char *name, uint64_t *len_o
 		if (!chimera::fileExists(full.c_str())) return nullptr;
 		if (!chimera::readFile(full.c_str(), p->entryData))
 		{
-			p->error = std::string("could not read ") + name;
+			p->error = chimera::lang::tr("package.not_read", {name});
 			return nullptr;
 		}
 	}
@@ -220,7 +244,7 @@ const uint8_t *ce_package_entry(ce_package *p, const char *name, uint64_t *len_o
 			catch (const std::bad_alloc &)
 			{
 				p->entryData = std::vector<uint8_t>();
-				p->error = std::string("there was not enough memory to read ") + name;
+				p->error = chimera::lang::tr("container.no_memory_for", {name});
 				return nullptr;
 			}
 			if (!p->entryData.empty())
@@ -228,7 +252,7 @@ const uint8_t *ce_package_entry(ce_package *p, const char *name, uint64_t *len_o
 		}
 		if (!ok)
 		{
-			p->error = std::string("could not extract ") + name;
+			p->error = chimera::lang::tr("container.not_extracted", {name});
 			return nullptr;
 		}
 	}
@@ -237,5 +261,30 @@ const uint8_t *ce_package_entry(ce_package *p, const char *name, uint64_t *len_o
 }
 
 const char *ce_package_last_error(ce_package *p) { return p->error.c_str(); }
+
+const uint8_t *ce_package_entry_texts(ce_package *p, const char *name, uint64_t *len_out)
+{
+	if (!p->textsRead)
+	{
+		p->textsRead = true;
+		p->texts.read([p](const std::string &file, std::string &bytes) { return entryCopy(p, file, bytes); });
+	}
+	std::string raw;
+	if (!entryCopy(p, name, raw)) return nullptr;
+	const std::string text = p->texts.texts(raw);
+	p->textsData.assign(text.begin(), text.end());
+	if (len_out != nullptr) *len_out = p->textsData.size();
+	return p->textsData.data();
+}
+
+const char *ce_package_language_problems(ce_package *p)
+{
+	std::string out;
+	for (const std::string &line : chimera::lang::packageProblems(
+			 [p](const std::string &name, std::string &bytes) { return entryCopy(p, name, bytes); }))
+		out += line + "\n";
+	*g_problems = out;
+	return g_problems->c_str();
+}
 
 } // extern "C"

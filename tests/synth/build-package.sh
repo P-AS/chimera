@@ -46,6 +46,8 @@ mkdir -p "$staging"
 cp "$here/package-box/synth.wbx" "$staging/core.wbx"
 cp "$here/package-box/waterbox.config" "$staging"
 cp "$here/package-box/file_slots.json" "$staging"
+# the texts a person reads, a table per language (docs/translations.md)
+cp -r "$here/package-box/languages" "$staging/languages"
 # the bindings the package declares for its controller (Chimera ships none of its own)
 cp "$here/package-box/default_keybinds.json" "$staging"
 

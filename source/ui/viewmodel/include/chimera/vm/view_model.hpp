@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "chimera/vm/observable.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/picture.hpp"
 #include "chimera/vm/rows.hpp"
 #include "chimera/vm/value.hpp"
@@ -114,12 +115,12 @@ protected:
 	{
 		if (i >= args.size())
 		{
-			error = "argument " + std::to_string(i + 1) + " is missing";
+			error = tr("new_project.argument_missing", {std::to_string(i + 1)});
 			return false;
 		}
 		if (!fromValue(args[i], out))
 		{
-			error = "argument " + std::to_string(i + 1) + " cannot be " + describe(args[i]);
+			error = tr("view_model.argument_cannot_be", {std::to_string(i + 1), describe(args[i])});
 			return false;
 		}
 		return true;

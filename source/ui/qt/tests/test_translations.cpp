@@ -5,7 +5,10 @@
 #include "../translations.hpp"
 
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QLocale>
+#include <QQmlComponent>
+#include <QQmlEngine>
 
 #include <cstdio>
 
@@ -25,7 +28,7 @@ void check(bool ok, const char *what, int line)
 
 int main(int argc, char **argv)
 {
-	QCoreApplication app(argc, argv);
+	QGuiApplication app(argc, argv);
 	namespace q = chimera::qt;
 	/* the languages there, English first (owner, 2026-10-28) */
 	const QStringList all = q::languages();
@@ -57,6 +60,35 @@ int main(int argc, char **argv)
 	CHECK(q::languageName(QStringLiteral("en")) == QStringLiteral("English"));
 	CHECK(q::languageName(QStringLiteral("fr")) == QString::fromUtf8("Fran\xc3\xa7" "ais"));
 	CHECK(q::languageEnglishName(QStringLiteral("de")) == QStringLiteral("German"));
+	/* a window's texts change with the language, asked for straight away or
+	 * through a function, with a key made as the window runs */
+	{
+		QQmlEngine engine;
+		QQmlComponent component(&engine);
+		component.setData("import QtQuick\nQtObject {\n"
+			"  property string direct: qsTrId(\"common.file\")\n"
+			"  property string made: qsTrId(\"common.\" + \"file\")\n"
+			"  property string called: label(\"file\")\n"
+			"  property string filled: qsTrId(\"display_config.framerate_hz\").arg(60)\n"
+			"  function label(name) { return qsTrId(\"common.\" + name) }\n"
+			"}\n", QUrl());
+		QObject *o = component.create();
+		CHECK(o != nullptr);
+		if (o != nullptr)
+		{
+			CHECK(o->property("direct").toString() == QStringLiteral("&File"));
+			CHECK(o->property("called").toString() == QStringLiteral("&File"));
+			CHECK(q::useLanguage(app, QStringLiteral("es")));
+			engine.retranslate();
+			CHECK(o->property("direct").toString() == QStringLiteral("&Archivo"));
+			CHECK(o->property("made").toString() == QStringLiteral("&Archivo"));
+			CHECK(o->property("called").toString() == QStringLiteral("&Archivo"));
+			CHECK(o->property("filled").toString().contains(QStringLiteral("60")));
+			std::printf("filled: %s\n", qPrintable(o->property("filled").toString()));
+			CHECK(q::useLanguage(app, QStringLiteral("en")));
+			delete o;
+		}
+	}
 	std::printf("%d checks, %d failed\n", checks, failed);
 	return failed == 0 ? 0 : 1;
 }

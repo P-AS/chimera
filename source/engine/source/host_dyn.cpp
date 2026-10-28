@@ -1,4 +1,5 @@
 #include "host_dyn.hpp"
+#include "language.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -73,7 +74,7 @@ void loadOnce()
 		&& bind(g_api.wbx_mount_file_path, "wbx_mount_file_path")
 		&& bind(g_api.wbx_save_state, "wbx_save_state")
 		&& bind(g_api.wbx_load_state, "wbx_load_state");
-	if (!g_ok) g_error = "libminiboxhost is missing expected wbx_ symbols";
+	if (!g_ok) g_error = chimera::lang::tr("host.missing_symbols");
 
 	/* The optional four, bound on their own: a host without them is not a
 	 * broken host, it is one that predates epochs, and the state history falls
@@ -135,8 +136,9 @@ static std::string lastErrorText(DWORD code)
 	}
 	if (text != nullptr) LocalFree(text);
 	char code_text[32];
-	std::snprintf(code_text, sizeof code_text, "error %lu", (unsigned long)code);
-	return out.empty() ? std::string(code_text) : out + " (" + code_text + ")";
+	std::snprintf(code_text, sizeof code_text, "%lu", (unsigned long)code);
+	const std::string coded = chimera::lang::tr("host.error_code", {code_text});
+	return out.empty() ? coded : out + " (" + coded + ")";
 }
 #endif
 
@@ -164,7 +166,7 @@ void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why)
 			 * own missing) says so, rather than being looked for elsewhere */
 			if (GetFileAttributesW(full.c_str()) != INVALID_FILE_ATTRIBUTES)
 			{
-				why = std::string(name) + " is beside libchimera but would not load: " + lastErrorText(code);
+				why = chimera::lang::tr("host.beside_not_loaded", {name, lastErrorText(code)});
 				return nullptr;
 			}
 			/* a tool in a bundle's bin\ folder: the DLLs are in lib\ beside it */
@@ -173,13 +175,13 @@ void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why)
 			if (GetFileAttributesW(inLib.c_str()) != INVALID_FILE_ATTRIBUTES)
 			{
 				if (HMODULE h = LoadLibraryW(inLib.c_str())) return h;
-				why = std::string(name) + " is in ..\\lib but would not load: " + lastErrorText(GetLastError());
+				why = chimera::lang::tr("host.lib_not_loaded", {name, lastErrorText(GetLastError())});
 				return nullptr;
 			}
 		}
 	}
 	if (HMODULE h = LoadLibraryExA(name, nullptr, LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32)) return h;
-	why = std::string(name) + " is not beside libchimera, nor in the program's folder: " + lastErrorText(GetLastError());
+	why = chimera::lang::tr("host.not_found_windows", {name, lastErrorText(GetLastError())});
 	return nullptr;
 #else
 	const int flags = RTLD_NOW | RTLD_LOCAL | (deepBind ? RTLD_DEEPBIND : 0);
@@ -195,14 +197,14 @@ void *openLibraryBesideUs(const char *name, bool deepBind, std::string &why)
 			const char *e = dlerror();
 			if (access(full.c_str(), F_OK) == 0)
 			{
-				why = std::string(name) + " is beside libchimera but would not load: " + (e != nullptr ? e : "no reason given");
+				why = chimera::lang::tr("host.beside_not_loaded", {name, e != nullptr ? e : chimera::lang::tr("common.no_reason")});
 				return nullptr;
 			}
 		}
 	}
 	if (void *h = dlopen(name, flags)) return h;
 	const char *e = dlerror();
-	why = std::string(name) + " was not found: " + (e != nullptr ? e : "no reason given");
+	why = chimera::lang::tr("host.not_found", {name, e != nullptr ? e : chimera::lang::tr("common.no_reason")});
 	return nullptr;
 #endif
 }

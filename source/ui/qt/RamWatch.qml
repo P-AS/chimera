@@ -297,14 +297,14 @@ ApplicationWindow {
     // Chimera's columns: its key (the view model's sort name), heading, width and the row model's field
     readonly property var columns: [
         {key: "OSD", name: "OnScreen", text: "OSD", width: 34, field: "onScreen"},
-        {key: "Address", name: "Address", text: "Address", width: 78, field: "address"},
-        {key: "Value", name: "Value", text: "Value", width: 77, field: "value"},
-        {key: "Prev", name: "Prev", text: "Prev", width: 77, field: "previous"},
-        {key: "Changes", name: "Changes", text: "Changes", width: 78, field: "changes"},
-        {key: "Diff", name: "Diff", text: "Diff", width: 77, field: "diff"},
-        {key: "Type", name: "Type", text: "Type", width: 72, field: "type"},
-        {key: "Domain", name: "Domain", text: "Domain", width: 72, field: "domain"},
-        {key: "Notes", name: "Notes", text: "Notes", width: 166, field: "note"}
+        {key: "Address", name: "Address", text: qsTrId("ram_columns.address"), width: 78, field: "address"},
+        {key: "Value", name: "Value", text: qsTrId("ram_columns.value"), width: 77, field: "value"},
+        {key: "Prev", name: "Prev", text: qsTrId("ram_columns.prev"), width: 77, field: "previous"},
+        {key: "Changes", name: "Changes", text: qsTrId("ram_columns.changes"), width: 78, field: "changes"},
+        {key: "Diff", name: "Diff", text: qsTrId("ram_columns.diff"), width: 77, field: "diff"},
+        {key: "Type", name: "Type", text: qsTrId("ram_columns.type"), width: 72, field: "type"},
+        {key: "Domain", name: "Domain", text: qsTrId("ram_columns.domain"), width: 72, field: "domain"},
+        {key: "Notes", name: "Notes", text: qsTrId("ram_columns.notes"), width: 166, field: "note"}
     ]
     readonly property var hidden: win.vm.hiddenColumns === "" ? [] : win.vm.hiddenColumns.split(",")
     function shown(key) { return win.hidden.indexOf(key) < 0 }

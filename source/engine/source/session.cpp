@@ -24,8 +24,11 @@
 #include "state_format.hpp"
 #include "game_properties.hpp"
 #include "mcp.hpp"
+#include "language.hpp"
 
 #include "../../extern/cjson/cJSON.h"
+
+using chimera::lang::tr;
 
 #include <algorithm>
 #include <atomic>
@@ -189,7 +192,7 @@ const cJSON *chooseMachine(const cJSON *root, const char *overrides)
 	return machines->child;
 }
 
-const char *const kConfigNotJson = "waterbox.config is not readable JSON";
+const char *const kConfigNotJson = "engine.config_not_json";
 
 /* " (<package>: N bytes, starting with ...)": where the declarations were
  * read from, how much there was, and its first bytes - text as text, anything
@@ -198,10 +201,10 @@ std::string describeUnreadable(const char *packagePath, const uint8_t *bytes, ui
 {
 	std::string out = " (";
 	out += packagePath != nullptr ? packagePath : "?";
-	out += ": " + std::to_string(len) + (len == 1 ? " byte" : " bytes");
+	out += ": " + tr("engine.bytes", static_cast<int64_t>(len));
 	if (bytes != nullptr && len != 0)
 	{
-		out += ", starting with ";
+		out += ", " + tr("engine.starting_with") + " ";
 		const uint64_t shown = len < 16 ? len : 16;
 		for (uint64_t i = 0; i < shown; i++)
 		{
@@ -228,7 +231,7 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	if (root == nullptr || !cJSON_IsObject(root))
 	{
 		cJSON_Delete(root);
-		error = kConfigNotJson;
+		error = tr(kConfigNotJson);
 		return false;
 	}
 	const cJSON *machine = chooseMachine(root, overrides);
@@ -252,7 +255,7 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	if (!cJSON_IsArray(layout) || cJSON_GetArraySize(layout) != 5)
 	{
 		cJSON_Delete(root);
-		error = "waterbox.config is missing memoryLayoutMiB[5]";
+		error = tr("engine.config_no_layout");
 		return false;
 	}
 	for (int i = 0; i < 5; i++)
@@ -275,7 +278,7 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	if (!cJSON_IsObject(video) || !cJSON_IsObject(audio) || !cJSON_IsObject(input))
 	{
 		cJSON_Delete(root);
-		error = "waterbox.config is missing video/audio/input";
+		error = tr("engine.config_no_video");
 		return false;
 	}
 	cfg.width = intOf(video, "width");
@@ -317,17 +320,16 @@ bool parseConfig(const char *json, uint64_t len, const char *overrides, SessionC
 	 * analysis, 2026-10-18). The largest any core declares today is 6144 x
 	 * 4608 and 65536 samples a frame. */
 	{
-		auto outside = [&](const char *what, int64_t value, int64_t least, int64_t most)
+		auto outside = [&](const std::string &what, int64_t value, int64_t least, int64_t most)
 		{
 			if (value >= least && value <= most) return false;
-			error = std::string("waterbox.config: ") + what + " is " + std::to_string(value)
-				+ ", which is not between " + std::to_string(least) + " and " + std::to_string(most);
+			error = tr("engine.config_out_of_range", {what, std::to_string(value), std::to_string(least), std::to_string(most)});
 			return true;
 		};
 		if (outside("video.width", cfg.width, 1, 16384) || outside("video.height", cfg.height, 1, 16384)
-			|| outside("the virtual width", cfg.virtualWidth, 1, 16384) || outside("the virtual height", cfg.virtualHeight, 1, 16384)
+			|| outside(tr("engine.virtual_width"), cfg.virtualWidth, 1, 16384) || outside(tr("engine.virtual_height"), cfg.virtualHeight, 1, 16384)
 			|| outside("audio.samplesPerFrame", cfg.samplesPerFrame, 0, 1 << 20) || outside("audio.channels", cfg.channels, 1, 2)
-			|| outside("the sound's rate", cfg.audioRate, 1000, 384000))
+			|| outside(tr("engine.sound_rate"), cfg.audioRate, 1000, 384000))
 		{
 			cJSON_Delete(root);
 			return false;
@@ -454,7 +456,7 @@ bool composeSettings(const std::string &defaultsJson, const char *overrides, std
 		{
 			cJSON_Delete(over);
 			cJSON_Delete(effective);
-			error = "settings overrides are not readable JSON";
+			error = tr("engine.overrides_not_json");
 			return false;
 		}
 		const cJSON *item = nullptr;
@@ -600,7 +602,7 @@ static std::string secondsText(int64_t ms)
 		while (!f.empty() && f.back() == '0') f.pop_back();
 		text += "." + f;
 	}
-	return text + (ms == 1000 ? " second" : " seconds");
+	return tr(ms == 1000 ? "engine.one_second" : "engine.seconds", {text});
 }
 
 static int64_t timeoutMs(const char *variable, int64_t fallback)
@@ -772,6 +774,10 @@ struct ce_session
 	std::string suggestion;
 	/* the loaded game's own settings, declared by the core (GetGameSettings) */
 	std::string gameSettings;
+	/* the core package's language tables: the texts the core returns are keys
+	 * of them (docs/translations.md) */
+	chimera::lang::PackageTexts texts;
+	mutable std::string gameSettingsText;
 	uintptr_t fnCacheStored = 0, fnCacheFetched = 0;
 	uintptr_t fnPrecompileDone = 0, fnPrecompileDoneCount = 0, fnPrecompileTotal = 0;
 
@@ -1012,7 +1018,7 @@ struct ce_session
 	int32_t (*traceOverflow)() = nullptr;
 	int32_t (*traceUsedBytes)() = nullptr;
 	void (*traceClear)() = nullptr;
-	std::string traceHeader = "Instructions";
+	std::string traceHeader = tr("engine.instructions");
 	bool traceDesired = false;
 	std::vector<uint8_t> traceOut;
 
@@ -1108,7 +1114,7 @@ struct ce_session
 		if (!lostMachine.empty())
 		{
 			death = lostMachine;
-			error = std::string("the core stopped: ") + lostMachine;
+			error = tr("engine.core_stopped", {lostMachine});
 			return true;
 		}
 		if (host == nullptr || obj == nullptr || host->wbx_get_death == nullptr) return false;
@@ -1121,7 +1127,7 @@ struct ce_session
 			return false;
 		}
 		death = why;
-		error = std::string("the core stopped: ") + why;
+		error = tr("engine.core_stopped", {why});
 		return true;
 	}
 
@@ -1132,11 +1138,11 @@ struct ce_session
 		if (!r.ok()) { err = r.errorMessage; return 0; }
 		if (r.data == 0)
 		{
-			if (required) err = std::string(cfg.coreName) + ": core.wbx exports no " + name;
+			if (required) err = tr("engine.no_export", {cfg.coreName, name});
 			return 0;
 		}
 		uintptr_t bridged = chimera::bridgeGuestCall(r.data, argCount);
-		if (bridged == 0) err = "could not bridge a guest call";
+		if (bridged == 0) err = tr("engine.no_bridge");
 		return bridged;
 	}
 };
@@ -1213,7 +1219,7 @@ void ce_session::probeOptionalGroups()
 			for (int32_t i = 0; i < n; i++)
 			{
 				const char *nm = cstr(name(i));
-				driveNames.push_back(nm != nullptr ? nm : "Drive");
+				driveNames.push_back(nm != nullptr ? nm : tr("engine.drive"));
 			}
 
 			/* what the drives hold: all four or none, for the lights' reason -
@@ -1280,7 +1286,7 @@ void ce_session::probeOptionalGroups()
 			for (int32_t i = 0; i < n; i++)
 			{
 				const char *sn = cstr(name(i));
-				surfaceNames.emplace_back(sn != nullptr ? sn : ("Surface " + std::to_string(i)));
+				surfaceNames.emplace_back(sn != nullptr ? sn : tr("engine.surface", {std::to_string(i)}));
 				surfaceWidths.push_back(width(i));
 				surfaceHeights.push_back(height(i));
 				surfaceBufs.emplace_back(static_cast<size_t>(width(i)) * height(i), 0);
@@ -1330,7 +1336,7 @@ void ce_session::probeOptionalGroups()
 			for (int32_t i = 0; i < n; i++)
 			{
 				const char *bn = cstr(name(i));
-				busNames.emplace_back(bn != nullptr ? bn : ("Bus " + std::to_string(i)));
+				busNames.emplace_back(bn != nullptr ? bn : tr("engine.bus", {std::to_string(i)}));
 				busSizes.push_back(size != nullptr ? size(i) : 0x10000); // 64K default: the common case
 				/* a core with a poke may still have read-only buses; claiming
 				 * writable there hands the hex editor a silently discarded edit */
@@ -1695,12 +1701,12 @@ void ce_session::runFrame(uint64_t pad)
 		if (firstFrame)
 		{
 			const int64_t limit = startLimitMs();
-			watchdog->arm(limit, "the core did not finish its first frame after starting or a state load in " + secondsText(limit));
+			watchdog->arm(limit, tr("engine.watchdog_first_frame", {secondsText(limit)}));
 		}
 		else
 		{
 			const int64_t limit = frameLimitMs();
-			watchdog->arm(limit, "the core did not finish a frame in " + secondsText(limit));
+			watchdog->arm(limit, tr("engine.watchdog_frame", {secondsText(limit)}));
 		}
 	}
 	firstFrame = false;
@@ -1793,8 +1799,7 @@ bool ce_session::greenzoneRestore(int64_t to)
 		 * where it is and the machine itself the same thing - a seek that
 		 * refuses is recoverable, a session that has quietly moved is not. */
 		if (landed >= 0) greenzoneLoaded(landed);   /* an anchor was loaded, and stays */
-		else lostMachine = "the greenzone could not put any stored machine back (" + error
-			+ "); load a state or open the project again";
+		else lostMachine = tr("engine.greenzone_lost", {error});
 		return false;
 	}
 	greenzoneLoaded(to);
@@ -1987,16 +1992,16 @@ static ce_session *openSession(
 	if (host == nullptr) return fail(hostError);
 
 	const char *pkgError = nullptr;
-	chimera::progress("reading the core package", 0, 0);
+	chimera::progress(tr("engine.progress_reading_package").c_str(), 0, 0);
 	ce_package *pkg = ce_package_open(package_path, &pkgError);
 	if (pkg == nullptr)
 	{
-		return fail(pkgError != nullptr ? pkgError : std::string(package_path) + " is not a core package");
+		return fail(pkgError != nullptr ? pkgError : tr("engine.not_a_package", {package_path}));
 	}
 	if (!ce_package_is_waterbox(pkg))
 	{
 		ce_package_free(pkg);
-		return fail(std::string(package_path) + " is not a waterbox core package");
+		return fail(tr("engine.not_a_waterbox_package", {package_path}));
 	}
 
 	auto *s = new ce_session();
@@ -2013,7 +2018,7 @@ static ce_session *openSession(
 
 	uint64_t len = 0;
 	const uint8_t *entry = ce_package_entry(pkg, "waterbox.config", &len);
-	if (entry == nullptr) return abort("package has no waterbox.config");
+	if (entry == nullptr) return abort(tr("engine.no_config"));
 	std::string cfgError;
 	if (!parseConfig(reinterpret_cast<const char *>(entry), len, settings_overrides_json, s->cfg, cfgError))
 	{
@@ -2024,7 +2029,7 @@ static ce_session *openSession(
 		 * one saved in another encoding.
 		 * Only for the declarations themselves: parseConfig also refuses
 		 * settings it cannot read, and those are not this file. */
-		if (cfgError == kConfigNotJson) cfgError += describeUnreadable(package_path, entry, len);
+		if (cfgError == tr(kConfigNotJson)) cfgError += describeUnreadable(package_path, entry, len);
 		return abort(std::move(cfgError));
 	}
 	const char *sha1 = ce_package_sha1(pkg);
@@ -2052,7 +2057,7 @@ static ce_session *openSession(
 	 * at once (engine analysis, 2026-10-18). */
 	chimera::WbxReturn r{};
 	entry = ce_package_entry(pkg, "core.wbx", &len);
-	if (entry == nullptr) return abort("package has no core.wbx");
+	if (entry == nullptr) return abort(tr("engine.no_wbx"));
 	s->streams.push_back({ entry, len });
 	host->wbx_create_host(&layout, "core.wbx", streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), &r);
 	doneWith(s->streams.back());
@@ -2062,7 +2067,7 @@ static ce_session *openSession(
 	if (t_clockStart >= 0)
 	{
 		if (host->wbx_set_clock_start == nullptr)
-			return abort("this project starts the machine's clock at another time, and this Chimera's sandbox cannot");
+			return abort(tr("engine.no_clock_start"));
 		host->wbx_set_clock_start(s->obj, static_cast<uint64_t>(t_clockStart), &r);
 		if (!r.ok()) return abort(r.errorMessage);
 	}
@@ -2078,16 +2083,24 @@ static ce_session *openSession(
 		if (aname == nullptr) continue;
 		const std::string assetName = std::string(aname).substr(6);
 		const uint8_t *abytes = ce_package_entry(pkg, aname, &len);
-		if (abytes == nullptr) return abort(std::string("package asset unreadable: ") + aname);
+		if (abytes == nullptr) return abort(tr("engine.asset_unreadable", {aname}));
 		s->streams.push_back({ abytes, len });
 		host->wbx_mount_file(s->obj, assetName.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
 		doneWith(s->streams.back());
-		if (!r.ok()) return abort(std::string("mounting asset ") + assetName + ": " + r.errorMessage);
+		if (!r.ok()) return abort(tr("engine.mounting_asset", {assetName, r.errorMessage}));
 	}
+	/* the package's texts outlive it: what the core returns names their keys */
+	s->texts.read([pkg](const std::string &name, std::string &bytes) {
+		uint64_t size = 0;
+		const uint8_t *data = ce_package_entry(pkg, name.c_str(), &size);
+		if (data == nullptr) return false;
+		bytes.assign(reinterpret_cast<const char *>(data), static_cast<size_t>(size));
+		return true;
+	});
 	ce_package_free(pkg);
 	pkg = nullptr; /* a later abort() must not free it again */
 
-	chimera::progress("mounting the game", 0, 0);
+	chimera::progress(tr("engine.progress_mounting").c_str(), 0, 0);
 	/* The game itself, which is the one most likely to be enormous: mounted
 	 * from where it lies when the caller said where that is. */
 	if (romFromDisk)
@@ -2100,7 +2113,7 @@ static ce_session *openSession(
 		host->wbx_mount_file(s->obj, s->cfg.romFile.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
 		doneWith(s->streams.back());
 	}
-	if (!r.ok()) return abort(std::string("mounting ") + s->cfg.romFile + ": " + r.errorMessage);
+	if (!r.ok()) return abort(tr("engine.mounting", {s->cfg.romFile, r.errorMessage}));
 
 	/* The same bytes under the file's real name too, the way a project mounts
 	 * its slot files: an extension-driven core (a GameCube .dol vs .iso) can
@@ -2128,7 +2141,7 @@ static ce_session *openSession(
 				host->wbx_mount_file(s->obj, alias.c_str(), streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
 				doneWith(s->streams.back());
 			}
-			if (!r.ok()) return abort(std::string("mounting ") + alias + ": " + r.errorMessage);
+			if (!r.ok()) return abort(tr("engine.mounting", {alias, r.errorMessage}));
 		}
 	}
 
@@ -2158,7 +2171,7 @@ static ce_session *openSession(
 			s->romNameBytes.assign(name.begin(), name.end());
 			s->streams.push_back({ s->romNameBytes.data(), s->romNameBytes.size() });
 			host->wbx_mount_file(s->obj, "rom.name", streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
-			if (!r.ok()) return abort(std::string("mounting rom.name: ") + r.errorMessage);
+			if (!r.ok()) return abort(tr("engine.mounting", {"rom.name", r.errorMessage}));
 		}
 	}
 
@@ -2192,7 +2205,7 @@ static ce_session *openSession(
 			host->wbx_mount_file(s->obj, extra_names[i], streamRead, reinterpret_cast<uintptr_t>(&s->streams.back()), 0, &r);
 			doneWith(s->streams.back());
 		}
-		if (!r.ok()) return abort(std::string("mounting ") + extra_names[i] + ": " + r.errorMessage);
+		if (!r.ok()) return abort(tr("engine.mounting", {extra_names[i], r.errorMessage}));
 	}
 
 	/* The core log's request (ce_core_log): an empty file a core checks for
@@ -2220,7 +2233,7 @@ static ce_session *openSession(
 		std::string ignored;
 		auto ask = reinterpret_cast<uintptr_t (*)()>(s->proc(s_answerExport, 0, false, ignored));
 		const char *text = ask != nullptr ? reinterpret_cast<const char *>(ask()) : nullptr;
-		s->suggestion = text != nullptr ? text : "";
+		s->suggestion = text != nullptr ? s->texts.texts(text) : "";
 		return s;
 	}
 
@@ -2369,17 +2382,17 @@ static ce_session *openSession(
 		auto setPre = reinterpret_cast<void (*)(int32_t, int32_t, int32_t)>(s->proc("SetPrecompile", 3, false, ignored));
 		if (setPre == nullptr)
 		{
-			return abort(std::string(s->cfg.coreName) + ": this core has no precompile session");
+			return abort(tr("engine.no_precompile", {s->cfg.coreName}));
 		}
 		setPre(s_precompileIndex, s_precompileCount, s_precompileFirmware);
 		s->precompile = true;
 	}
 
-	chimera::progress("starting the machine", 0, 0);
+	chimera::progress(tr("engine.progress_starting").c_str(), 0, 0);
 	auto init = reinterpret_cast<int32_t (*)()>(s->proc("Init", 0, true, err));
 	if (init == nullptr) return abort(std::move(err));
 	s->watchdog = std::make_unique<GuestWatchdog>(host, s->obj);
-	s->watchdog->arm(startLimitMs(), "the core did not finish starting in " + secondsText(startLimitMs()));
+	s->watchdog->arm(startLimitMs(), tr("engine.watchdog_start", {secondsText(startLimitMs())}));
 	const int32_t initResult = init();
 	s->watchdog->disarm();
 	/* Init is where a renderer makes its context and compiles its shaders, so
@@ -2398,7 +2411,7 @@ static ce_session *openSession(
 	/* A core that died in Init returns 0 like one that refused the file, and
 	 * its reason - an assertion, a missing BIOS, what it printed - was lost to
 	 * "could not load this file" (engine analysis, 2026-10-18). */
-	if (s->guestDied()) return abort("the core stopped while starting: " + s->death);
+	if (s->guestDied()) return abort(tr("engine.stopped_starting", {s->death}));
 	if (initResult != 1)
 	{
 		/* the core knows why it refused - GetLoadError is optional, so a core
@@ -2408,15 +2421,13 @@ static ce_session *openSession(
 		if (getLoadError != nullptr)
 		{
 			const char *text = reinterpret_cast<const char *>(getLoadError());
-			if (text != nullptr) reason = text;
+			if (text != nullptr) reason = s->texts.text(text);
 		}
-		return abort(reason.empty()
-			? s->cfg.coreName + " could not load this file."
-			: s->cfg.coreName + ": " + reason);
+		return abort(reason.empty() ? tr("engine.could_not_load_file", {s->cfg.coreName}) : s->cfg.coreName + ": " + reason);
 	}
 
 	if (!s->deactivate(err)) return abort(std::move(err));
-	chimera::progress("sealing the machine", 0, 0);
+	chimera::progress(tr("engine.progress_sealing").c_str(), 0, 0);
 	host->wbx_seal(s->obj, &r); // freeze the post-init image as the savestate baseline
 	if (!r.ok()) return abort(r.errorMessage);
 	if (!s->activate(err)) return abort(std::move(err));
@@ -2428,7 +2439,7 @@ static ce_session *openSession(
 		s->setAxis = reinterpret_cast<void (*)(int32_t, int32_t)>(s->proc("SetAxis", 2, true, err));
 		if (s->setAxis == nullptr)
 		{
-			return abort(s->cfg.coreName + ": waterbox.config declares axes but core.wbx exports no SetAxis");
+			return abort(tr("engine.no_set_axis", {s->cfg.coreName}));
 		}
 	}
 	/* wide input: optional in general, REQUIRED past 64 buttons - without the
@@ -2437,9 +2448,7 @@ static ce_session *openSession(
 	s->setButton = reinterpret_cast<void (*)(int32_t, int32_t)>(s->proc("SetButton", 2, false, err));
 	if (s->cfg.buttons.size() > 64 && s->setButton == nullptr)
 	{
-		return abort(s->cfg.coreName + ": waterbox.config declares "
-			+ std::to_string(s->cfg.buttons.size())
-			+ " buttons (more than the packed 64) but core.wbx exports no SetButton");
+		return abort(tr("engine.no_set_button", {s->cfg.coreName, std::to_string(s->cfg.buttons.size())}));
 	}
 	s->getVideoBgra = reinterpret_cast<uintptr_t (*)()>(s->proc(s->cfg.getBgra.c_str(), 0, true, err));
 	if (s->getVideoBgra == nullptr) return abort(std::move(err));
@@ -2509,7 +2518,7 @@ static ce_session *openSession(
 	 * 2026-10-18) */
 	if (s->mdCount == nullptr || s->mdName == nullptr || s->mdPtr == nullptr || s->mdSize == nullptr
 		|| s->mdWritable == nullptr)
-		return abort(err.empty() ? std::string("the core lacks a memory domain export") : std::move(err));
+		return abort(err.empty() ? tr("engine.no_memory_domains") : std::move(err));
 	{
 		std::string none;
 		s->mdHidden = reinterpret_cast<int32_t (*)(int32_t)>(s->proc("GetMemoryDomainHidden", 1, false, none));
@@ -2569,6 +2578,7 @@ static ce_session *openSession(
 			d.writableBelow = int64_t{ INT32_MAX } + 1;
 			domains.push_back(std::move(d));
 		}
+		s->properties.useTexts(&s->texts);
 		s->properties.load(table, domains);
 		for (const std::string &problem : s->properties.problems())
 		{
@@ -2609,11 +2619,11 @@ static ce_session *openMachine(
 	}
 	catch (const std::bad_alloc &)
 	{
-		return openRefused("there was not enough memory to start the machine", error_out);
+		return openRefused(tr("engine.no_memory_start"), error_out);
 	}
 	catch (const std::exception &e)
 	{
-		return openRefused(std::string("the machine could not be started: ") + e.what(), error_out);
+		return openRefused(tr("engine.not_started", {e.what()}), error_out);
 	}
 }
 
@@ -2640,7 +2650,7 @@ static ce_session *openProjectSession(
 		if (error_out != nullptr) *error_out = g_openError->c_str();
 		return nullptr;
 	};
-	if (project == nullptr) return fail("no project was given");
+	if (project == nullptr) return fail(tr("engine.no_project_given"));
 
 	/* every file found, and holding what the project recorded - unless the
 	 * caller says a person looked at the difference and went on */
@@ -2659,9 +2669,9 @@ static ce_session *openProjectSession(
 			ce_project_file_unresolve(project, i);
 		const int32_t status = ce_project_file_status(project, i);
 		if (status == 1)
-			return fail(std::string("project: '") + ce_project_file_name(project, i) + "' was not found");
+			return fail(tr("engine.project_file_missing", {ce_project_file_name(project, i)}));
 		if (status == 2 && (flags & CE_OPEN_ALLOW_FILE_MISMATCH) == 0)
-			return fail(std::string("project: '") + ce_project_file_name(project, i) + "' does not match its recorded hash");
+			return fail(tr("engine.project_file_changed", {ce_project_file_name(project, i)}));
 	}
 
 	/* the settings the machine starts with: the caller's, or the project's own */
@@ -2685,8 +2695,7 @@ static ce_session *openProjectSession(
 			if (pin[0] != '\0' && actual != nullptr && std::strcmp(pin, actual) != 0
 				&& (flags & CE_OPEN_ALLOW_CORE_MISMATCH) == 0)
 			{
-				std::string detail = std::string("the package is not the project's pinned core (pinned ")
-					+ pin + ", given " + actual + ")";
+				std::string detail = tr("engine.not_pinned_core", {pin, actual});
 				ce_package_free(pkg);
 				return fail(detail);
 			}
@@ -2718,7 +2727,7 @@ static ce_session *openProjectSession(
 			cJSON_Delete(running);
 			if (refused != 0)
 			{
-				std::string detail = slotError != nullptr ? slotError : "the manifest does not fit the core's slots";
+				std::string detail = slotError != nullptr ? slotError : tr("engine.manifest_not_fit");
 				ce_package_free(pkg);
 				return fail(detail);
 			}
@@ -2813,11 +2822,11 @@ ce_session *ce_session_open_project(
 	}
 	catch (const std::bad_alloc &)
 	{
-		return openRefused("there was not enough memory to start the machine", error_out);
+		return openRefused(tr("engine.no_memory_start"), error_out);
 	}
 	catch (const std::exception &e)
 	{
-		return openRefused(std::string("the machine could not be started: ") + e.what(), error_out);
+		return openRefused(tr("engine.not_started", {e.what()}), error_out);
 	}
 }
 
@@ -2904,7 +2913,9 @@ const char *ce_session_button_name(const ce_session *s, int64_t index)
  * drive - and the light itself is asked every frame. */
 const char *ce_session_game_settings(const ce_session *s)
 {
-	return s->gameSettings.c_str();
+	/* in the language in use when asked, which may have changed since the load */
+	s->gameSettingsText = s->texts.texts(s->gameSettings);
+	return s->gameSettingsText.c_str();
 }
 
 int32_t ce_session_drive_count(const ce_session *s)
@@ -3190,14 +3201,14 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 	 * came back from the state as a live machine (a load clears the death). */
 	if (s->guestDied())
 	{
-		s->error = "the core stopped: " + s->death;
+		s->error = tr("engine.core_stopped", {s->death});
 		if (len_out != nullptr) *len_out = 0;
 		return nullptr;
 	}
 	chimera::WbxReturn r{};
 	if (!s->stateSaving())   /* it died telling the core a state is coming */
 	{
-		s->error = "the core stopped: " + s->death;
+		s->error = tr("engine.core_stopped", {s->death});
 		if (len_out != nullptr) *len_out = 0;
 		return nullptr;
 	}
@@ -3223,7 +3234,7 @@ const uint8_t *ce_session_save_state(ce_session *s, uint64_t *len_out)
 	s->host->wbx_save_state(s->obj, vectorWrite, reinterpret_cast<uintptr_t>(&sink), &r);
 	if (!r.ok())
 	{
-		s->error = sink.outOfMemory ? std::string("there was not enough memory to save the state") : std::string(r.errorMessage);
+		s->error = sink.outOfMemory ? tr("engine.no_memory_save") : std::string(r.errorMessage);
 		return nullptr;
 	}
 	if (len_out != nullptr) *len_out = s->stateBuf.size();
@@ -3284,7 +3295,7 @@ int32_t ce_session_load_state(ce_session *s, const uint8_t *data, uint64_t len)
 	}
 	catch (const std::bad_alloc &)
 	{
-		s->error = "there was not enough memory to load the state";
+		s->error = tr("engine.no_memory_load");
 		return 1;
 	}
 }
@@ -3322,7 +3333,7 @@ struct StateFileSink
 			reportedAt = raw;
 			/* a state is as big as it turns out to be; the last one is the best guess there is,
 			 * and one that has been overtaken is an end nobody knows */
-			chimera::progress("saving the machine state", raw, expected > raw ? expected : 0);
+			chimera::progress(tr("engine.progress_saving").c_str(), raw, expected > raw ? expected : 0);
 		}
 		if (zcs == nullptr)
 		{
@@ -3384,7 +3395,7 @@ struct StateFileSource
 	{
 		if (consumed - reportedAt < STATE_FILE_REPORT_EVERY / 4) return;
 		reportedAt = consumed;
-		chimera::progress("loading the machine state", consumed, fileBytes);
+		chimera::progress(tr("engine.progress_loading").c_str(), consumed, fileBytes);
 	}
 
 	size_t take(void *dst, size_t want)
@@ -3452,11 +3463,11 @@ extern "C" intptr_t stateFileRead(uintptr_t userdata, void *dst, uintptr_t size)
 int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const uint8_t *tag, uint32_t tag_len)
 {
 	s->error.clear();
-	if (utf8_path == nullptr || (tag == nullptr && tag_len != 0)) { s->error = "no path to save the state to"; return 1; }
+	if (utf8_path == nullptr || (tag == nullptr && tag_len != 0)) { s->error = tr("engine.no_state_path"); return 1; }
 	/* as ce_session_save_state: a dead machine is no state to keep */
-	if (s->guestDied()) { s->error = "the core stopped: " + s->death; return 1; }
+	if (s->guestDied()) { s->error = tr("engine.core_stopped", {s->death}); return 1; }
 	chimera::FileWriter out;
-	if (!out.open(utf8_path)) { s->error = std::string("could not create ") + utf8_path; return 1; }
+	if (!out.open(utf8_path)) { s->error = tr("engine.could_not_create", {utf8_path}); return 1; }
 
 	/* Level 1 unless somebody measuring says otherwise: CHIMERA_STATE_RAW=1 writes the state as
 	 * it is, CHIMERA_STATE_ZSTD_LEVEL picks another level. They exist so the cost of compressing
@@ -3487,7 +3498,7 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 	if (!s->stateSaving())
 	{
 		if (zcs != nullptr) z->freeCStream(zcs);
-		s->error = "the core stopped: " + s->death;
+		s->error = tr("engine.core_stopped", {s->death});
 		return 1;
 	}
 	s->host->wbx_save_state(s->obj, stateFileWrite, reinterpret_cast<uintptr_t>(&sink), &r); // see ce_session_save_state re: no bracket
@@ -3499,7 +3510,7 @@ int32_t ce_session_state_save_file(ce_session *s, const char *utf8_path, const u
 	 * power cut must not leave half a state under it (2026-10-18) */
 	if (sink.failed || !flushed || !out.commit(true))
 	{
-		s->error = std::string("could not write ") + utf8_path + " (is the disk full?)";
+		s->error = tr("engine.disk_full", {utf8_path});
 		return 1;
 	}
 	s->stateFileRawBytes = sink.raw;
@@ -3520,7 +3531,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	chimera::FileReader in;
 	if (utf8_path == nullptr || !in.open(utf8_path))
 	{
-		s->error = std::string(utf8_path != nullptr ? utf8_path : "(no path)") + " is not a state file";
+		s->error = tr("engine.not_state_file", {utf8_path != nullptr ? utf8_path : tr("engine.no_path")});
 		return 2; /* the machine was not touched */
 	}
 
@@ -3556,7 +3567,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	if (compressed != 0 && (zds == nullptr || z->isError(z->initDStream(zds))))
 	{
 		if (zds != nullptr) z->freeDStream(zds);
-		s->error = std::string("the state file is compressed and zstd is not available") + (zwhy != nullptr ? std::string(": ") + zwhy : "");
+		s->error = zwhy != nullptr ? tr("engine.no_zstd_why", {zwhy}) : tr("engine.no_zstd");
 		return 2;
 	}
 
@@ -3583,7 +3594,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	if (!intact)
 	{
 		/* the machine took the damaged bytes: not one to play on */
-		s->lostMachine = std::string(utf8_path) + " is damaged (its checksum does not match); load another state";
+		s->lostMachine = tr("engine.state_damaged_load_another", {utf8_path});
 		s->error = s->lostMachine;
 		return 1;
 	}
@@ -3591,7 +3602,7 @@ int32_t ce_session_state_load_file(ce_session *s, const char *utf8_path, uint8_t
 	{
 		/* a frame that does not decode, or whose checksum does not match, is the
 		 * reason - the sandbox only saw its state end early */
-		s->error = source.failed ? std::string(utf8_path) + " is damaged (it does not decode, or its checksum does not match)"
+		s->error = source.failed ? tr("engine.state_damaged", {utf8_path})
 		                         : std::string(r.errorMessage);
 		return 1;
 	}
@@ -3732,7 +3743,7 @@ int32_t ce_session_property_get(ce_session *s, int32_t index, uint32_t element, 
 	CeGameProperties::Value &v = s->propertyValue;
 	if (out == nullptr || !s->properties.read(index, element, v))
 	{
-		s->error = "no such property";
+		s->error = tr("engine.no_such_property");
 		return 1;
 	}
 	*out = ce_property_value{};
@@ -3750,7 +3761,7 @@ int32_t ce_session_property_set(ce_session *s, int32_t index, uint32_t element, 
 	s->error.clear();
 	if (in == nullptr || in->kind < CE_PROPERTY_INT || in->kind > CE_PROPERTY_BYTES)
 	{
-		s->error = "a value of no kind";
+		s->error = tr("engine.value_of_no_kind");
 		return 1;
 	}
 	CeGameProperties::Value v;
@@ -3809,8 +3820,7 @@ int32_t ce_session_apply_settings(ce_session *s, const char *overrides_json)
 	int32_t cap = capacity();
 	if (static_cast<int32_t>(json.size()) > cap)
 	{
-		s->error = s->cfg.coreName + ": settings JSON is " + std::to_string(json.size())
-			+ " bytes but the core's buffer holds " + std::to_string(cap);
+		s->error = tr("engine.settings_too_big", {s->cfg.coreName, std::to_string(json.size()), std::to_string(cap)});
 		return 2;
 	}
 	uintptr_t dest = buffer();
@@ -4413,7 +4423,7 @@ bool ce_session::movieEntry(int64_t at, std::vector<int32_t> &axes)
 	const char *entry = movie != nullptr && at < ce_movie_log_count(movie) ? ce_movie_log_entry(movie, at) : nullptr;
 	if (entry == nullptr || !entries().parse(entry, movieButtons, axes))
 	{
-		error = std::string("unparseable movie entry at frame ") + std::to_string(at);
+		error = tr("engine.unparseable_entry", {std::to_string(at)});
 		return false;
 	}
 	return true;
@@ -4428,7 +4438,7 @@ bool ce_session::catchUp(int64_t to, int64_t render)
 	staleFrom = -1;
 	if (base < 0)
 	{
-		error = "the movie changed before the frame the machine is on, and no stored state is before the change";
+		error = tr("engine.changed_before");
 		return false;
 	}
 	if (!greenzoneRestore(base)) return false;
@@ -4527,7 +4537,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 	s->error.clear();
 	if (s->movieMode == 0 || s->movie == nullptr)
 	{
-		s->error = "no movie is loaded";
+		s->error = tr("engine.no_movie");
 		return -1;
 	}
 	/* A dead machine plays nothing, and recording on it must change nothing:
@@ -4535,7 +4545,7 @@ int32_t ce_session_movie_advance(ce_session *s, uint64_t buttons, const int32_t 
 	 * past it dropped (engine analysis, 2026-10-18). */
 	if (s->guestDied())
 	{
-		s->error = "the core stopped: " + s->death;
+		s->error = tr("engine.core_stopped", {s->death});
 		return -1;
 	}
 
@@ -4877,7 +4887,7 @@ int32_t ce_session_history_load(ce_session *s, const char *path, const char *mac
 	}
 	catch (const std::bad_alloc &)
 	{
-		s->error = "there was not enough memory to read the saved states";
+		s->error = tr("engine.no_memory_states");
 		s->history.clear();
 		return 1;
 	}
@@ -4888,12 +4898,12 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 	s->error.clear();
 	if (s->movieMode == 0 || s->movie == nullptr)
 	{
-		s->error = "seeking needs a movie";
+		s->error = tr("engine.seek_needs_movie");
 		return 1;
 	}
 	if (frame > ce_session_movie_length(s))
 	{
-		s->error = "cannot seek past the movie's end";
+		s->error = tr("engine.seek_past_end");
 		return 1;
 	}
 
@@ -4912,7 +4922,7 @@ int32_t ce_session_seek(ce_session *s, int64_t frame)
 	}
 	else if (s->frame > frame)
 	{
-		s->error = "no stored state at or before the target frame";
+		s->error = tr("engine.no_state_before");
 		return 1;
 	}
 
@@ -4938,12 +4948,12 @@ int32_t ce_session_movie_at(ce_session *s, int64_t frame)
 	s->error.clear();
 	if (s->movieMode == 0 || s->movie == nullptr)
 	{
-		s->error = "the session has no movie";
+		s->error = tr("engine.session_no_movie");
 		return 1;
 	}
 	if (frame < 0 || frame > ce_session_movie_length(s))
 	{
-		s->error = "frame " + std::to_string(frame) + " is past the movie's end";
+		s->error = tr("piano_roll.past_end", {std::to_string(frame)});
 		return 1;
 	}
 	/* edits drop the states past them; the machine itself is the one loaded */
@@ -5003,12 +5013,12 @@ static const char *askCore(const char *exportName,
 	}
 	catch (const std::bad_alloc &)
 	{
-		openRefused("there was not enough memory to start the machine", error_out);
+		openRefused(tr("engine.no_memory_start"), error_out);
 		return nullptr;
 	}
 	catch (const std::exception &e)
 	{
-		openRefused(std::string("the machine could not be started: ") + e.what(), error_out);
+		openRefused(tr("engine.not_started", {e.what()}), error_out);
 		return nullptr;
 	}
 	if (s == nullptr) return nullptr;
@@ -5145,23 +5155,23 @@ int32_t ce_session_freeze(ce_session *s, int32_t domain, int64_t address, int32_
 	s->error.clear();
 	if (!domainIndexOk(s, domain))
 	{
-		s->error = "no memory domain " + std::to_string(domain);
+		s->error = tr("session.no_domain", {std::to_string(domain)});
 		return -1;
 	}
 	const char *name = reinterpret_cast<const char *>(s->mdName(domain));
 	if (s->mdWritable(domain) == 0 || s->mdPtr == nullptr || s->mdPtr(domain) == 0)
 	{
-		s->error = std::string(name != nullptr ? name : "the domain") + " cannot be written";
+		s->error = tr("session.domain_read_only", {name != nullptr ? name : tr("engine.the_domain")});
 		return -1;
 	}
 	if ((size != 1 && size != 2 && size != 4) || address < 0 || address + size > s->mdSize(domain))
 	{
-		s->error = std::string(name != nullptr ? name : "the domain") + " has no " + std::to_string(size) + " bytes at " + std::to_string(address);
+		s->error = tr("engine.domain_short", {name != nullptr ? name : tr("engine.the_domain"), std::to_string(size), std::to_string(address)});
 		return -1;
 	}
 	if (compare_kind < 0 || compare_kind > 6)
 	{
-		s->error = "no compare kind " + std::to_string(compare_kind);
+		s->error = tr("engine.no_compare_kind", {std::to_string(compare_kind)});
 		return -1;
 	}
 	ce_session::Freeze f;

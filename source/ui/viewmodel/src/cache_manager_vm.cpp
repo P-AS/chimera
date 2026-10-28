@@ -1,4 +1,5 @@
 #include "chimera/vm/cache_manager_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -170,7 +171,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			if (!arg(a, 0, id, error)) return {};
 			if (!plainId(id))
 			{
-				error = "a project's id";
+				error = tr("cache.project_id");
 				return {};
 			}
 			json::Json b;
@@ -194,7 +195,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			if (!arg(a, 0, id, error) || !arg(a, 1, mb, error) || !arg(a, 2, stride, error)) return {};
 			if (!plainId(id) || (mb != 0 && mb < 64) || stride < 0 || stride > 32)
 			{
-				error = "a project's id, a memory budget of 64 MB or more and a closeness of 1 to 32 (0 for every project's)";
+				error = tr("cache.budget_args");
 				return {};
 			}
 			const fs::path dir = fs::path(cacheFolder.get()) / id;
@@ -227,9 +228,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			for (size_t i : picked)
 			{
 				bytes += items_[i].bytes;
-				const std::string c = items_[i].unsavedWork
-					? "Unsaved work - inputs, markers and branches a session never saved. Removing it loses that work for good."
-					: "The run replays instead of resuming, and its files are asked for once more.";
+				const std::string c = tr(items_[i].unsavedWork ? "cache.cost_unsaved" : "cache.cost_project");
 				if (std::find(costs.begin(), costs.end(), c) == costs.end()) costs.push_back(c);
 			}
 			std::string lines;
@@ -248,8 +247,8 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			std::string failed;
 			const int64_t removed = removeAll(picked, failed);
 			survey();
-			status.set(failed.empty() ? "Removed " + std::to_string(removed) + " item(s)." : "Removed " + std::to_string(removed) + "; left " + failed + ".");
-			if (!failed.empty()) error = "could not remove: " + failed;
+			status.set(failed.empty() ? tr("cache.removed", removed) : tr("cache.removed_left", removed, {failed}));
+			if (!failed.empty()) error = tr("cache.could_not_remove", {failed});
 			return removed;
 		});
 	command("orphans", "the places in the list of entries whose project is gone (\"1,3\")", {}, [this](const Args &, std::string &) -> Value {
@@ -280,9 +279,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			fs::create_directories(cacheFolder.get(), ec);
 			std::ofstream(locksFile(), std::ios::binary | std::ios::trunc) << json::write(book);
 			survey();
-			status.set(locking ? "Locked " + std::to_string(picked.size()) + " item(s); the auto-clean will leave them alone."
-							   : "Unlocked " + std::to_string(picked.size()) +
-					" item(s); the auto-clean may take them when the cache is over its limit.");
+			status.set(tr(locking ? "cache.locked_items" : "cache.unlocked_items", static_cast<int64_t>(picked.size())));
 			return locking;
 		});
 	command("titles", "the entries at these places (\"0,2\"), a line each: \"- title (size)\", for a question to name them",
@@ -307,8 +304,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			const std::vector<size_t> going = whatWouldGo(items_, limit, {});
 			if (going.empty())
 			{
-				status.set(all > limit ? "Over the limit, and nothing left may be taken: what remains is locked, in use, or the run last worked on."
-									   : "The cache is already under its limit.");
+				status.set(tr(all > limit ? "cache.over_nothing_to_take" : "cache.under_limit"));
 				return int64_t{0};
 			}
 			uint64_t freed = 0;
@@ -316,8 +312,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			std::string failed;
 			const int64_t removed = removeAll(going, failed);
 			survey();
-			status.set("Removed " + std::to_string(removed) + " of the oldest unlocked item(s), freeing " + sizeText(freed) + "." +
-				(failed.empty() ? "" : " Could not remove: " + failed));
+			status.set(tr("cache.cleaned", removed, {sizeText(freed)}) + (failed.empty() ? "" : " " + tr("cache.could_not_remove", {failed})));
 			return removed;
 		});
 	command("runAutoClean", "the auto-clean, when it is on: the oldest unlocked entries until the cache is under its limit, "
@@ -336,7 +331,7 @@ CacheManagerViewModel::CacheManagerViewModel(Dispatcher &dispatcher) : ViewModel
 			std::string failed;
 			removeAll(going, failed);
 			survey();
-			const std::string said = "Cache auto-clean freed " + sizeText(freed);
+			const std::string said = tr("cache.auto_cleaned", {sizeText(freed)});
 			status.set(said);
 			return said;
 		});
@@ -361,10 +356,10 @@ std::string CacheManagerViewModel::sizeText(uint64_t bytes)
 	if (bytes == 0) return {};
 	const double mb = static_cast<double>(bytes) / 1024.0 / 1024.0;
 	char text[32];
-	if (mb >= 1024.0) std::snprintf(text, sizeof text, "%.1f GB", mb / 1024.0);
-	else if (mb >= 1.0) std::snprintf(text, sizeof text, "%.1f MB", mb);
-	else std::snprintf(text, sizeof text, "%.0f KB", std::floor(static_cast<double>(bytes) / 1024.0 + 0.5));
-	return text;
+	if (mb >= 1024.0) std::snprintf(text, sizeof text, "%.1f", mb / 1024.0);
+	else if (mb >= 1.0) std::snprintf(text, sizeof text, "%.1f", mb);
+	else std::snprintf(text, sizeof text, "%.0f", std::floor(static_cast<double>(bytes) / 1024.0 + 0.5));
+	return tr(mb >= 1024.0 ? "units.gb" : mb >= 1.0 ? "units.mb" : "units.kb", {text});
 }
 
 uint64_t CacheManagerViewModel::effectiveLimit(uint64_t limit, uint64_t floor, uint64_t cacheBytes, uint64_t freeBytes, uint64_t never)
@@ -441,17 +436,13 @@ void CacheManagerViewModel::sayOverLimit()
 	if (limit < asked)
 	{
 		const uint64_t freeBytes = freeSpaceAt ? freeSpaceAt(cacheFolder.get()) : UINT64_MAX;
-		line += "The disk has " + sizeText(freeBytes) + " free and is to be left " + std::to_string(floorGb.get()) +
-			" GB free, so the cache is being held to " + sizeText(limit) + " rather than to the " +
-			std::to_string(limitGb.get()) + " GB asked for" + (limit <= unitBytes ? " (it is never held to less than that because of the disk)" : "") +
-			". Lower the free-space figure, or move the cache to a roomier disk. ";
+		line += tr(limit <= unitBytes ? "cache.held_by_disk_floor" : "cache.held_by_disk",
+					  {sizeText(freeBytes), std::to_string(floorGb.get()), sizeText(limit), std::to_string(limitGb.get())}) + " ";
 	}
 	uint64_t going = 0;
 	for (size_t i : whatWouldGo(items_, limit, {})) going += items_[i].bytes;
-	line += "That is " + sizeText(all - limit) + " over. ";
-	line += going < all - limit ? "What is left is locked, in use, or the run last worked on, so the limit cannot be met without unlocking something."
-			: autoClean.get()   ? "The oldest unlocked items go when a project closes or at the next start, or now with Clean Now."
-								: "Nothing is enforcing it while the auto-clean is off; Clean Now applies it once.";
+	line += tr("cache.over_by", {sizeText(all - limit)}) + " ";
+	line += tr(going < all - limit ? "cache.cannot_meet" : autoClean.get() ? "cache.auto_clean_will" : "cache.nothing_enforcing");
 	overLimit.set(line);
 	header.set(headerText());
 }
@@ -468,7 +459,7 @@ bool CacheManagerViewModel::rowsOf(const Args &a, std::vector<size_t> &picked, s
 			const long i = std::strtol(one.c_str(), &end, 10);
 			if (end == nullptr || *end != '\0' || i < 0 || static_cast<size_t>(i) >= items_.size())
 			{
-				error = "no row " + one;
+				error = tr("cache.no_row", {one});
 				return false;
 			}
 			if (std::find(picked.begin(), picked.end(), static_cast<size_t>(i)) == picked.end()) picked.push_back(static_cast<size_t>(i));
@@ -490,13 +481,13 @@ int64_t CacheManagerViewModel::removeAll(const std::vector<size_t> &picked, std:
 		if (root.empty() || plainPath(folder).parent_path() != plainPath(root))
 		{
 			/* said, not skipped in silence */
-			failed += (failed.empty() ? "" : ", ") + item.title + " (not in the cache folder)";
+			failed += (failed.empty() ? "" : ", ") + tr("cache.not_in_folder", {item.title});
 			continue;
 		}
 		/* the open project's is being written */
 		if (item.open)
 		{
-			failed += (failed.empty() ? "" : ", ") + item.title + " (in use)";
+			failed += (failed.empty() ? "" : ", ") + tr("cache.in_use_item", {item.title});
 			continue;
 		}
 		fs::remove_all(folder, ec);
@@ -535,7 +526,7 @@ void CacheManagerViewModel::sortItems()
 
 std::string CacheManagerViewModel::headerText() const
 {
-	if (items_.empty()) return "Nothing is cached. Everything here is rebuilt as it is needed.";
+	if (items_.empty()) return tr("cache.empty");
 	uint64_t all = 0, orphaned = 0;
 	size_t orphans = 0;
 	for (const Item &i : items_)
@@ -547,9 +538,8 @@ std::string CacheManagerViewModel::headerText() const
 			orphaned += i.bytes;
 		}
 	}
-	return std::to_string(items_.size()) + " cached item(s), " + sizeText(all) + " in all. Everything here can be removed: what it "
-		"costs is time, never work." + (orphans == 0 ? std::string() : "\n" + std::to_string(orphans) +
-		" belong to projects that are no longer where they were (" + sizeText(orphaned) + ").") +
+	return tr("cache.header", static_cast<int64_t>(items_.size()), {sizeText(all)}) +
+		(orphans == 0 ? std::string() : "\n" + tr("cache.orphans", static_cast<int64_t>(orphans), {sizeText(orphaned)})) +
 		(overLimit.get().empty() ? std::string() : "\n" + overLimit.get());
 }
 
@@ -583,7 +573,7 @@ void CacheManagerViewModel::survey()
 			Item item;
 			item.kind = kProjectCache;
 			item.folder = it->path().string();
-			item.title = "(a project that never said its name)";
+			item.title = tr("cache.unnamed_project");
 			item.open = !inUse.get().empty() && it->path().filename().string() == inUse.get();
 			/* who it belongs to, when it says */
 			json::Json about;
@@ -624,7 +614,7 @@ void CacheManagerViewModel::survey()
 				pid = whole(record.find("processId"), 0);
 				started = whole(record.find("processStarted"), -1);
 			}
-			item.title = "Unsaved work" + (item.projectPath.empty() ? std::string() : ": " + fs::path(item.projectPath).stem().string());
+			item.title = item.projectPath.empty() ? tr("cache.unsaved_work") : tr("cache.unsaved_work_of", {fs::path(item.projectPath).stem().string()});
 			/* a window still writing it has it open */
 			item.open = pid > 0 && started >= 0 && processStarted(pid) == started;
 			item.orphan = !item.open && !item.projectPath.empty() && !fs::exists(item.projectPath, ec);
@@ -634,7 +624,7 @@ void CacheManagerViewModel::survey()
 	sortItems();
 	uint64_t all = 0;
 	for (const Item &i : items_) all += i.bytes;
-	total.set(sizeText(all) + " in " + std::to_string(items_.size()) + (items_.size() == 1 ? " item" : " items"));
+	total.set(tr("cache.total", static_cast<int64_t>(items_.size()), {sizeText(all)}));
 	rows_.reset.emit();
 	sayOverLimit();
 }
@@ -664,19 +654,15 @@ Value CacheManagerViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 9: return i.open;
 	case 10:
 		if (i.unsavedWork)
-			return i.open ? std::string("In use: a window has this project open with changes not saved.")
-				   : i.orphan ? std::string("Work a crash left; the project it belongs to is not where it was last seen.")
-							  : std::string("Work a crash left: it is offered back when the project next opens. Removing it loses that work.");
-		return i.open ? std::string("In use: the project open now.")
-			   : i.orphan ? std::string("The project this belongs to is not where it was last seen.")
-						  : std::string();
+			return tr(i.open ? "cache.note_unsaved_open" : i.orphan ? "cache.note_unsaved_orphan" : "cache.note_unsaved");
+		return i.open ? tr("cache.note_open") : i.orphan ? tr("cache.note_orphan") : std::string();
 	case 11: return i.kind;
 	case 12: return i.locked;
 	case 13: return i.lastUsed;
 	/* Chimera's columns and the line under the list */
-	case 14: return std::string(i.unsavedWork ? "Unsaved work" : "Project");
+	case 14: return tr(i.unsavedWork ? "cache.unsaved_work" : "cache.project");
 	case 15: return i.unsavedWork ? std::string() : fs::path(i.folder).filename().string();
-	case 16: return !i.projectPath.empty() ? i.projectPath + (i.orphan ? "   (not found)" : "") : i.unsavedWork ? std::string() : std::string("(never recorded)");
+	case 16: return !i.projectPath.empty() ? (i.orphan ? tr("cache.path_not_found", {i.projectPath}) : i.projectPath) : i.unsavedWork ? std::string() : tr("cache.never_recorded");
 	case 17:
 	{
 		if (i.lastUsed == fs::file_time_type::min().time_since_epoch().count()) return std::string();
@@ -695,23 +681,20 @@ Value CacheManagerViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 18:
 	{
 		std::vector<std::string> lines;
-		lines.push_back(i.unsavedWork ? "Unsaved work - inputs, markers and branches a session never saved. Removing it loses that work for good."
-									  : "The run replays instead of resuming, and its files are asked for once more.");
+		lines.push_back(tr(i.unsavedWork ? "cache.cost_unsaved" : "cache.cost_project"));
 		std::string note;
 		fromValue(cell(row, 10), note);
-		if (i.open) lines.push_back("In use right now, so it cannot be removed while it is open.");
+		if (i.open) lines.push_back(tr("cache.in_use_now"));
 		else if (!note.empty()) lines.push_back(note);
-		lines.push_back(i.locked ? "Locked: the auto-clean will not take this one. Remove still will."
-								 : "Unlocked: the auto-clean may take this one, oldest first, when the cache is over its limit.");
-		if (i.games.find(", ") != std::string::npos) lines.push_back("Game files: " + i.games);
-		if (!i.projectPath.empty()) lines.push_back("Project file: " + i.projectPath);
-		lines.push_back("Cache: " + i.folder);
+		lines.push_back(tr(i.locked ? "cache.locked_detail" : "cache.unlocked_detail"));
+		if (i.games.find(", ") != std::string::npos) lines.push_back(tr("cache.game_files", {i.games}));
+		if (!i.projectPath.empty()) lines.push_back(tr("cache.project_file", {i.projectPath}));
+		lines.push_back(tr("cache.folder", {i.folder}));
 		std::string out;
 		for (const std::string &l : lines) out += (out.empty() ? "" : "\n") + l;
 		return out;
 	}
-	case 19: return std::string(i.locked ? "Locked: the auto-clean leaves this one alone. Remove still takes it."
-										 : "Unlocked: the auto-clean may take this one when the cache is over its limit.");
+	case 19: return tr(i.locked ? "cache.locked_tip" : "cache.unlocked_tip");
 	default: return {};
 	}
 }

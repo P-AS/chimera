@@ -1,4 +1,5 @@
 #include "chimera/vm/lua_bridge.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/config_names.hpp"
 #include "chimera/vm/json.hpp"
 
@@ -248,7 +249,7 @@ int LuaBridge::index(lua_State *L)
 				v = property->scriptSide();
 			else if (!b->atWindow([&] { v = property->get(); }))
 			{
-				lua_pushstring(L, (vm->name() + "." + key + ": the window is closing").c_str());
+				lua_pushstring(L, tr("lua.window_closing", {vm->name() + "." + key}).c_str());
 				failed = true;
 			}
 			if (!failed) push(L, v);
@@ -266,7 +267,7 @@ int LuaBridge::index(lua_State *L)
 			}
 			else
 			{
-				lua_pushstring(L, (vm->name() + " has no property or command " + key).c_str());
+				lua_pushstring(L, tr("lua.no_member", {vm->name(), key}).c_str());
 				failed = true;
 			}
 		}
@@ -283,8 +284,8 @@ int LuaBridge::newIndex(lua_State *L)
 		const std::string key = k;
 		Value v;
 		std::string error;
-		if (!read(L, 3, v)) error = vm->name() + "." + key + " cannot be a " + luaL_typename(L, 3);
-		else if (!bridgeOf(L)->atWindow([&] { vm->set(key, v, error); })) error = vm->name() + "." + key + ": the window is closing";
+		if (!read(L, 3, v)) error = tr("lua.cannot_be", {vm->name() + "." + key, luaL_typename(L, 3)});
+		else if (!bridgeOf(L)->atWindow([&] { vm->set(key, v, error); })) error = tr("lua.window_closing", {vm->name() + "." + key});
 		if (!error.empty())
 		{
 			lua_pushstring(L, error.c_str());
@@ -307,7 +308,7 @@ int LuaBridge::call(lua_State *L)
 		{
 			Value v;
 			if (!read(L, i, v))
-				error = vm->name() + "." + name + ": argument " + std::to_string(i) + " cannot be a " + luaL_typename(L, i);
+				error = tr("lua.argument_cannot_be", {vm->name() + "." + name, std::to_string(i), luaL_typename(L, i)});
 			args.push_back(std::move(v));
 		}
 		std::optional<Value> result;
@@ -325,7 +326,7 @@ int LuaBridge::call(lua_State *L)
 			if (error.empty()) result = std::move(v);
 		}
 		else if (!b->atWindow([&] { result = vm->run(name, args, error); }))
-			error = vm->name() + "." + name + ": the window is closing";
+			error = tr("lua.window_closing", {vm->name() + "." + name});
 		if (result) push(L, *result);
 		else
 		{
@@ -422,7 +423,7 @@ int64_t LuaBridge::startHere(const std::string &path, std::string &error)
 	std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
 	if (!in)
 	{
-		error = "Unable to access file " + path;
+		error = tr("lua.cannot_access", {path});
 		return 0;
 	}
 	std::stringstream ss;
@@ -440,7 +441,7 @@ int64_t LuaBridge::startCodeHere(const std::string &code, const std::string &chu
 {
 	if (luaL_loadbuffer(L_, code.data(), code.size(), ("@" + chunkName).c_str()) != LUA_OK)
 	{
-		error = lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : "unknown error";
+		error = lua_tostring(L_, -1) != nullptr ? lua_tostring(L_, -1) : tr("lua.unknown_error");
 		lua_pop(L_, 1);
 		return 0;
 	}
@@ -487,7 +488,7 @@ bool LuaBridge::resume(int64_t id, std::string &error)
 		lua_pop(co, results);
 	else
 	{
-		error = co != nullptr && lua_tostring(co, -1) != nullptr ? lua_tostring(co, -1) : "unknown error";
+		error = co != nullptr && lua_tostring(co, -1) != nullptr ? lua_tostring(co, -1) : tr("lua.unknown_error");
 		ok = false;
 	}
 	lua_pop(L_, 1);
@@ -659,7 +660,7 @@ json::Json luaValue(lua_State *L, int at, int depth)
 		return json::Json::string("(a function)");
 	case LUA_TTABLE:
 	{
-		if (depth >= kLuaDepth) return json::Json::string("(a table, too deep to show)");
+		if (depth >= kLuaDepth) return json::Json::string(tr("lua.too_deep"));
 		/* every key, by its text: Lua keeps a table's keys in no order, and an answer should read the same each time */
 		std::vector<std::pair<std::string, json::Json>> fields;
 		std::vector<long long> whole;
@@ -752,7 +753,7 @@ bool LuaBridge::runForAgentHere(const std::string &code, const std::string &dire
 		stopHere(id);
 		lua_pushnil(L_);
 		lua_setglobal(L_, "__chimera_run_results");
-		error = "the code waited for a frame, which nothing here goes on with: a script that waits for frames is started with lua_script";
+		error = tr("lua.waited_for_frame");
 		return false;
 	}
 	json::Json out;
@@ -776,7 +777,7 @@ bool LuaBridge::runForAgentHere(const std::string &code, const std::string &dire
 	lua_setglobal(L_, "__chimera_run_results");
 	if (id == 0)
 	{
-		if (error.empty()) error = "unknown error";
+		if (error.empty()) error = tr("lua.unknown_error");
 		return false;
 	}
 	results = json::write(out);

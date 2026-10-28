@@ -105,7 +105,7 @@ ApplicationWindow {
         if (out.length === 0) out.push({ v: button ? false : 0, n: 1 })
         return out
     }
-    function runsText(p) { return p.runs.map(r => (p.button ? (r.v ? "On" : "Off") : String(r.v)) + " x" + r.n).join(", ") }
+    function runsText(p) { return p.runs.map(r => (p.button ? qsTrId(r.v ? "common.on" : "common.off") : String(r.v)) + " x" + r.n).join(", ") }
 
     function apply() {
         const r = win.pianoRoll

@@ -2,8 +2,11 @@
 
 #include "game_properties.hpp"
 #include "plain_numbers.hpp"
+#include "language.hpp"
 
 #include "../../extern/cjson/cJSON.h"
+
+using chimera::lang::tr;
 
 #include <algorithm>
 #include <cctype>
@@ -195,7 +198,7 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	}
 	if (t < 0)
 	{
-		why = "has a type this engine does not read: \"" + type + "\"";
+		why = tr("properties.unknown_type", {type});
 		return false;
 	}
 	p.type = Type(t);
@@ -211,13 +214,13 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	}
 	if (p.domainIndex < 0)
 	{
-		why = "is in \"" + p.domain + "\", which the core has no domain called";
+		why = tr("properties.no_domain", {p.domain});
 		return false;
 	}
 	const Domain &dom = m_domains[size_t(p.domainIndex)];
 	if (dom.base == nullptr && !dom.read)
 	{
-		why = "is in \"" + p.domain + "\", which has no memory of its own to read";
+		why = tr("properties.domain_empty", {p.domain});
 		return false;
 	}
 
@@ -225,19 +228,19 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	bool has = false, hasLength = false, hasStride = false, hasBit = false, hasBits = false;
 	if (!integerMember(entry, "offset", offset, has) || !has || offset < 0)
 	{
-		why = "has no whole-number offset";
+		why = tr("properties.no_offset");
 		return false;
 	}
 	if (!integerMember(entry, "length", length, hasLength))
 	{
-		why = "has a length that is not a whole number";
+		why = tr("properties.bad_length");
 		return false;
 	}
 	if (info.size == 0)
 	{
 		if (!hasLength || length < 1 || length > 0x10000000)
 		{
-			why = std::string("is a ") + info.name + " with no length in bytes";
+			why = tr("properties.no_length", {info.name});
 			return false;
 		}
 		p.size = uint32_t(length);
@@ -248,20 +251,20 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	}
 	if (!integerMember(entry, "count", count, has) || count < 1 || count > 0x10000000)
 	{
-		why = "has a count that is not a whole number of at least 1";
+		why = tr("properties.bad_count");
 		return false;
 	}
 	p.count = uint32_t(count);
 	int64_t first = 0;
 	if (!integerMember(entry, "first", first, has) || first < 0 || first > 0x7FFFFFFF)
 	{
-		why = "has a first index that is not a whole number of at least 0";
+		why = tr("properties.bad_first");
 		return false;
 	}
 	p.first = uint32_t(first);
 	if (!integerMember(entry, "stride", stride, hasStride) || (hasStride && (stride < p.size || stride > 0x10000000)))
 	{
-		why = "has a stride shorter than one element";
+		why = tr("properties.short_stride");
 		return false;
 	}
 	p.stride = hasStride ? uint32_t(stride) : p.size;
@@ -269,7 +272,7 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	const std::string endian = stringMember(entry, "endian");
 	if (!endian.empty() && endian != "little" && endian != "big")
 	{
-		why = "has an endian that is neither little nor big: \"" + endian + "\"";
+		why = tr("properties.bad_endian", {endian});
 		return false;
 	}
 	p.bigEndian = endian == "big";
@@ -284,7 +287,7 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 		}
 		if (e < 0)
 		{
-			why = "has an encoding this engine does not read: \"" + enc + "\"";
+			why = tr("properties.bad_encoding", {enc});
 			return false;
 		}
 		p.encoding = Encoding(e);
@@ -292,19 +295,19 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 
 	if (!integerMember(entry, "bit", bit, hasBit) || !integerMember(entry, "bits", bits, hasBits))
 	{
-		why = "has a bit field that is not whole numbers";
+		why = tr("properties.bad_bits");
 		return false;
 	}
 	if (hasBit || hasBits)
 	{
 		if (!info.integer)
 		{
-			why = "is a bit field of a type that is not an integer";
+			why = tr("properties.bits_not_integer");
 			return false;
 		}
 		if (!hasBits || bits < 1 || bit < 0 || bit + bits > int64_t(p.size) * 8)
 		{
-			why = "has a bit field that does not fit in its " + std::string(info.name);
+			why = tr("properties.bits_too_wide", {info.name});
 			return false;
 		}
 		p.bit = uint32_t(bit);
@@ -314,8 +317,7 @@ bool CeGameProperties::parseEntry(const cJSON *entry, Property &p, std::string &
 	p.offset = offset;
 	if (p.span() > dom.size - offset)
 	{
-		why = "at " + std::to_string(offset) + " runs past the end of \"" + p.domain + "\" ("
-			+ std::to_string(dom.size) + " bytes)";
+		why = tr("properties.past_end", {std::to_string(offset), p.domain, std::to_string(dom.size)});
 		return false;
 	}
 
@@ -367,8 +369,8 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 	cJSON *root = cJSON_Parse(json);
 	m_dynamic = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root, "dynamic"));
 	const cJSON *list = cJSON_GetObjectItemCaseSensitive(root, "properties");
-	if (root == nullptr) m_problems.emplace_back("the property table is not readable JSON");
-	else if (!cJSON_IsArray(list)) m_problems.emplace_back("the property table has no \"properties\" list");
+	if (root == nullptr) m_problems.emplace_back(tr("properties.not_json"));
+	else if (!cJSON_IsArray(list)) m_problems.emplace_back(tr("properties.no_list"));
 
 	const cJSON *entry = nullptr;
 	if (cJSON_IsArray(list))
@@ -377,7 +379,7 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 		{
 			if (!cJSON_IsObject(entry))
 			{
-				m_problems.emplace_back("an entry that is not an object");
+				m_problems.emplace_back(tr("properties.not_object"));
 				continue;
 			}
 			Property p;
@@ -385,17 +387,17 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 			const std::string name = stringMember(entry, "name");
 			if (trim(name).empty())
 			{
-				m_problems.emplace_back("a property with no name");
+				m_problems.emplace_back(tr("properties.no_name"));
 				continue;
 			}
 			if (m_byName.count(key(name)) != 0)
 			{
-				m_problems.push_back("\"" + name + "\" is named twice; the second is left out");
+				m_problems.push_back(tr("properties.named_twice", {name}));
 				continue;
 			}
 			if (!parseEntry(entry, p, why))
 			{
-				m_problems.push_back("\"" + name + "\" " + why);
+				m_problems.push_back(tr("properties.entry_problem", {name, why}));
 				continue;
 			}
 			m_byName[key(p.name)] = int32_t(m_props.size());
@@ -410,9 +412,7 @@ void CeGameProperties::load(const char *json, const std::vector<Domain> &domains
 		const Property *p = named != m_byName.end() ? &m_props[size_t(named->second)] : nullptr;
 		if (p != nullptr && kTypes[p->type].integer && p->count == 1) m_timer = named->second;
 		else
-			m_problems.push_back(std::string("\"gameTimer\" names ") +
-				(cJSON_IsString(timer) ? "\"" + std::string(timer->valuestring) + "\"" : "no property") +
-				", which is not one property holding a whole number");
+			m_problems.push_back(tr("properties.bad_timer", {cJSON_IsString(timer) ? "\"" + std::string(timer->valuestring) + "\"" : tr("properties.no_property")}));
 	}
 	cJSON_Delete(root);
 }
@@ -425,7 +425,7 @@ int32_t CeGameProperties::relist(const char *json)
 	for (Property &p : m_props) p.listed = p.present = false;
 	cJSON *root = json != nullptr && json[0] != '\0' ? cJSON_Parse(json) : nullptr;
 	const cJSON *list = cJSON_GetObjectItemCaseSensitive(root, "properties");
-	if (json != nullptr && json[0] != '\0' && root == nullptr) m_problems.emplace_back("the property table is not readable JSON");
+	if (json != nullptr && json[0] != '\0' && root == nullptr) m_problems.emplace_back(tr("properties.not_json"));
 	int32_t listed = 0;
 	std::map<std::string, bool> seen;
 	const cJSON *entry = nullptr;
@@ -440,17 +440,17 @@ int32_t CeGameProperties::relist(const char *json)
 			const std::string key = this->key(name);
 			if (trim(name).empty())
 			{
-				m_problems.emplace_back("a property with no name");
+				m_problems.emplace_back(tr("properties.no_name"));
 				continue;
 			}
 			if (seen.count(key) != 0)
 			{
-				m_problems.push_back("\"" + name + "\" is named twice; the second is left out");
+				m_problems.push_back(tr("properties.named_twice", {name}));
 				continue;
 			}
 			if (!parseEntry(entry, p, why))
 			{
-				m_problems.push_back("\"" + name + "\" " + why);
+				m_problems.push_back(tr("properties.entry_problem", {name, why}));
 				continue;
 			}
 			seen[key] = true;
@@ -461,8 +461,8 @@ int32_t CeGameProperties::relist(const char *json)
 			}
 			else if (m_props.size() >= MaxProperties)
 			{
-				if (m_problems.empty() || m_problems.back().rfind("more than", 0) != 0)
-					m_problems.push_back("more than " + std::to_string(MaxProperties) + " properties; the rest are left out");
+				const std::string tooMany = tr("properties.too_many", {std::to_string(MaxProperties)});
+				if (m_problems.empty() || m_problems.back() != tooMany) m_problems.push_back(tooMany);
 				continue;
 			}
 			else
@@ -538,13 +538,14 @@ std::string CeGameProperties::timeText(int64_t ms)
 
 const std::string &CeGameProperties::describe() const
 {
-	if (m_describeStale) describeAll();
+	if (m_describeStale || m_describeLanguage != chimera::lang::inUse()) describeAll();
 	return m_describe;
 }
 
 void CeGameProperties::describeAll() const
 {
 	m_describeStale = false;
+	m_describeLanguage = chimera::lang::inUse();
 	cJSON *root = cJSON_CreateObject();
 	if (m_dynamic) cJSON_AddBoolToObject(root, "dynamic", true);
 	cJSON *list = cJSON_AddArrayToObject(root, "properties");
@@ -564,7 +565,7 @@ void CeGameProperties::describeAll() const
 		cJSON_AddNumberToObject(o, "bit", p.bit);
 		cJSON_AddNumberToObject(o, "bits", p.bits);
 		cJSON_AddStringToObject(o, "group", p.group.c_str());
-		cJSON_AddStringToObject(o, "description", p.description.c_str());
+		cJSON_AddStringToObject(o, "description", (m_texts != nullptr ? m_texts->text(p.description) : p.description).c_str());
 		cJSON_AddBoolToObject(o, "writable", p.writable);
 		if (m_dynamic)
 		{
@@ -795,17 +796,17 @@ bool CeGameProperties::write(int32_t index, uint32_t element, const Value &in, s
 	if (!valid(index, element))
 	{
 		error = index >= 0 && size_t(index) < m_props.size() && !m_props[size_t(index)].present
-			? "\"" + m_props[size_t(index)].name + "\" is not there now"
-			: "no such property";
+			? tr("properties.not_there", {m_props[size_t(index)].name})
+			: tr("engine.no_such_property");
 		return false;
 	}
 	const Property &p = m_props[size_t(index)];
 	if (!p.writable)
 	{
-		error = "\"" + p.name + "\" is worked out by the game every step, so setting it would change nothing";
+		error = tr("properties.computed", {p.name});
 		// a dynamic table's (a movie's variables): the core says which it can only show
-		if (m_dynamic) error = "\"" + p.name + "\" can be read but not set: the core lists it read-only";
-		if (!m_domains[size_t(p.domainIndex)].writable) error = "\"" + p.name + "\" is in a domain that cannot be written";
+		if (m_dynamic) error = tr("properties.read_only", {p.name});
+		if (!m_domains[size_t(p.domainIndex)].writable) error = tr("properties.domain_read_only", {p.name});
 		return false;
 	}
 	const Domain &dom = m_domains[size_t(p.domainIndex)];
@@ -828,7 +829,7 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 	{
 		if (!numeric)
 		{
-			error = "\"" + p.name + "\" takes a number";
+			error = tr("properties.takes_number", {p.name});
 			return false;
 		}
 		if (p.type == Bool)
@@ -850,7 +851,7 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 			const double t = std::trunc(in.f);
 			if (!std::isfinite(in.f) || t < -9223372036854775808.0 || t >= 18446744073709551616.0)
 			{
-				error = "\"" + p.name + "\" takes a whole number that fits in it";
+				error = tr("properties.takes_whole", {p.name});
 				return false;
 			}
 			negative = t < 0;
@@ -870,8 +871,8 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 		const bool fits = negative ? magnitude <= (1ull << ((width >= 64 ? 64 : width) - 1)) : magnitude <= mask(width);
 		if (!fits)
 		{
-			error = std::string(negative ? "-" : "") + std::to_string(magnitude) + " does not fit in \"" + p.name + "\" ("
-				+ info.name + (p.bits != 0 ? ", " + std::to_string(p.bits) + " bits" : "") + ")";
+			error = tr("properties.does_not_fit", {std::string(negative ? "-" : "") + std::to_string(magnitude), p.name,
+				p.bits != 0 ? tr("properties.type_bits", {info.name, std::to_string(p.bits)}) : std::string(info.name)});
 			return false;
 		}
 		const uint64_t v = negative ? uint64_t(0) - magnitude : magnitude;
@@ -894,7 +895,7 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 	{
 		if (!numeric)
 		{
-			error = "\"" + p.name + "\" takes a number";
+			error = tr("properties.takes_number", {p.name});
 			return false;
 		}
 		const double d = in.kind == Value::Float ? in.f
@@ -918,7 +919,7 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 	case Bytes:
 		if (in.kind != Value::Raw || in.data.size() != p.size)
 		{
-			error = "\"" + p.name + "\" takes exactly " + std::to_string(p.size) + " bytes";
+			error = tr("properties.takes_bytes", {p.name, std::to_string(p.size)});
 			return false;
 		}
 		std::memcpy(at, in.data.data(), p.size);
@@ -927,13 +928,13 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 	{
 		if (in.kind != Value::Text)
 		{
-			error = "\"" + p.name + "\" takes text";
+			error = tr("properties.takes_text", {p.name});
 			return false;
 		}
 		std::vector<std::pair<uint32_t, size_t>> cps;
 		if (!decodeUtf8(in.data, cps))
 		{
-			error = "the text for \"" + p.name + "\" is not UTF-8";
+			error = tr("properties.not_utf8", {p.name});
 			return false;
 		}
 		std::string bytes;
@@ -946,7 +947,7 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 			case Latin1:
 				if (cp.first > (p.encoding == Ascii ? 0x7Fu : 0xFFu))
 				{
-					error = "\"" + p.name + "\" is " + kEncodings[p.encoding] + " text, which cannot hold every character given";
+					error = tr("properties.encoding_short", {p.name, kEncodings[p.encoding]});
 					return false;
 				}
 				one += char(cp.first);
@@ -979,7 +980,7 @@ bool CeGameProperties::writeBytes(const Property &p, uint8_t *at, const Value &i
 		return true;
 	}
 	default:
-		error = "no such property";
+		error = tr("engine.no_such_property");
 		return false;
 	}
 }
@@ -1031,8 +1032,8 @@ bool CeGameProperties::writeText(int32_t index, uint32_t element, const std::str
 	if (!valid(index, element))
 	{
 		error = index >= 0 && size_t(index) < m_props.size() && !m_props[size_t(index)].present
-			? "\"" + m_props[size_t(index)].name + "\" is not there now"
-			: "no such property";
+			? tr("properties.not_there", {m_props[size_t(index)].name})
+			: tr("engine.no_such_property");
 		return false;
 	}
 	const Property &p = m_props[size_t(index)];
@@ -1054,7 +1055,7 @@ bool CeGameProperties::writeText(int32_t index, uint32_t element, const std::str
 		uint64_t magnitude;
 		if (!parseInteger(t, negative, magnitude, hex))
 		{
-			error = "\"" + t + "\" is not a whole number" + (p.values.empty() ? "" : " nor one of the names of \"" + p.name + "\"'s values");
+			error = p.values.empty() ? tr("properties.not_whole", {t}) : tr("properties.not_whole_nor_name", {t, p.name});
 			return false;
 		}
 		const uint32_t width = p.bits != 0 ? p.bits : p.size * 8;
@@ -1063,7 +1064,7 @@ bool CeGameProperties::writeText(int32_t index, uint32_t element, const std::str
 			: magnitude <= (info.isSigned && !hex ? mask(width - 1) : mask(width));
 		if (!fits)
 		{
-			error = t + " does not fit in \"" + p.name + "\" (" + info.name + (p.bits != 0 ? ", " + std::to_string(p.bits) + " bits" : "") + ")";
+			error = tr("properties.does_not_fit", {t, p.name, p.bits != 0 ? tr("properties.type_bits", {info.name, std::to_string(p.bits)}) : std::string(info.name)});
 			return false;
 		}
 		if (negative)
@@ -1087,7 +1088,7 @@ bool CeGameProperties::writeText(int32_t index, uint32_t element, const std::str
 		else if (t == "false" || t == "0") v.i = 0;
 		else
 		{
-			error = "\"" + p.name + "\" is true or false";
+			error = tr("properties.boolean", {p.name});
 			return false;
 		}
 		v.kind = Value::Boolean;
@@ -1100,7 +1101,7 @@ bool CeGameProperties::writeText(int32_t index, uint32_t element, const std::str
 		/* a dot, whatever the system's decimal separator is */
 		if (!chimera::parsePlainDouble(t, v.f))
 		{
-			error = "\"" + t + "\" is not a number";
+			error = tr("properties.not_number", {t});
 			return false;
 		}
 		v.kind = Value::Float;
@@ -1124,14 +1125,14 @@ bool CeGameProperties::writeText(int32_t index, uint32_t element, const std::str
 			}
 			if (!std::isxdigit((unsigned char)c))
 			{
-				error = "\"" + p.name + "\" is " + std::to_string(p.size) + " bytes in hex";
+				error = tr("properties.hex_bytes", {p.name, std::to_string(p.size)});
 				return false;
 			}
 			digits += c;
 		}
 		if (digits.size() != size_t(p.size) * 2)
 		{
-			error = "\"" + p.name + "\" is " + std::to_string(p.size) + " bytes in hex, not " + std::to_string(digits.size()) + " digits";
+			error = tr("properties.hex_digits", {p.name, std::to_string(p.size), std::to_string(digits.size())});
 			return false;
 		}
 		v.kind = Value::Raw;
@@ -1139,7 +1140,7 @@ bool CeGameProperties::writeText(int32_t index, uint32_t element, const std::str
 		return write(index, element, v, error);
 	}
 	default:
-		error = "no such property";
+		error = tr("engine.no_such_property");
 		return false;
 	}
 }

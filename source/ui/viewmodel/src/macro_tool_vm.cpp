@@ -1,4 +1,5 @@
 #include "chimera/vm/macro_tool_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -35,14 +36,14 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			if (start > end) std::swap(start, end);
 			if (start < 0 || end >= roll_.frameCount.get())
 			{
-				error = "Start and end frames must be inside the movie.";
+				error = tr("macro.frames_inside");
 				return {};
 			}
 			Zone z;
 			/* a name no zone has: removing one would otherwise give two the same */
 			for (size_t n = zones_.size();; n++)
 			{
-				z.name = "Zone " + std::to_string(n);
+				z.name = tr("macro.zone_name", {std::to_string(n)});
 				if (std::none_of(zones_.begin(), zones_.end(), [&z](const Zone &o) { return o.name == z.name; })) break;
 			}
 			z.start = start;
@@ -86,7 +87,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			if (!zoneOf(a, i, error) || !arg(a, 1, list, error)) return {};
 			if (!zones_[i].fileLines.empty())
 			{
-				error = "a macro loaded from a file carries its own columns";
+				error = tr("macro.own_columns");
 				return {};
 			}
 			json::Json movie;
@@ -96,7 +97,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			for (const std::string &c : cols)
 				if (std::none_of(movie.items.begin(), movie.items.end(), [&c](const json::Json &m) { return m.text == c; }))
 				{
-					error = c + " is not one of the movie's columns";
+					error = tr("macro.not_a_column", {c});
 					return {};
 				}
 			zones_[i].columns = cols;
@@ -118,7 +119,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 				lines.push_back(line);
 			}
 			if (!roll_.placeMacroLines(at, std::move(lines), zones_[i].name, error)) return {};
-			status.set("Placed " + zones_[i].name + " at frame " + std::to_string(at));
+			status.set(tr("macro.placed", {zones_[i].name, std::to_string(at)}));
 			return {};
 		});
 	command("saveAs", "a zone written as a .chimeraMacro file Chimera reads", {"zone", "path"},
@@ -132,13 +133,13 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			out << text;
 			if (!out)
 			{
-				error = "could not write " + path;
+				error = tr("session.could_not_write", {path});
 				return {};
 			}
 			zones_[i].saved = true;
 			changed();
 			roll_.addRecentMacro(path);
-			status.set("Saved " + zones_[i].name + " as " + path);
+			status.set(tr("macro.saved", {zones_[i].name, path}));
 			return {};
 		});
 	command("load", "a .chimeraMacro file as a zone, named for the file; its columns must be the movie's", {"path"},
@@ -148,7 +149,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			std::ifstream in(path, std::ios::binary);
 			if (!in)
 			{
-				error = "could not read " + path;
+				error = tr("new_project.cannot_read", {path});
 				return {};
 			}
 			std::vector<std::string> lines;
@@ -160,7 +161,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			while (!lines.empty() && lines.back().empty()) lines.pop_back();
 			if (lines.size() < 5)
 			{
-				error = path + " is not a macro";
+				error = tr("piano_roll.not_macro", {path});
 				return {};
 			}
 			json::Json movie;
@@ -169,8 +170,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 			for (const std::string &k : split(lines[0], '|'))
 				if (std::none_of(movie.items.begin(), movie.items.end(), [&k](const json::Json &m) { return m.text == k; }))
 				{
-					error = "The selected macro is not compatible with the current emulator core.\nMacro controller: " + lines[1] +
-						"\nMacro controller groups (\"players\" + 1) count: " + lines[2];
+					error = tr("macro.incompatible", {lines[1], lines[2]});
 					return {};
 				}
 			Zone z;
@@ -196,7 +196,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 		if (!zoneOf(a, i, error)) return {};
 		if (zones_[i].whole)
 		{
-			error = "the entire movie is always a zone";
+			error = tr("macro.whole_movie_zone");
 			return {};
 		}
 		zones_.erase(zones_.begin() + static_cast<std::ptrdiff_t>(i));
@@ -214,7 +214,7 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 		zones_.clear();
 		picked.set(0);
 		Zone whole;
-		whole.name = "Entire Movie";
+		whole.name = tr("macro.entire_movie");
 		whole.whole = true;
 		whole.length = roll_.frameCount.get();
 		zones_.insert(zones_.begin(), std::move(whole));
@@ -246,7 +246,7 @@ bool MacroToolViewModel::zoneOf(const Args &a, size_t &i, std::string &error) co
 	if (!arg(a, 0, z, error)) return false;
 	if (z < 0 || z >= static_cast<int64_t>(zones_.size()))
 	{
-		error = "no zone " + std::to_string(z);
+		error = tr("macro.no_zone", {std::to_string(z)});
 		return false;
 	}
 	i = static_cast<size_t>(z);
@@ -266,7 +266,7 @@ std::string MacroToolViewModel::textOf(const Zone &z, std::string &error) const
 	}
 	if (z.length <= 0)
 	{
-		error = "the zone has no frames";
+		error = tr("macro.zone_empty");
 		return {};
 	}
 	return roll_.macroText(z.start, z.start + z.length - 1, z.columns, z.overlay, z.replace, error);

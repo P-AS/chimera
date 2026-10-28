@@ -21,7 +21,7 @@ std::optional<Build> buildOf(const std::string &package)
 	uint64_t len = 0;
 	json::Json cfg;
 	std::string err;
-	if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+	if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len);
 		d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
 	{
 		Build b;

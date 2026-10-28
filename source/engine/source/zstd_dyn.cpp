@@ -1,4 +1,5 @@
 #include "zstd_dyn.hpp"
+#include "language.hpp"
 #include "host_dyn.hpp"
 
 #include <mutex>
@@ -58,7 +59,7 @@ void loadOnce()
 			g_ok = g_api.compressBound != nullptr && g_api.compress != nullptr && g_api.isError != nullptr
 				&& g_api.createDStream != nullptr && g_api.initDStream != nullptr
 				&& g_api.freeDStream != nullptr && g_api.decompressStream != nullptr;
-			if (!g_ok) g_error = "libzstd is missing expected symbols";
+			if (!g_ok) g_error = chimera::lang::tr("zstd.missing_symbols");
 			/* streaming compression is all four or none: a caller checks one */
 			if (g_api.createCStream == nullptr || g_api.initCStream == nullptr
 				|| g_api.freeCStream == nullptr || g_api.compressStream2 == nullptr)

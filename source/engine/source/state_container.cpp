@@ -9,6 +9,7 @@
  */
 
 #include "chimera/engine.h"
+#include "language.hpp"
 #include "zstd_dyn.hpp"
 #include "progress.hpp"
 #include "thread_string.hpp"
@@ -79,7 +80,7 @@ bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, 
 	void *zds = zstd->createDStream();
 	if (zds == nullptr)
 	{
-		error = "zstd: could not create a decompression stream";
+		error = chimera::lang::tr("container.no_decompressor");
 		return false;
 	}
 	zstd->initDStream(zds);
@@ -95,13 +96,13 @@ bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, 
 		size_t rc = zstd->decompressStream(zds, &output, &input);
 		if (zstd->isError(rc) != 0)
 		{
-			error = "zstd: corrupt compressed lump";
+			error = chimera::lang::tr("container.corrupt");
 			ok = false;
 			break;
 		}
 		if (out.size() + output.pos > most)
 		{
-			error = "zstd: the lump would be larger than " + std::to_string(most) + " bytes";
+			error = chimera::lang::tr("container.too_large", {std::to_string(most)});
 			ok = false;
 			break;
 		}
@@ -109,12 +110,12 @@ bool zstdDecompress(const uint8_t *data, size_t len, std::vector<uint8_t> &out, 
 		if (input.pos - reportedAt >= (4u << 20))
 		{
 			reportedAt = input.pos;
-			chimera::progress("reading the greenzone", input.pos, input.size);
+			chimera::progress(chimera::lang::tr("container.progress_reading").c_str(), input.pos, input.size);
 		}
 		if (rc == 0 && input.pos >= input.size) break;
 		if (output.pos == 0 && input.pos >= input.size)
 		{
-			error = "zstd: truncated compressed lump";
+			error = chimera::lang::tr("container.truncated");
 			ok = false;
 			break;
 		}
@@ -143,7 +144,7 @@ ce_state_writer *ce_state_writer_new(int32_t compression_level, const char *emu_
 	w->compressionLevel = compression_level;
 	if (mz_zip_writer_init_heap(&w->zip, 0, 0) == MZ_FALSE)
 	{
-		w->error = "could not start a zip archive";
+		w->error = chimera::lang::tr("container.no_zip");
 		return w;
 	}
 	/* every archive says what it is and what wrote it, uncompressed, with a
@@ -192,12 +193,12 @@ int32_t ce_state_writer_put_lump(
 			void *zcs = api->createCStream();
 			if (zcs == nullptr)
 			{
-				w->error = "zstd: could not create a compression stream";
+				w->error = chimera::lang::tr("container.no_compressor");
 				return 1;
 			}
 			api->initCStream(zcs, level);
 			chimera::zstdChecksum(api, zcs);
-			const std::string stage = "compressing " + std::string(name);
+			const std::string stage = chimera::lang::tr("container.progress_compressing", {name});
 			chimera::ZstdApi::Buffer input{ data, static_cast<size_t>(len), 0 };
 			chimera::ZstdApi::OutBuffer output{ compressed.data(), compressed.size(), 0 };
 			bool failed = false;
@@ -223,7 +224,7 @@ int32_t ce_state_writer_put_lump(
 			api->freeCStream(zcs);
 			if (failed)
 			{
-				w->error = "zstd: compression failed for " + path;
+				w->error = chimera::lang::tr("container.compression_failed", {path});
 				return 1;
 			}
 			written = output.pos;
@@ -234,7 +235,7 @@ int32_t ce_state_writer_put_lump(
 				compressed.data(), compressed.size(), data, static_cast<size_t>(len), level);
 			if (api->isError(written) != 0)
 			{
-				w->error = "zstd: compression failed for " + path;
+				w->error = chimera::lang::tr("container.compression_failed", {path});
 				return 1;
 			}
 		}
@@ -242,7 +243,7 @@ int32_t ce_state_writer_put_lump(
 		path += ".zst";
 		if (mz_zip_writer_add_mem(&w->zip, path.c_str(), compressed.data(), written, MZ_NO_COMPRESSION) == MZ_FALSE)
 		{
-			w->error = "could not add " + path;
+			w->error = chimera::lang::tr("container.could_not_add", {path});
 			return 1;
 		}
 		return 0;
@@ -251,7 +252,7 @@ int32_t ce_state_writer_put_lump(
 			&w->zip, path.c_str(), data, static_cast<size_t>(len),
 			static_cast<mz_uint>(deflateLevelFor(w->compressionLevel))) == MZ_FALSE)
 	{
-		w->error = "could not add " + path;
+		w->error = chimera::lang::tr("container.could_not_add", {path});
 		return 1;
 	}
 	return 0;
@@ -266,7 +267,7 @@ const uint8_t *ce_state_writer_finish(ce_state_writer *w, uint64_t *len_out)
 		size_t size = 0;
 		if (mz_zip_writer_finalize_heap_archive(&w->zip, &buf, &size) == MZ_FALSE)
 		{
-			w->error = "could not finalize the archive";
+			w->error = chimera::lang::tr("container.not_finalized");
 			return nullptr;
 		}
 		w->finished.assign(static_cast<uint8_t *>(buf), static_cast<uint8_t *>(buf) + size);
@@ -375,7 +376,7 @@ static ce_state_reader *openReader(
 		if (name.size() >= 4 && name.compare(name.size() - 4, 4, ".zst") == 0) key += ".zst";
 		if (!r->entries.emplace(key, i).second)
 		{
-			*g_openError = "Duplicate file found in zip archive: " + key + ". Please delete one.";
+			*g_openError = chimera::lang::tr("container.duplicate", {key});
 			if (error_out != nullptr) *error_out = g_openError->c_str();
 			ce_state_reader_free(r);
 			return nullptr;
@@ -409,7 +410,7 @@ ce_state_reader *ce_state_reader_open(
 	}
 	catch (const std::bad_alloc &)
 	{
-		*g_openError = "there was not enough memory to read the archive";
+		*g_openError = chimera::lang::tr("container.no_memory");
 		if (error_out != nullptr) *error_out = g_openError->c_str();
 		return nullptr;
 	}
@@ -453,15 +454,14 @@ const uint8_t *ce_state_reader_lump(
 	mz_zip_archive_file_stat stat{};
 	if (mz_zip_reader_file_stat(&r->zip, it->second, &stat) && stat.m_uncomp_size > most)
 	{
-		r->error = std::string(name) + " says it is " + std::to_string(stat.m_uncomp_size)
-			+ " bytes, more than the " + std::to_string(most) + " a lump may be";
+		r->error = chimera::lang::tr("container.lump_too_big", {name, std::to_string(stat.m_uncomp_size), std::to_string(most)});
 		return nullptr;
 	}
 	size_t rawLen = 0;
 	void *raw = mz_zip_reader_extract_to_heap(&r->zip, it->second, &rawLen, 0);
 	if (raw == nullptr)
 	{
-		r->error = std::string("could not extract ") + name;
+		r->error = chimera::lang::tr("container.not_extracted", {name});
 		return nullptr;
 	}
 	try
@@ -483,7 +483,7 @@ const uint8_t *ce_state_reader_lump(
 	{
 		mz_free(raw);
 		r->lump = std::vector<uint8_t>();
-		r->error = std::string("there was not enough memory to read ") + name;
+		r->error = chimera::lang::tr("container.no_memory_for", {name});
 		return nullptr;
 	}
 	if (len_out != nullptr) *len_out = r->lump.size();

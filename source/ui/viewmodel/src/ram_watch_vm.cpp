@@ -1,4 +1,5 @@
 #include "chimera/vm/ram_watch_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -78,19 +79,19 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (a.size() > 5 && !arg(a, 5, w.note, error)) return {};
 			if (size != 1 && size != 2 && size != 4)
 			{
-				error = "a watch is 1, 2 or 4 bytes";
+				error = tr("ram_watch.size_values");
 				return {};
 			}
 			w.size = static_cast<int>(size);
 			w.display = static_cast<watch::Display>(display);
 			if (display < 0 || display > 7 || !watch::fits(w.size, w.display))
 			{
-				error = "a value of " + std::to_string(size) + (size == 1 ? " byte" : " bytes") + " cannot be shown that way";
+				error = tr("ram_watch.cannot_show_size", size);
 				return {};
 			}
 			if (w.address < 0)
 			{
-				error = "an address is not negative";
+				error = tr("ram_watch.address_negative");
 				return {};
 			}
 			sizeFromDomain(w);
@@ -109,7 +110,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			});
 			if (!found)
 			{
-				error = "the game has no property " + name;
+				error = tr("ram_watch.no_property", {name});
 				return {};
 			}
 			Watch w;
@@ -141,7 +142,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		if (!index(a, 0, i, error) || !arg(a, 1, display, error)) return {};
 		if (display < 0 || display > 7 || watches_[i].separator || !watches_[i].property.empty() || !watch::fits(watches_[i].size, static_cast<watch::Display>(display)))
 		{
-			error = "that watch cannot be shown that way";
+			error = tr("ram_watch.cannot_show");
 			return {};
 		}
 		watches_[i].display = static_cast<watch::Display>(display);
@@ -154,7 +155,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 		if (!index(a, 0, i, error) || !arg(a, 1, on, error)) return {};
 		if (watches_[i].separator)
 		{
-			error = "a separator has no value to show";
+			error = tr("ram_watch.separator_no_value");
 			return {};
 		}
 		watches_[i].onScreen = on;
@@ -189,7 +190,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (file.empty()) file = path.get();
 			if (file.empty())
 			{
-				error = "the list has no file yet: give it one";
+				error = tr("ram_watch.no_file");
 				return {};
 			}
 			if (!save(file, error)) return {};
@@ -225,7 +226,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			}
 			else if (r < 0 || r >= n)
 			{
-				error = "no watch " + std::to_string(r);
+				error = tr("ram_watch.no_watch", {std::to_string(r)});
 				return {};
 			}
 			else if (mode == "toggle")
@@ -287,7 +288,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			}
 			else
 			{
-				error = "move up, down, top or bottom";
+				error = tr("ram_watch.move_values");
 				return {};
 			}
 			listChanged(true);
@@ -396,7 +397,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			return false;
 		if (size != 1 && size != 2 && size != 4)
 		{
-			error = "a watch is 1, 2 or 4 bytes";
+			error = tr("ram_watch.size_values");
 			return false;
 		}
 		address = -1;
@@ -406,7 +407,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			const long long v = std::strtoll(at.c_str(), &end, 16);
 			if (end == nullptr || *end != '\0' || v < 0)
 			{
-				error = "\"" + at + "\" is not an address in hex";
+				error = tr("ram_search.not_hex_address", {at});
 				return false;
 			}
 			address = v;
@@ -475,7 +476,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			const long long address = std::strtoll(at.c_str(), &end, 16);
 			if (at.empty() || end == nullptr || *end != '\0' || address < 0)
 			{
-				error = "\"" + at + "\" is not an address in hex";
+				error = tr("ram_search.not_hex_address", {at});
 				return {};
 			}
 			const auto added = run("add", {domain, int64_t{address}, size, display, bigEndian, note}, error);
@@ -510,14 +511,14 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			if (first.property.empty()) value.erase(std::remove(value.begin(), value.end(), ' '), value.end());
 			out.members.emplace_back("addresses", json::Json::string(addresses));
 			out.members.emplace_back("domain", json::Json::string(first.domain));
-			out.members.emplace_back("size", json::Json::string(first.size == 1 ? "Byte" : first.size == 2 ? "Word" : "DWord"));
+			out.members.emplace_back("size", json::Json::string(tr(first.size == 1 ? "watch.size_byte" : first.size == 2 ? "watch.size_word" : "watch.size_dword")));
 			out.members.emplace_back("display", json::Json::string(watch::displayName(first.display)));
 			out.members.emplace_back("hex", json::Json::boolean_(first.display == watch::Display::Hex));
-			out.members.emplace_back("endian", json::Json::string(first.bigEndian ? "Big Endian" : "Little Endian"));
+			out.members.emplace_back("endian", json::Json::string(tr(first.bigEndian ? "watch.big_endian" : "watch.little_endian")));
 			out.members.emplace_back("value", json::Json::string(value));
 			out.members.emplace_back("mixed", json::Json::boolean_(mixed && !property));
 			out.members.emplace_back("property", json::Json::boolean_(property));
-			out.members.emplace_back("name", json::Json::string(picked.size() == 1 ? first.note : std::to_string(picked.size()) + " properties"));
+			out.members.emplace_back("name", json::Json::string(picked.size() == 1 ? first.note : tr("ram_watch.properties", static_cast<int64_t>(picked.size()))));
 			return json::write(out);
 		});
 	command("pokeSelected", "a value written into every watch picked, read as each one's display reads text (hex without 0x for "
@@ -536,7 +537,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 					session_.onMachineWait([&](ce_session *s) {
 						uint32_t element = 0;
 						const int32_t index = s != nullptr ? ce_session_property_find(s, w.property.c_str(), &element) : -1;
-						if (index < 0) why = "the game has no property " + w.property;
+						if (index < 0) why = tr("ram_watch.no_property", {w.property});
 						else if (ce_session_property_set_text(s, index, element, text.c_str()) != 0) why = ce_session_last_error(s);
 					});
 					if (!why.empty()) refused += (refused.empty() ? "" : "\n") + w.property + ": " + why;
@@ -560,7 +561,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 			}
 			if (!ok)
 			{
-				error = "An error occurred when writing Value.";
+				error = tr("ram_search.write_failed");
 				return false;
 			}
 			return true;
@@ -691,7 +692,7 @@ RamWatchViewModel::RamWatchViewModel(Dispatcher &dispatcher, SessionViewModel &s
 				less = [&](const Watch &x, const Watch &y) { return x.onScreen != y.onScreen ? x.onScreen : byAddress(x, y); };
 			else
 			{
-				error = "no column " + column;
+				error = tr("piano_roll.no_column", {column});
 				return {};
 			}
 			const bool reverse = sortReverse_;
@@ -793,7 +794,7 @@ void RamWatchViewModel::readProperty(ce_session *s, Watch &w, bool fresh)
 		const int64_t offset = ce_session_property_offset(s, index, element);
 		if (offset >= 0) w.address = offset;
 		/* a property of a dynamic table that is not there now */
-		if (offset < 0 && ce_session_property_dynamic(s) != 0 && now.empty()) now = "(not there)";
+		if (offset < 0 && ce_session_property_dynamic(s) != 0 && now.empty()) now = tr("ram_watch.not_there");
 		/* the table is read on a first read only: a property keeps its domain */
 		json::Json table;
 		std::string jerr;
@@ -864,7 +865,7 @@ bool RamWatchViewModel::index(const Args &a, size_t at, size_t &out, std::string
 	if (!arg(a, at, i, error)) return false;
 	if (i < 0 || i >= static_cast<int64_t>(watches_.size()))
 	{
-		error = "no watch " + std::to_string(i);
+		error = tr("ram_watch.no_watch", {std::to_string(i)});
 		return false;
 	}
 	out = static_cast<size_t>(i);
@@ -885,7 +886,7 @@ void RamWatchViewModel::listChanged(bool edit)
 	refreshOnScreen();
 	int64_t n = 0;
 	for (const Watch &w : watches_) n += !w.separator;
-	countText.set(std::to_string(n) + (n == 1 ? " watch" : " watches"));
+	countText.set(tr("ram_watch.count", n));
 	selectionChanged();
 	showFileState(false);
 }
@@ -1093,7 +1094,7 @@ bool RamWatchViewModel::load(const std::string &file, bool append, std::string &
 	std::ifstream in(file, std::ios::binary);
 	if (!in)
 	{
-		error = "cannot read " + file;
+		error = tr("new_project.cannot_read", {file});
 		return false;
 	}
 	const std::vector<Watch> read = readList(in);
@@ -1124,7 +1125,7 @@ bool RamWatchViewModel::save(const std::string &file, std::string &error)
 		out << text;
 		if (!out)
 		{
-			error = "cannot write " + file;
+			error = tr("session.could_not_write", {file});
 			return false;
 		}
 	}
@@ -1133,7 +1134,7 @@ bool RamWatchViewModel::save(const std::string &file, std::string &error)
 	if (ec)
 	{
 		std::filesystem::remove(writing, ec);
-		error = "cannot write " + file;
+		error = tr("session.could_not_write", {file});
 		return false;
 	}
 	path.set(file);
@@ -1204,7 +1205,7 @@ void RamWatchViewModel::showFileState(bool saved)
 	const std::u8string u = std::filesystem::u8path(path.get()).filename().u8string();
 	const std::string name(reinterpret_cast<const char *>(u.data()), u.size());
 	if (name.empty()) status.set("");
-	else status.set(saved ? name + " saved." : name + (changed.get() ? " *" : ""));
+	else status.set(saved ? tr("ram_watch.saved", {name}) : name + (changed.get() ? " *" : ""));
 }
 
 void RamWatchViewModel::addRecent(const std::string &file)
@@ -1228,7 +1229,7 @@ bool RamWatchViewModel::poke(const Watch &w, const std::string &text, std::strin
 	uint32_t v = 0;
 	if (!watch::parse(text, w.display, v))
 	{
-		error = "\"" + text + "\" is not a " + watch::displayName(w.display) + " value";
+		error = tr("ram_watch.not_a_value", {text, watch::displayName(w.display)});
 		return false;
 	}
 	std::string bytes(static_cast<size_t>(w.size), '\0');
@@ -1279,7 +1280,7 @@ Value RamWatchViewModel::Rows::cell(int64_t row, int32_t column) const
 	/* Chimera's Type column: the size, the display's letter, the byte order's (2hB: a word, hex, big end first) */
 	if (column == 10)
 	{
-		if (!w.property.empty()) return std::string("Game property");
+		if (!w.property.empty()) return tr("ram_watch.game_property");
 		static const char *const letters[] = {"u", "s", "h", "b", "F", "F2", "F6", "f"};
 		const int d = static_cast<int>(w.display);
 		return std::to_string(w.size) + (d >= 0 && d < 8 ? letters[d] : "") + (w.bigEndian ? "B" : "L");
@@ -1294,7 +1295,7 @@ Value RamWatchViewModel::Rows::cell(int64_t row, int32_t column) const
 		case 5: return w.domain;
 		case 6: return w.note;
 		case 7: return int64_t{0};
-		case 8: return std::string("Game property");
+		case 8: return tr("ram_watch.game_property");
 		case 9: return w.onScreen;
 		default: return std::string();
 		}

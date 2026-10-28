@@ -60,6 +60,7 @@
 
 #include "chimera/engine.h"
 #include "chimera/vm/branches_vm.hpp"
+#include "chimera/vm/tr.hpp"
 #include "chimera/vm/project_details_vm.hpp"
 #include "chimera/vm/config_store.hpp"
 #include "chimera/vm/crash_notes.hpp"
@@ -349,9 +350,9 @@ int main(int argc, char **argv)
 		const QString env = qEnvironmentVariable("CHIMERA_DATA_HOME");
 		const QString data = !env.trimmed().isEmpty() ? QFileInfo(env).absoluteFilePath()
 													   : QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-		const std::string why = moduleFolder.isEmpty() ? std::string("chimera_crash.dll is not beside the program")
-			: vm::crash::arm(moduleFolder.toStdString(), (data + QStringLiteral("/Crashes")).toStdString());
-		if (!why.empty()) std::fprintf(stderr, "[crash] crash notes are off: %s\n", why.c_str());
+		if (moduleFolder.isEmpty()) std::fprintf(stderr, "[crash] crash notes are off: chimera_crash.dll is not beside the program\n");
+		else if (const std::string why = vm::crash::arm(moduleFolder.toStdString(), (data + QStringLiteral("/Crashes")).toStdString()); !why.empty())
+			std::fprintf(stderr, "[crash] crash notes are off: %s\n", why.c_str());
 	}
 #endif
 	/* Fusion, with Chimera's check boxes and radio buttons and scroll bars always seen (style/, built in) */
@@ -455,6 +456,8 @@ int main(int argc, char **argv)
 	 * to leave USB devices alone (SDL2 reads it only from the environment) */
 	if (!vm::ConfigStore::switchIn(configPath.toStdString(), "customize.gameCubeAdapter", false))
 		qputenv("SDL_HIDAPI_DISABLE_LIBUSB", "1");
+	/* the language first: the view models' first words are in it (docs/translations.md) */
+	qt::useLanguage(app, qt::startLanguage(QString::fromStdString(vm::ConfigStore::textIn(configPath.toStdString(), "customize.language", ""))));
 	QtDispatcher dispatcher(&app);
 	vm::InputLog inputs;
 	vm::SessionViewModel session(dispatcher, inputs);
@@ -528,8 +531,8 @@ int main(int argc, char **argv)
 				else path = base + QStringLiteral(".png");
 			}
 			for (int n = 0; QFileInfo::exists(path); n++) path = base + QStringLiteral(" (%1).png").arg(n);
-			if (picture.save(path, "PNG")) session.status.set(QFileInfo(path).fileName().toStdString() + " saved.");
-			else session.status.set("No screenshot: " + path.toStdString() + " could not be written");
+			if (picture.save(path, "PNG")) session.status.set(vm::tr("screenshot.saved", {QFileInfo(path).fileName().toStdString()}));
+			else session.status.set(vm::tr("screenshot.not_written", {path.toStdString()}));
 		};
 		auto rawPicture = [&session](QImage &out) {
 			vm::Picture::Frame f;
@@ -545,14 +548,14 @@ int main(int argc, char **argv)
 				save = [&session, path](const QImage &picture) {
 					QDir().mkpath(QFileInfo(path).absolutePath());
 					const bool jpeg = QFileInfo(path).suffix().compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0;
-					if (picture.save(path, jpeg ? "JPG" : "PNG")) session.status.set(QFileInfo(path).fileName().toStdString() + " saved.");
-					else session.status.set("No screenshot: " + path.toStdString() + " could not be written");
+					if (picture.save(path, jpeg ? "JPG" : "PNG")) session.status.set(vm::tr("screenshot.saved", {QFileInfo(path).fileName().toStdString()}));
+					else session.status.set(vm::tr("screenshot.not_written", {path.toStdString()}));
 				};
 			QImage picture;
 			if (session.captureOsd.get() && grabShown(true, save)) return;
 			if (!rawPicture(picture))
 			{
-				session.status.set("No screenshot: there is no picture yet");
+				session.status.set(vm::tr("screenshot.no_picture"));
 				return;
 			}
 			save(picture);
@@ -566,7 +569,7 @@ int main(int argc, char **argv)
 		rawToClipboard = [&session, grabShown, rawPicture] {
 			auto done = [&session](const QImage &image) {
 				QGuiApplication::clipboard()->setImage(image);
-				session.status.set("Screenshot (raw) saved to clipboard.");
+				session.status.set(vm::tr("screenshot.raw_to_clipboard"));
 			};
 			QImage picture;
 			if (session.captureOsd.get() && grabShown(true, done)) return;
@@ -579,7 +582,7 @@ int main(int argc, char **argv)
 			if (!down) return;
 			grabShown(session.captureOsd.get(), [&session](const QImage &image) {
 				QGuiApplication::clipboard()->setImage(image);
-				session.status.set("Screenshot (client) saved to clipboard.");
+				session.status.set(vm::tr("screenshot.client_to_clipboard"));
 			});
 		});
 		window("General", "Toggle Menu", "");
@@ -610,7 +613,7 @@ int main(int argc, char **argv)
 		auto background = [&session, flip](bool down) {
 			if (!down) return;
 			flip(session.acceptBackgroundInput);
-			session.status.set(std::string("Background Input ") + (session.acceptBackgroundInput.get() ? "enabled" : "disabled"));
+			session.status.set(vm::tr(session.acceptBackgroundInput.get() ? "main.background_input_on" : "main.background_input_off"));
 		};
 		hotkeys.add("General", "Toggle BG Input", "", background);
 		window("General", "Open Project", "Ctrl+O");
@@ -646,7 +649,7 @@ int main(int argc, char **argv)
 		hotkeys.add("General", "Toggle Skip Lag Frame", "", [&session, flip](bool down) {
 			if (!down) return;
 			flip(session.skipLagFrames);
-			session.status.set(std::string("Skip Lag Frames toggled ") + (session.skipLagFrames.get() ? "On" : "Off"));
+			session.status.set(vm::tr(session.skipLagFrames.get() ? "main.skip_lag_frames_on" : "main.skip_lag_frames_off"));
 		});
 		hotkeys.add("General", "Toggle Key Priority", "", [&hotkeys, run](bool down) {
 			if (down) run(hotkeys, "cycleKeyPriority");
@@ -687,7 +690,7 @@ int main(int argc, char **argv)
 		hotkeys.add("Movie", "Toggle read-only", "Q", [&session, run](bool down) {
 			if (!down) return;
 			if (session.hasProject.get()) run(session, "toggleRecording");
-			else session.status.set("No movie active");
+			else session.status.set(vm::tr("main.no_movie_active"));
 		});
 		window("Movie", "Play Movie", "");
 		window("Movie", "Record Movie", "");
@@ -830,7 +833,7 @@ int main(int argc, char **argv)
 		const QString runner = runnerProgram();
 		if (runner.isEmpty())
 		{
-			done({}, "chimera-run is not in the program's bin folder");
+			done({}, vm::tr("chimera_run.missing"));
 			return;
 		}
 		auto *proc = new QProcess(&app);
@@ -845,7 +848,7 @@ int main(int argc, char **argv)
 		if (!folder->isValid() || !vm::saveAskingProject(package, vm::askFilesOf(package, game, files, slots), settings, project, dirs, why))
 		{
 			proc->deleteLater();
-			done({}, why.empty() ? std::string("no folder for the question's project") : why);
+			done({}, why.empty() ? vm::tr("chimera_run.no_folder") : why);
 			return;
 		}
 		QStringList args{QStringLiteral("--project"), QString::fromStdString(project), QString::fromStdString(package), QStringLiteral("--suggest")};
@@ -858,15 +861,15 @@ int main(int argc, char **argv)
 				if (l.trimmed().startsWith('{')) answer = l.trimmed();
 			const QByteArray err = proc->readAllStandardError().trimmed();
 			proc->deleteLater();
-			if (proc->property("tooLong").toBool()) done({}, "the core took too long to answer");
+			if (proc->property("tooLong").toBool()) done({}, vm::tr("chimera_run.too_long"));
 			else if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
-			else done({}, err.isEmpty() ? std::string("the core gave none") : err.split('\n').last().toStdString());
+			else done({}, err.isEmpty() ? vm::tr("chimera_run.no_answer") : err.split('\n').last().toStdString());
 		});
 		/* a runner that cannot start never finishes: say so, as the import does */
 		QObject::connect(proc, &QProcess::errorOccurred, proc, [proc, done](QProcess::ProcessError e) {
 			if (e != QProcess::FailedToStart) return;
 			proc->deleteLater();
-			done({}, "chimera-run could not be started");
+			done({}, vm::tr("chimera_run.not_started"));
 		});
 		proc->start(runner, args);
 	};
@@ -885,7 +888,7 @@ int main(int argc, char **argv)
 		const QString runner = runnerProgram();
 		if (runner.isEmpty())
 		{
-			done({}, "chimera-run is not in the program's bin folder");
+			done({}, vm::tr("chimera_run.missing"));
 			return;
 		}
 		/* asked of a project (owner, 2026-10-26): the files with a slot in it,
@@ -897,7 +900,7 @@ int main(int argc, char **argv)
 		if (!folder->isValid() || !vm::saveAskingProject(package, files, settings, project, dirs, why))
 		{
 			delete folder;
-			done({}, why.empty() ? std::string("no folder for the import's project") : why);
+			done({}, why.empty() ? vm::tr("chimera_run.no_folder") : why);
 			return;
 		}
 		QStringList args{QStringLiteral("--project"), QString::fromStdString(project), QString::fromStdString(package),
@@ -917,14 +920,14 @@ int main(int argc, char **argv)
 				if (l.trimmed().startsWith('{')) answer = l.trimmed();
 			const QByteArray err = proc->readAllStandardError().trimmed();
 			proc->deleteLater();
-			if (proc->property("tooLong").toBool()) done({}, "the core took too long to answer");
+			if (proc->property("tooLong").toBool()) done({}, vm::tr("chimera_run.too_long"));
 			else if (code == 0 && !answer.isEmpty()) done(answer.toStdString(), {});
-			else done({}, err.isEmpty() ? std::string("chimera-run gave no answer") : err.split('\n').last().toStdString());
+			else done({}, err.isEmpty() ? vm::tr("chimera_run.no_answer") : err.split('\n').last().toStdString());
 		});
 		QObject::connect(proc, &QProcess::errorOccurred, proc, [proc, done](QProcess::ProcessError e) {
 			if (e != QProcess::FailedToStart) return;
 			proc->deleteLater();
-			done({}, "chimera-run could not be started");
+			done({}, vm::tr("chimera_run.not_started"));
 		});
 		proc->start(runner, args);
 	};

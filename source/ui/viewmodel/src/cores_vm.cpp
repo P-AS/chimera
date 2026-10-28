@@ -1,4 +1,5 @@
 #include "chimera/vm/cores_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -32,7 +33,7 @@ CoresViewModel::CoresViewModel(Dispatcher &dispatcher) : ViewModel("cores", disp
 	command("refreshList", "looks at the cores folder again and says how many cores are there (Refresh List)", {},
 		[this](const Args &, std::string &) -> Value {
 			scan();
-			managerStatus.set(std::to_string(managed_.size()) + " core(s) in " + coresFolder.get() + ".");
+			managerStatus.set(tr("cores.count_in", static_cast<int64_t>(managed_.size()), {coresFolder.get()}));
 			return {};
 		});
 	command("versionsOf", "a core's versions here, newest first, as [{\"label\", \"path\"}]", {"core"},
@@ -63,10 +64,10 @@ CoresViewModel::CoresViewModel(Dispatcher &dispatcher) : ViewModel("cores", disp
 			{
 				std::lock_guard<std::mutex> lock(m_);
 				for (const Core &c : cores_)
-					if (c.path == path && c.dated) built = "Built " + europeanTime(c.date);
+					if (c.path == path && c.dated) built = tr("cores.built", {europeanTime(c.date)});
 			}
 			const std::string terms = licenceSummary(path);
-			return path + (built.empty() ? "" : "\n" + built) + "\n\n" + (terms.empty() ? std::string("This package states no licence.") : terms);
+			return path + (built.empty() ? "" : "\n" + built) + "\n\n" + (terms.empty() ? tr("cores.no_licence") : terms);
 		});
 	command("removeVersion", "deletes one version's package (only a file in the cores folder itself)", {"path"},
 		[this](const Args &a, std::string &error) -> Value {
@@ -74,14 +75,14 @@ CoresViewModel::CoresViewModel(Dispatcher &dispatcher) : ViewModel("cores", disp
 			if (!arg(a, 0, path, error)) return {};
 			const std::string name = std::filesystem::path(path).filename().string();
 			const std::string why = removePackage(path);
-			if (why == "not in the cores folder")
-				managerStatus.set(name + " is not in the cores folder, so it is not the manager's to delete. It is at " + path + ".");
+			if (why == tr("cores.not_in_folder"))
+				managerStatus.set(tr("cores.not_ours", {name, path}));
 			else if (!why.empty())
-				managerStatus.set("Could not remove it: " + why);
+				managerStatus.set(tr("cores.not_removed", {why}));
 			else
 			{
 				scan();
-				managerStatus.set("Removed " + name + ".");
+				managerStatus.set(tr("cores.removed", {name}));
 			}
 			return {};
 		});
@@ -106,11 +107,10 @@ CoresViewModel::CoresViewModel(Dispatcher &dispatcher) : ViewModel("cores", disp
 				const std::string why = removePackage(p);
 				const std::string name = std::filesystem::path(p).filename().string();
 				if (why.empty()) removed++;
-				else kept += (kept.empty() ? "" : ", ") + (why == "not in the cores folder" ? name : name + " (" + why + ")");
+				else kept += (kept.empty() ? "" : ", ") + (why == tr("cores.not_in_folder") ? name : name + " (" + why + ")");
 			}
 			scan();
-			managerStatus.set(kept.empty() ? "Removed " + std::to_string(removed) + " package(s)."
-										   : "Removed " + std::to_string(removed) + "; left alone " + kept + " (not in the cores folder).");
+			managerStatus.set(kept.empty() ? tr("cores.removed_packages", removed) : tr("cores.removed_packages_left", removed, {kept}));
 			return int64_t{removed};
 		});
 	command("supportedSystems", "the systems the cores here run, by name, as Chimera's Show Systems lists them: "
@@ -242,7 +242,7 @@ void CoresViewModel::scan()
 			ce_package *p = ce_package_open(path.c_str(), &perr);
 			if (p == nullptr) continue;
 			uint64_t len = 0;
-			const uint8_t *d = ce_package_entry(p, "waterbox.config", &len);
+			const uint8_t *d = ce_package_entry_texts(p, "waterbox.config", &len);
 			json::Json cfg;
 			std::string error;
 			if (d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, error))
@@ -309,7 +309,7 @@ void CoresViewModel::scan()
 		const bool dirty = version.size() >= 6 && version.compare(version.size() - 6, 6, "-dirty") == 0;
 		if (dirty) version.erase(version.size() - 6);
 		if (version.size() > 8) version.erase(8);
-		if (!version.empty() && (local || dirty)) version += " local";
+		if (!version.empty() && (local || dirty)) version = tr("cores.local_version", {version});
 		std::string dated = c.dated ? europeanTime(c.date) : std::string();
 		if (!dated.empty() && !version.empty()) dated += "  (" + version + ")";
 		else if (dated.empty()) dated = version;
@@ -321,7 +321,7 @@ void CoresViewModel::scan()
 			if (ce_package *p = ce_package_open(c.path.c_str(), &perr))
 			{
 				const char *sha = ce_package_sha1(p);
-				if (sha != nullptr && std::string(sha).size() >= 8) build = "  [package " + std::string(sha).substr(0, 8) + "]";
+				if (sha != nullptr && std::string(sha).size() >= 8) build = "  " + tr("cores.package_sha", {std::string(sha).substr(0, 8)});
 				ce_package_free(p);
 			}
 		}
@@ -348,7 +348,7 @@ void CoresViewModel::scan()
 		managed_ = std::move(managed);
 	}
 	count.set(n);
-	status.set(folder.empty() ? "No cores folder" : std::to_string(n) + (n == 1 ? " package in " : " packages in ") + folder);
+	status.set(folder.empty() ? tr("cores.no_folder") : tr("cores.packages_in", n, {folder}));
 	rows_.reset.emit();
 	sayManager();
 }
@@ -389,7 +389,7 @@ std::string CoresViewModel::packageFor(const std::string &coreName, const std::s
 			if (match) return c.path;
 		}
 	/* else the most recently installed (they are sorted newest first) */
-	if (!pinnedSha1.empty()) note = "the package the project was made with is not here; the newest " + coreName + " is";
+	if (!pinnedSha1.empty()) note = tr("cores.newest_instead", {coreName});
 	return builds.front().path;
 }
 
@@ -398,10 +398,9 @@ std::string CoresViewModel::abiRefusal(const json::Json &cfg)
 	const json::Json *declared = cfg.find("abi");
 	const int64_t abi = declared != nullptr && declared->kind == json::Json::Kind::Number ? static_cast<int64_t>(declared->number()) : 1;
 	if (abi > kGuestAbi)
-		return "built for guest ABI " + std::to_string(abi) + "; this Chimera understands up to " + std::to_string(kGuestAbi) + ". Update Chimera.";
+		return tr("cores.abi_too_new", {std::to_string(abi), std::to_string(kGuestAbi)});
 	if (abi < kOldestGuestAbi)
-		return "built for guest ABI " + std::to_string(abi) + "; this Chimera no longer runs anything below " + std::to_string(kOldestGuestAbi)
-			+ ". Update the core.";
+		return tr("cores.abi_too_old", {std::to_string(abi), std::to_string(kOldestGuestAbi)});
 	return {};
 }
 
@@ -469,7 +468,7 @@ std::string CoresViewModel::licenceSummary(const std::string &packagePath)
 	std::vector<std::string> lines;
 	std::string commercial = text("commercialUse");
 	for (char &ch : commercial) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-	if (commercial == "prohibited") lines.push_back("Non-commercial: this core may not be used or redistributed commercially.");
+	if (commercial == "prohibited") lines.push_back(tr("cores.non_commercial"));
 	if (!text("effectiveTerms").empty()) lines.push_back(text("effectiveTerms"));
 	if (!text("note").empty()) lines.push_back(text("note"));
 	std::string named;
@@ -501,9 +500,8 @@ void CoresViewModel::sayManager()
 		std::lock_guard<std::mutex> lock(m_);
 		n = managed_.size();
 	}
-	managerHeader.set("Cores folder: " + coresFolder.get() + "   (" + std::to_string(n) + " core(s))\n"
-		"Chimera downloads nothing. Get a core's package (.chimeraCore) from its project, or build it, and put it in this folder.");
-	if (n == 0) managerStatus.set("There are no cores in this folder yet.");
+	managerHeader.set(tr("cores.manager_header", static_cast<int64_t>(n), {coresFolder.get()}));
+	if (n == 0) managerStatus.set(tr("cores.none_yet"));
 	managerRows_.reset.emit();
 }
 
@@ -513,10 +511,10 @@ std::string CoresViewModel::removePackage(const std::string &path)
 	std::error_code ec;
 	const fs::path file(path), folder(coresFolder.get());
 	/* only a file in the cores folder itself: a package elsewhere is somebody's arrangement */
-	if (fs::weakly_canonical(file.parent_path(), ec) != fs::weakly_canonical(folder, ec)) return "not in the cores folder";
+	if (fs::weakly_canonical(file.parent_path(), ec) != fs::weakly_canonical(folder, ec)) return tr("cores.not_in_folder");
 	/* a folder, which is how somebody keeps their own build, is not emptied here */
-	if (fs::is_directory(file, ec)) return "a folder; delete it yourself";
-	if (!fs::remove(file, ec) || ec) return ec ? ec.message() : std::string("it would not go");
+	if (fs::is_directory(file, ec)) return tr("cores.a_folder");
+	if (!fs::remove(file, ec) || ec) return ec ? ec.message() : tr("cores.would_not_go");
 	return {};
 }
 
@@ -551,7 +549,7 @@ std::vector<CoresViewModel::MediaRecipe> CoresViewModel::mediaRecipes() const
 		uint64_t len = 0;
 		json::Json cfg;
 		std::string err;
-		if (const uint8_t *d = ce_package_entry(pk, "waterbox.config", &len);
+		if (const uint8_t *d = ce_package_entry_texts(pk, "waterbox.config", &len);
 			d != nullptr && json::parse(std::string_view(reinterpret_cast<const char *>(d), static_cast<size_t>(len)), cfg, err))
 			if (const json::Json *media = cfg.find("media"); media != nullptr && media->kind == json::Json::Kind::Array)
 				for (const json::Json &r : media->items)
@@ -613,7 +611,7 @@ Value CoresViewModel::ManagerRows::cell(int64_t row, int32_t column) const
 	switch (column)
 	{
 	case 0: return m.name;
-	case 1: return std::string(m.gameCore ? "Game" : "Emulator");
+	case 1: return tr(m.gameCore ? "cores.kind_game" : "cores.kind_emulator");
 	case 2:
 	{
 		/* the systems of all its versions, each by the first word a package gives it */
@@ -634,7 +632,7 @@ Value CoresViewModel::ManagerRows::cell(int64_t row, int32_t column) const
 		/* the newest version, and how many more there are */
 		size_t dated = 0;
 		for (size_t i : m.versions) dated += vm_.cores_[i].datedText.empty() ? 0 : 1;
-		if (dated == 0) return m.versions.size() == 1 ? std::string() : std::to_string(m.versions.size()) + " versions";
+		if (dated == 0) return m.versions.size() == 1 ? std::string() : tr("cores.versions", static_cast<int64_t>(m.versions.size()));
 		std::string first;
 		for (size_t i : m.versions)
 			if (!vm_.cores_[i].datedText.empty())
@@ -642,7 +640,7 @@ Value CoresViewModel::ManagerRows::cell(int64_t row, int32_t column) const
 				first = vm_.cores_[i].datedText;
 				break;
 			}
-		return dated == 1 ? first : first + "  (+" + std::to_string(dated - 1) + " more)";
+		return dated == 1 ? first : first + "  " + tr("cores.more", {std::to_string(dated - 1)});
 	}
 	case 4:
 	{
@@ -650,9 +648,9 @@ Value CoresViewModel::ManagerRows::cell(int64_t row, int32_t column) const
 		if (newest.size <= 0) return std::string();
 		char buf[32];
 		const double mb = static_cast<double>(newest.size) / 1024.0 / 1024.0;
-		if (mb < 1.0) std::snprintf(buf, sizeof buf, "%.0f KB", static_cast<double>(newest.size) / 1024.0);
-		else std::snprintf(buf, sizeof buf, "%.1f MB", mb);
-		return std::string(buf);
+		if (mb < 1.0) std::snprintf(buf, sizeof buf, "%.0f", static_cast<double>(newest.size) / 1024.0);
+		else std::snprintf(buf, sizeof buf, "%.1f", mb);
+		return tr(mb < 1.0 ? "units.kb" : "units.mb", {buf});
 	}
 	case 5: return m.gameCore;
 	default: return {};

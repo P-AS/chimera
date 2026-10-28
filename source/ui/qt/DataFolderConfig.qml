@@ -37,7 +37,7 @@ ApplicationWindow {
             win.said = win.vm.error !== "" ? win.vm.error : win.vm.status
             return
         }
-        if (what.choice === "holds data") useAsIs.open()
+        if (what.choice === "holdsData") useAsIs.open()
         else moveAsk.open()
     }
     function recorded(move) {

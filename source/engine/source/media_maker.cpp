@@ -1,5 +1,6 @@
 /* See media_maker.hpp. */
 #include "thread_string.hpp"
+#include "language.hpp"
 #include "media_maker.hpp"
 
 #include "chimera/engine.h"
@@ -110,7 +111,7 @@ bool copyInto(OutFile &out, const MediaEntry &e, uint32_t &crcOut, uint64_t &byt
 	std::FILE *in = chimera::openFile(e.abs.c_str(), "rb");
 	if (!in)
 	{
-		error = "cannot read " + e.rel;
+		error = chimera::lang::tr("new_project.cannot_read", {e.rel});
 		return false;
 	}
 	std::vector<uint8_t> buf(static_cast<size_t>(kCopyChunk));
@@ -125,14 +126,14 @@ bool copyInto(OutFile &out, const MediaEntry &e, uint32_t &crcOut, uint64_t &byt
 		{
 			/* The file shrank under us: the image would not match its own
 			 * header, so it is not written at all. */
-			error = e.rel + " ended early - it changed while it was being packed";
+			error = chimera::lang::tr("media.changed_while_packed", {e.rel});
 			ok = false;
 			break;
 		}
 		crc = static_cast<uint32_t>(mz_crc32(crc, buf.data(), got));
 		if (!out.write(buf.data(), got))
 		{
-			error = "cannot write the output (is the disk full?)";
+			error = chimera::lang::tr("media.disk_full");
 			ok = false;
 			break;
 		}
@@ -162,7 +163,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 	out.hashing = false; /* this writer patches CRCs behind itself; see OutFile */
 	if (!out.open(outPath))
 	{
-		error = "cannot create " + outPath;
+		error = chimera::lang::tr("engine.could_not_create", {outPath});
 		return false;
 	}
 
@@ -220,7 +221,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 		}
 		if (!out.write(hdr))
 		{
-			error = "cannot write the output (is the disk full?)";
+			error = chimera::lang::tr("media.disk_full");
 			ok = false;
 			break;
 		}
@@ -234,7 +235,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 		const uint64_t resume = out.at;
 		if (!chimera::seekFile(out.f, static_cast<int64_t>(crcFieldAt), SEEK_SET))
 		{
-			error = "cannot seek in the output";
+			error = chimera::lang::tr("media.cannot_seek");
 			ok = false;
 			break;
 		}
@@ -242,7 +243,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 			static_cast<uint8_t>(crc >> 16), static_cast<uint8_t>(crc >> 24) };
 		if (std::fwrite(crcLE, 1, 4, out.f) != 4 || !chimera::seekFile(out.f, 0, SEEK_END))
 		{
-			error = "cannot write the output";
+			error = chimera::lang::tr("media.cannot_write");
 			ok = false;
 			break;
 		}
@@ -297,7 +298,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 		}
 		if (!out.write(cd))
 		{
-			error = "cannot write the output (is the disk full?)";
+			error = chimera::lang::tr("media.disk_full");
 			ok = false;
 		}
 
@@ -334,7 +335,7 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 			put16(end, 0);
 			if (!out.write(end))
 			{
-				error = "cannot write the output (is the disk full?)";
+				error = chimera::lang::tr("media.disk_full");
 				ok = false;
 			}
 		}
@@ -343,14 +344,14 @@ bool mediaWriteZipStored(const std::vector<MediaEntry> &files, const std::string
 	if (!ok) return false;   /* the temporary file goes with `out`; the image is as it was */
 	if (!out.commit())
 	{
-		error = "cannot write the output (is the disk full?)";
+		error = chimera::lang::tr("media.disk_full");
 		return false;
 	}
 
 	uint64_t len = 0;
 	if (!sha1HexOfFile(outPath.c_str(), &len, sha1Out))
 	{
-		error = "packed, but the output could not be hashed";
+		error = chimera::lang::tr("media.not_hashed");
 		return false;
 	}
 	return true;
@@ -363,7 +364,7 @@ bool mediaCollect(const std::string &folder, std::vector<MediaEntry> &out, std::
 	const fs::path root = fs::u8path(folder);
 	if (!fs::is_directory(root, ec))
 	{
-		error = folder + " is not a folder";
+		error = chimera::lang::tr("new_project.not_a_folder", {folder});
 		return false;
 	}
 
@@ -371,7 +372,7 @@ bool mediaCollect(const std::string &folder, std::vector<MediaEntry> &out, std::
 	fs::recursive_directory_iterator it(root, fs::directory_options::none, ec);
 	if (ec)
 	{
-		error = "cannot read " + folder + ": " + ec.message();
+		error = chimera::lang::tr("media.cannot_read_why", {folder, ec.message()});
 		return false;
 	}
 	/* A file that cannot be looked at stops the image, named: it was left out
@@ -399,7 +400,7 @@ bool mediaCollect(const std::string &folder, std::vector<MediaEntry> &out, std::
 		std::string rel = relPath.u8string();
 		if (relPath.empty() || *relPath.begin() == ".." || rel == ".")
 		{
-			if (failed.empty()) failed = entry.path().u8string() + ": its name inside the folder could not be worked out";
+			if (failed.empty()) failed = chimera::lang::tr("media.no_relative_name", {entry.path().u8string()});
 			return;
 		}
 		for (char &c : rel)
@@ -422,20 +423,20 @@ bool mediaCollect(const std::string &folder, std::vector<MediaEntry> &out, std::
 		consider(*it);
 		if (!failed.empty())
 		{
-			error = "cannot read " + failed;
+			error = chimera::lang::tr("new_project.cannot_read", {failed});
 			return false;
 		}
 		it.increment(ec);
 		if (ec)
 		{
-			error = "cannot read every folder in " + folder + ": " + ec.message();
+			error = chimera::lang::tr("media.cannot_read_all", {folder, ec.message()});
 			return false;
 		}
 	}
 
 	if (out.empty())
 	{
-		error = folder + " holds no files";
+		error = chimera::lang::tr("media.no_files", {folder});
 		return false;
 	}
 
@@ -454,7 +455,7 @@ bool mediaParseRecipe(const char *json, MediaRecipe &out, std::string &error)
 	if (!cJSON_IsObject(root))
 	{
 		cJSON_Delete(root);
-		error = "the media recipe is not a JSON object";
+		error = chimera::lang::tr("media.recipe_not_object");
 		return false;
 	}
 	bool ok = true;
@@ -465,7 +466,7 @@ bool mediaParseRecipe(const char *json, MediaRecipe &out, std::string &error)
 	else if (name == "fat12") out.format = MediaFormat::Fat12;
 	else
 	{
-		error = "the media recipe names no format this packer writes (iso9660, zip, fat12): \"" + name + "\"";
+		error = chimera::lang::tr("media.recipe_format", {name});
 		ok = false;
 	}
 	const cJSON *when = cJSON_GetObjectItemCaseSensitive(root, "when");
@@ -474,7 +475,7 @@ bool mediaParseRecipe(const char *json, MediaRecipe &out, std::string &error)
 		const cJSON *rootFile = cJSON_GetObjectItemCaseSensitive(when, "rootFile");
 		if (!cJSON_IsObject(when) || !cJSON_IsString(rootFile) || rootFile->valuestring[0] == '\0')
 		{
-			error = "the media recipe's \"when\" wants a \"rootFile\"";
+			error = chimera::lang::tr("media.recipe_when");
 			ok = false;
 		}
 		else out.rootFile = rootFile->valuestring;
@@ -484,7 +485,7 @@ bool mediaParseRecipe(const char *json, MediaRecipe &out, std::string &error)
 	{
 		if (!cJSON_IsArray(area) || out.format != MediaFormat::Iso9660)
 		{
-			error = "a system area is an array, and only an ISO 9660 image has one";
+			error = chimera::lang::tr("media.system_area");
 			ok = false;
 		}
 		const cJSON *item = nullptr;
@@ -500,7 +501,7 @@ bool mediaParseRecipe(const char *json, MediaRecipe &out, std::string &error)
 			if (!cJSON_IsNumber(at) || at->valuedouble < 0 || at->valuedouble > 16 * 2048 - 4
 				|| value == nullptr || (be != nullptr && le != nullptr))
 			{
-				error = "a system area entry wants \"at\" (0..32764) and one of \"u32be\", \"u32le\"";
+				error = chimera::lang::tr("media.system_area_entry");
 				ok = false;
 				break;
 			}
@@ -520,7 +521,7 @@ bool mediaParseRecipe(const char *json, MediaRecipe &out, std::string &error)
 			}
 			else
 			{
-				error = "a system area value is a number, \"lastSector\" or \"sectors\"";
+				error = chimera::lang::tr("media.system_area_value");
 				ok = false;
 				break;
 			}
@@ -565,7 +566,7 @@ bool mediaMake(const std::string &folder, const std::string &outPath, MediaForma
 		case MediaFormat::Fat12:
 			return mediaWriteFat12(files, outPath, progress, sha1Out, error);
 	}
-	error = "unknown format";
+	error = chimera::lang::tr("media.unknown_format");
 	return false;
 }
 
@@ -613,7 +614,7 @@ CE_API int32_t ce_media_make(const char *folder, const char *out_path, int32_t f
 	g_lastError->clear();
 	if (folder == nullptr || out_path == nullptr)
 	{
-		*g_lastError = "no folder or no output file";
+		*g_lastError = chimera::lang::tr("media.no_folder_or_output");
 		return 0;
 	}
 	chimera::MediaFormat fmt;
@@ -623,7 +624,7 @@ CE_API int32_t ce_media_make(const char *folder, const char *out_path, int32_t f
 		case CE_MEDIA_ISO9660: fmt = chimera::MediaFormat::Iso9660; break;
 		case CE_MEDIA_FAT12: fmt = chimera::MediaFormat::Fat12; break;
 		default:
-			*g_lastError = "unknown format";
+			*g_lastError = chimera::lang::tr("media.unknown_format");
 			return 0;
 	}
 	return runMediaMake(folder, out_path, fmt, nullptr, progress, user);
@@ -636,7 +637,7 @@ CE_API int32_t ce_media_recipe_applies(const char *recipe_json, const char *fold
 	std::string err;
 	if (folder == nullptr || !chimera::mediaParseRecipe(recipe_json, recipe, err))
 	{
-		*g_lastError = folder == nullptr ? "no folder" : err;
+		*g_lastError = folder == nullptr ? chimera::lang::tr("media.no_folder") : err;
 		return -1;
 	}
 	return chimera::mediaRecipeApplies(recipe, folder) ? 1 : 0;
@@ -668,7 +669,7 @@ CE_API int32_t ce_media_make_with(const char *folder, const char *out_path, cons
 	g_lastError->clear();
 	if (folder == nullptr || out_path == nullptr)
 	{
-		*g_lastError = "no folder or no output file";
+		*g_lastError = chimera::lang::tr("media.no_folder_or_output");
 		return 0;
 	}
 	chimera::MediaRecipe recipe;

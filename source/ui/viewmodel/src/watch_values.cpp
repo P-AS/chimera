@@ -1,4 +1,5 @@
 #include "chimera/vm/watch_values.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <cerrno>
 #include <charconv>
@@ -283,20 +284,20 @@ std::string thousands(int64_t n)
 	return n < 0 ? "-" + out : out;
 }
 
-const char *displayName(Display display)
+std::string displayName(Display display)
 {
 	switch (display)
 	{
-	case Display::Unsigned: return "Unsigned";
-	case Display::Signed: return "Signed";
-	case Display::Hex: return "Hex";
-	case Display::Binary: return "Binary";
-	case Display::Fixed12_4: return "Fixed Point 12.4";
-	case Display::Fixed20_12: return "Fixed Point 20.12";
-	case Display::Fixed16_16: return "Fixed Point 16.16";
-	case Display::Float: return "Float";
+	case Display::Unsigned: return tr("watch.unsigned");
+	case Display::Signed: return tr("watch.signed");
+	case Display::Hex: return tr("watch.hex");
+	case Display::Binary: return tr("watch.binary");
+	case Display::Fixed12_4: return tr("watch.fixed_12_4");
+	case Display::Fixed20_12: return tr("watch.fixed_20_12");
+	case Display::Fixed16_16: return tr("watch.fixed_16_16");
+	case Display::Float: return tr("watch.float");
 	}
-	return "";
+	return {};
 }
 
 } // namespace chimera::vm::watch

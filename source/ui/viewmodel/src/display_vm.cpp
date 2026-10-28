@@ -1,4 +1,5 @@
 #include "chimera/vm/display_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include "chimera/vm/json.hpp"
 
@@ -151,7 +152,7 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 			if (!arg(a, 0, which, error) || !arg(a, 1, l, error) || !arg(a, 2, t, error) || !arg(a, 3, r, error) || !arg(a, 4, b, error)) return {};
 			if (which != "game" && which != "client")
 			{
-				error = "the padding is the game's or the client's";
+				error = tr("display.padding_values");
 				return {};
 			}
 			const bool game = which == "game";

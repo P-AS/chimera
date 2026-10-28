@@ -1,4 +1,5 @@
 #include "chimera/vm/forms_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 
@@ -62,7 +63,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			f.width = optional(a, 0, 284);
 			f.height = optional(a, 1, 261);
 			f.text = optionalText(a, 2);
-			if (f.text.empty()) f.text = "Lua Dialog";
+			if (f.text.empty()) f.text = tr("forms.default_title");
 			return add(f, error);
 		});
 	/* a control on a form: at its place and size, Chimera's own when none is given */
@@ -252,7 +253,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			if (p == "Enabled") return std::string(item->enabled ? "True" : "False");
 			if (p == "Checked") return std::string(item->checked ? "True" : "False");
 			if (p == "SelectedIndex") return std::to_string(item->selected);
-			error = "no property " + p + " here";
+			error = tr("forms.no_property", {p});
 			return {};
 		});
 	command("setProperty", "a property set from text: Text, Left, Top, Width, Height, Visible, Enabled, Checked, SelectedIndex",
@@ -286,7 +287,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			}
 			else
 			{
-				error = "no property " + p + " here";
+				error = tr("forms.no_property", {p});
 				return {};
 			}
 			changed(*item);
@@ -300,7 +301,7 @@ FormsViewModel::FormsViewModel(Dispatcher &dispatcher) : ViewModel("forms", disp
 			Item *item = find(h);
 			if (item == nullptr || item->kind != "picturebox")
 			{
-				error = "no picture box " + std::to_string(h);
+				error = tr("forms.no_picture_box", {std::to_string(h)});
 				return {};
 			}
 			item->saveTo = path;
@@ -444,7 +445,7 @@ std::vector<std::string> FormsViewModel::nameFilters(const std::string &filter)
 		}
 		out.push_back(words + " (" + (kinds.empty() ? std::string("*") : kinds) + ")");
 	}
-	if (out.empty()) out.push_back("All Files (*)");
+	if (out.empty()) out.push_back(tr("forms.all_files"));
 	return out;
 }
 

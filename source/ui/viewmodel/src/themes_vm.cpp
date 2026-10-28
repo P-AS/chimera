@@ -1,4 +1,5 @@
 #include "chimera/vm/themes_vm.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -39,7 +40,7 @@ ThemesViewModel::ThemesViewModel(Dispatcher &dispatcher) : ViewModel("themes", d
 		const bool known = std::any_of(themes_.begin(), themes_.end(), [&](const Theme &t) { return t.name == name; });
 		if (!known)
 		{
-			error = "no theme called " + name;
+			error = tr("themes.no_theme", {name});
 			return {};
 		}
 		current.set(name);
@@ -70,7 +71,7 @@ ThemesViewModel::ThemesViewModel(Dispatcher &dispatcher) : ViewModel("themes", d
 					o.members.emplace_back("dark", Json::boolean_(themes_[i].dark));
 					return json::write(o);
 				}
-			error = "no theme called " + name;
+			error = tr("themes.no_theme", {name});
 			return {};
 		});
 	command("colorsOf", "a theme's colours, by name, as {\"Role\": \"#RRGGBB\"}, for a preview of one that is not on", {"name"},
@@ -79,7 +80,7 @@ ThemesViewModel::ThemesViewModel(Dispatcher &dispatcher) : ViewModel("themes", d
 			if (!arg(a, 0, name, error)) return {};
 			for (const Theme &t : themes_)
 				if (t.name == name) return json::write(t.colors);
-			error = "no theme called " + name;
+			error = tr("themes.no_theme", {name});
 			return {};
 		});
 	command("writeCopy", "a theme written into the themes folder as a file to edit (Write a Copy to Edit): named \"<name> copy\" "
@@ -91,7 +92,7 @@ ThemesViewModel::ThemesViewModel(Dispatcher &dispatcher) : ViewModel("themes", d
 			const auto src = std::find_if(themes_.begin(), themes_.end(), [&](const Theme &t) { return t.name == name; });
 			if (src == themes_.end())
 			{
-				error = "no theme called " + name;
+				error = tr("themes.no_theme", {name});
 				return {};
 			}
 			Json colours = src->colors;
@@ -106,7 +107,7 @@ ThemesViewModel::ThemesViewModel(Dispatcher &dispatcher) : ViewModel("themes", d
 			fs::path path;
 			for (int n = 1;; n++)
 			{
-				copy = n == 1 ? src->name + " copy" : src->name + " copy " + std::to_string(n);
+				copy = n == 1 ? tr("themes.copy_name", {src->name}) : tr("themes.copy_name_n", {src->name, std::to_string(n)});
 				std::string file;
 				for (char c : copy) file += std::string("<>:\"/\\|?*").find(c) != std::string::npos || static_cast<unsigned char>(c) < 32 ? '_' : c;
 				path = dir / (file + ".chimeraTheme.json");
@@ -127,12 +128,12 @@ ThemesViewModel::ThemesViewModel(Dispatcher &dispatcher) : ViewModel("themes", d
 			out << text;
 			if (!out)
 			{
-				error = "Could not write " + path.string();
+				error = tr("session.could_not_write", {path.string()});
 				return {};
 			}
 			out.close();
 			refresh();
-			status.set("Written to " + path.string() + ". Change the colours and the name inside it, then Reload Themes.");
+			status.set(tr("themes.written", {path.string()}));
 			return copy;
 		});
 	folderWatch_ = folder.changed.connect([this] { refresh(); });
@@ -146,12 +147,12 @@ bool ThemesViewModel::read(const std::string &text, const std::string &origin, T
 	const Json *name = j.find("name"), *colours = j.find("colors");
 	if (name == nullptr || name->kind != Json::Kind::String || name->text.empty())
 	{
-		error = "it has no name";
+		error = tr("themes.no_name");
 		return false;
 	}
 	if (colours == nullptr || colours->kind != Json::Kind::Object)
 	{
-		error = "it has no colours";
+		error = tr("themes.no_colours");
 		return false;
 	}
 	Theme t;
@@ -220,8 +221,8 @@ void ThemesViewModel::refresh()
 		names.set(json::write(list));
 	}
 	/* Chimera's line: how many, where from, and what would not load */
-	std::string text = std::to_string(themes_.size()) + " themes; files are read from " + folder.get();
-	if (!failed.empty()) text += ". " + std::to_string(failed.size()) + (failed.size() == 1 ? " file" : " files") + " would not load - why?";
+	std::string text = tr("themes.count", static_cast<int64_t>(themes_.size()), {folder.get()});
+	if (!failed.empty()) text += ". " + tr("themes.failed", static_cast<int64_t>(failed.size()));
 	std::string lines;
 	for (const std::string &f : failed) lines += (lines.empty() ? "" : "\n\n") + f;
 	failures.set(lines);

@@ -38,7 +38,7 @@ ApplicationWindow {
     function bindingName(hotkey) { return tas.hotkeyKeys[hotkey] || "" }
     // a hotkey's binding as text: "Hotkey: Shift+Q", or what the mouse does too
     function bindingText(hotkey, mouse) {
-        const raw = tas.bindingName(hotkey).split(",").map(k => k.trim()).filter(k => k !== "").join(" or ")
+        const raw = tas.bindingName(hotkey).split(",").map(k => k.trim()).filter(k => k !== "").join(qsTrId("common.or"))
         if (raw === "") return qsTrId("tastudio.hotkey").arg(mouse || qsTrId("tastudio.unbound"))
         return mouse ? qsTrId("tastudio.hotkey_or").arg(mouse).arg(raw) : qsTrId("tastudio.hotkey").arg(raw)
     }

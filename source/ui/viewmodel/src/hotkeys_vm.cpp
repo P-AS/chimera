@@ -3,9 +3,11 @@
 #include "chimera/vm/bindings.hpp"
 
 #include "chimera/vm/json.hpp"
+#include "chimera/vm/tr.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 
 namespace chimera::vm {
 
@@ -70,6 +72,38 @@ std::string lower(std::string t)
 	return t;
 }
 
+/* a name as the end of a key: its words in lower case, joined by _ */
+std::string slug(const std::string &name)
+{
+	std::string out;
+	for (char c : name)
+	{
+		if (std::isalnum(static_cast<unsigned char>(c))) out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+		else if (!out.empty() && out.back() != '_') out += '_';
+	}
+	while (!out.empty() && out.back() == '_') out.pop_back();
+	return out;
+}
+
+/* What a person reads for an action, in the language tables
+ * (docs/translations.md): its key, and the number a branch slot's carries.
+ * The name itself is the action's identifier, kept in the settings. */
+std::pair<std::string, std::string> labelOf(const std::string &name)
+{
+	for (const char *slot : {"Save Branch ", "Load Branch "})
+	{
+		const size_t n = std::strlen(slot);
+		if (name.compare(0, n, slot) == 0) return {name[0] == 'S' ? "hotkey.save_branch" : "hotkey.load_branch", name.substr(n)};
+	}
+	return {"hotkey." + slug(name), ""};
+}
+
+std::string label(const std::string &name)
+{
+	const auto [key, number] = labelOf(name);
+	return number.empty() ? tr(key.c_str()) : tr(key.c_str(), {number});
+}
+
 /* Chimera's hotkeys in its order (HotkeyInfo): its tabs, and the order inside each */
 const std::vector<std::string> &chimeraOrder()
 {
@@ -117,16 +151,15 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			if (p > 2) p = 0;
 			if (noMixedPriority.get() && p == 0) p = 1;
 			keyPriority.set(p);
-			status.set(p == 0 ? "Key priority set to Both Hotkey and Input"
-				: p == 1 ? "Key priority set to Input over Hotkey"
-						 : "Key priority set to Hotkey over Input");
+			status.set(tr(p == 0 ? "hotkeys.priority_both" : p == 1 ? "hotkeys.priority_input" : "hotkeys.priority_hotkey"));
 			return p;
 		});
 	expose("autoTab", "Auto Tab: a key pressed replaces a box's keys and the next box takes the next; off, it is one more", autoTab, true);
 	expose("groups", "the tabs, in Chimera's order (a JSON array)", groups);
+	expose("groupKeys", "the language keys of the tabs' names, in the same order (a JSON array)", groupKeys);
 	expose("editing", "the window's copy is open: changes wait for save", editing);
 	rows("hotkeys", "one row an action, in Chimera's order: group, name, its keys (the copy's while editing), Chimera's keys "
-		"for it, changed", rows_);
+		"for it, changed, and the language key of what a person reads for it with the number that fills it", rows_);
 	command("edit", "opens the window's copy of the keys, from the keys as they are", {}, [this](const Args &, std::string &) -> Value {
 		begin();
 		return {};
@@ -163,7 +196,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			if (!action(a, act, error) || !arg(a, 1, name, error)) return {};
 			if (!special(name))
 			{
-				error = name + " is not a special binding";
+				error = tr("hotkeys.not_special", {name});
 				return {};
 			}
 			begin();
@@ -212,7 +245,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 		editing.set(false);
 		saved.set(json::write(all));
 		apply();
-		status.set("Saved the hotkeys");
+		status.set(tr("hotkeys.saved"));
 		return {};
 	});
 	command("replaceKeys", "Chimera's rewrite of the keys bound when Merge L+R modifier keys changes: the key names the "
@@ -238,12 +271,13 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 		keysChanged();
 		return {};
 	});
-	command("find", "the action a Find names (its name, any case), as {\"action\", \"group\"}; \"\" for none", {"text"},
-		[this](const Args &a, std::string &error) -> Value {
+	command("find", "the action a Find names (what a person reads for it, or its name; any case), as {\"action\", \"group\"}; "
+		"\"\" for none", {"text"}, [this](const Args &a, std::string &error) -> Value {
 			std::string text;
 			if (!arg(a, 0, text, error)) return {};
+			const std::string wanted = lower(trimmed(text));
 			for (size_t i : order_)
-				if (lower(actions_[i].name) == lower(trimmed(text)))
+				if (lower(label(actions_[i].name)) == wanted || lower(actions_[i].name) == wanted)
 				{
 					Json found;
 					found.kind = Json::Kind::Object;
@@ -253,7 +287,8 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 				}
 			return std::string();
 		});
-	command("suggest", "the actions whose names start with what a Find has so far (any case), in Chimera's order, as a JSON array",
+	command("suggest", "the actions whose names, as a person reads them, start with what a Find has so far (any case), in "
+		"Chimera's order, as a JSON array of {\"action\", \"label\"}",
 		{"text"}, [this](const Args &a, std::string &error) -> Value {
 			std::string text;
 			if (!arg(a, 0, text, error)) return {};
@@ -262,7 +297,14 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 			const std::string start = lower(text);
 			if (!start.empty())
 				for (size_t i : order_)
-					if (lower(actions_[i].name).rfind(start, 0) == 0) list.items.push_back(Json::string(actions_[i].name));
+					if (const std::string shown = label(actions_[i].name); lower(shown).rfind(start, 0) == 0)
+					{
+						Json one;
+						one.kind = Json::Kind::Object;
+						one.members.emplace_back("action", Json::string(actions_[i].name));
+						one.members.emplace_back("label", Json::string(shown));
+						list.items.push_back(std::move(one));
+					}
 			return json::write(list);
 		});
 	command("run", "runs an action as its key would, pressed and let go", {"action"}, [this](const Args &a, std::string &error) -> Value {
@@ -271,7 +313,7 @@ HotkeysViewModel::HotkeysViewModel(Dispatcher &dispatcher) : ViewModel("hotkeys"
 		Action *act = find(name);
 		if (act == nullptr)
 		{
-			error = "no action " + name;
+			error = tr("hotkeys.no_action", {name});
 			return {};
 		}
 		act->handler(true);
@@ -293,16 +335,18 @@ void HotkeysViewModel::add(std::string group, std::string name, std::string defa
 	order_.clear();
 	for (size_t i = 0; i < actions_.size(); i++) order_.push_back(i);
 	std::sort(order_.begin(), order_.end(), [&](size_t x, size_t y) { return rank(x) < rank(y); });
-	Json tabs;
-	tabs.kind = Json::Kind::Array;
+	Json tabs, tabKeys;
+	tabs.kind = tabKeys.kind = Json::Kind::Array;
 	std::vector<std::string> seen;
 	for (size_t i : order_)
 		if (std::find(seen.begin(), seen.end(), actions_[i].group) == seen.end())
 		{
 			seen.push_back(actions_[i].group);
 			tabs.items.push_back(Json::string(actions_[i].group));
+			tabKeys.items.push_back(Json::string("hotkey_group." + slug(actions_[i].group)));
 		}
 	groups.set(json::write(tabs));
+	groupKeys.set(json::write(tabKeys));
 	apply();
 	/* one action more: the rows are made again */
 	rows_.reset.emit();
@@ -313,7 +357,7 @@ bool HotkeysViewModel::action(const Args &a, Action *&out, std::string &error)
 	std::string name;
 	if (!arg(a, 0, name, error)) return false;
 	out = find(name);
-	if (out == nullptr) error = "no action " + name;
+	if (out == nullptr) error = tr("hotkeys.no_action", {name});
 	return out != nullptr;
 }
 
@@ -408,8 +452,8 @@ HotkeysViewModel::Route HotkeysViewModel::route(int64_t priority, bool hotkeyBou
 
 std::string HotkeysViewModel::Rows::columnName(int32_t column) const
 {
-	static const char *const names[] = {"group", "action", "keys", "chimeraKeys", "changed"};
-	return column >= 0 && column < 5 ? names[column] : "";
+	static const char *const names[] = {"group", "action", "keys", "chimeraKeys", "changed", "labelKey", "labelNumber"};
+	return column >= 0 && column < 7 ? names[column] : "";
 }
 
 Value HotkeysViewModel::Rows::cell(int64_t row, int32_t column) const
@@ -424,6 +468,8 @@ Value HotkeysViewModel::Rows::cell(int64_t row, int32_t column) const
 	case 2: return keys;
 	case 3: return a.defaults;
 	case 4: return keys != a.defaults;
+	case 5: return labelOf(a.name).first;
+	case 6: return labelOf(a.name).second;
 	default: return {};
 	}
 }

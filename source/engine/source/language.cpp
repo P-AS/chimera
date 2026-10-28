@@ -11,8 +11,10 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 
 namespace chimera::lang {
 
@@ -61,17 +63,18 @@ bool readTable(const char *json, size_t length, Table &out, std::string &error)
 		error = "not a JSON object";
 		return false;
 	}
+	/* a core package's tables say no name: the language is Chimera's */
 	const cJSON *name = cJSON_GetObjectItemCaseSensitive(root, "name");
 	const cJSON *english = cJSON_GetObjectItemCaseSensitive(root, "english");
 	const cJSON *texts = cJSON_GetObjectItemCaseSensitive(root, "texts");
-	if (!cJSON_IsString(name) || !cJSON_IsString(english) || !cJSON_IsObject(texts))
+	if (!cJSON_IsObject(texts))
 	{
 		cJSON_Delete(root);
-		error = "it needs \"name\", \"english\" and \"texts\"";
+		error = "it needs \"texts\"";
 		return false;
 	}
-	out.name = name->valuestring;
-	out.english = english->valuestring;
+	out.name = cJSON_IsString(name) ? name->valuestring : "";
+	out.english = cJSON_IsString(english) ? english->valuestring : "";
 	out.entries.clear();
 	for (const cJSON *t = texts->child; t != nullptr; t = t->next)
 	{
@@ -148,7 +151,7 @@ const std::vector<Language> &languages()
 			const std::string code = entry.path().stem().u8string();
 			Table table;
 			std::string error;
-			if (readTableFile(code, table, error)) out.push_back({code, table.name, table.english});
+			if (readTableFile(code, table, error) && !table.name.empty()) out.push_back({code, table.name, table.english});
 		}
 		std::sort(out.begin(), out.end(), [](const Language &a, const Language &b) {
 			if ((a.code == "en") != (b.code == "en")) return a.code == "en";
@@ -230,6 +233,181 @@ std::string pluralForm(const std::string &code, int64_t count)
 	return n == 1 ? "one" : "other";
 }
 
+namespace {
+
+/* the %1..%9 and %n a text uses */
+std::multiset<std::string> placeholders(const std::string &t)
+{
+	std::multiset<std::string> out;
+	for (size_t i = 0; i + 1 < t.size(); i++)
+	{
+		if (t[i] == '%' && ((t[i + 1] >= '1' && t[i + 1] <= '9') || t[i + 1] == 'n')) out.insert(t.substr(i, 2));
+	}
+	return out;
+}
+
+/* a menu's shortcut letter: an & before a letter, not "&&" */
+bool hasShortcut(const std::string &t)
+{
+	for (size_t i = 0; i + 1 < t.size(); i++)
+	{
+		if (t[i] != '&') continue;
+		if (t[i + 1] == '&') { i++; continue; }
+		if (t[i + 1] != ' ') return true;
+	}
+	return false;
+}
+
+/* the spaces and line breaks at either end */
+std::string edges(const std::string &t)
+{
+	size_t a = 0, b = t.size();
+	while (a < b && (t[a] == ' ' || t[a] == '\n')) a++;
+	while (b > a && (t[b - 1] == ' ' || t[b - 1] == '\n')) b--;
+	return t.substr(0, a) + "|" + t.substr(b);
+}
+
+} // namespace
+
+std::vector<std::string> compare(const Table &english, const Table &other, const std::string &code)
+{
+	std::vector<std::string> out;
+	auto problem = [&](const std::string &key, const std::string &what) { out.push_back(code + ": " + key + ": " + what); };
+	const std::vector<std::string> forms = pluralForms(code);
+	if (forms.empty()) problem("(the table)", "no plural rule for this language (language.cpp)");
+	for (const auto &e : english.entries)
+	{
+		const Table::Entry *t = other.find(e.first.c_str());
+		if (t == nullptr) { problem(e.first, "missing"); continue; }
+		const std::string en = e.second.forms.empty() ? e.second.text : e.second.forms.back().second;
+		if (e.second.forms.empty() != t->forms.empty()) { problem(e.first, "plural forms where English has none, or none where it has"); continue; }
+		std::vector<std::string> texts;
+		if (t->forms.empty()) texts.push_back(t->text);
+		else
+		{
+			std::vector<std::string> named;
+			for (const auto &f : t->forms) { named.push_back(f.first); texts.push_back(f.second); }
+			if (named != forms) problem(e.first, "plural forms are not the language's (" + std::to_string(forms.size()) + ", in CLDR's order)");
+		}
+		for (const std::string &x : texts)
+		{
+			std::multiset<std::string> want = placeholders(en), have = placeholders(x);
+			/* one form of several may write its number as a word ("one") */
+			if (!e.second.forms.empty()) { want.erase("%n"); have.erase("%n"); }
+			if (want != have) problem(e.first, "placeholders differ from English: " + x);
+			if (hasShortcut(en) && !hasShortcut(x)) problem(e.first, "no shortcut letter (&): " + x);
+			if (edges(en) != edges(x)) problem(e.first, "spaces or line breaks at the ends differ from English");
+		}
+	}
+	for (const auto &e : other.entries)
+	{
+		if (english.find(e.first.c_str()) == nullptr) problem(e.first, "not an English key");
+	}
+	return out;
+}
+
+namespace {
+
+/* The fields of a package's declarations a person reads: each holds a key of
+ * its language tables. A path is the field's place, [] any element of a list
+ * and * any member of an object; control names, option values, machine
+ * labels and the like are names, not texts, and stay as they are. */
+const char *const kTextFields[] = {
+	"waterbox.config:settings[].display", "waterbox.config:settings[].description", "waterbox.config:settings[].optionLabels.*",
+	"waterbox.config:firmware[].display", "waterbox.config:firmware[].description", "waterbox.config:firmware[].label",
+	"waterbox.config:presets[].label", "waterbox.config:presets[].description",
+	"waterbox.config:movieImport.menu", "waterbox.config:movieImport.movie.label", "waterbox.config:movieImport.files[].label",
+	"waterbox.config:movieImport.options[].display", "waterbox.config:movieImport.options[].description",
+	"file_slots.json:slots[].title", "file_slots.json:slots[].help", "file_slots.json:slots[].nameHelp",
+};
+
+/* the strings at a path ("settings[].display") under a node */
+void stringsAt(const cJSON *node, const std::string &path, std::vector<std::string> &out)
+{
+	if (path.empty())
+	{
+		if (cJSON_IsString(node)) out.push_back(node->valuestring);
+		return;
+	}
+	const size_t cut = path.find_first_of(".[");
+	const std::string head = path.substr(0, cut);
+	std::string rest = cut == std::string::npos ? std::string() : path.substr(cut);
+	if (head == "*")
+	{
+		if (!rest.empty() && rest[0] == '.') rest.erase(0, 1);
+		for (const cJSON *c = node->child; c != nullptr; c = c->next) stringsAt(c, rest, out);
+		return;
+	}
+	const cJSON *child = cJSON_GetObjectItemCaseSensitive(node, head.c_str());
+	if (child == nullptr) return;
+	if (rest.rfind("[]", 0) == 0)
+	{
+		rest.erase(0, 2);
+		if (!rest.empty() && rest[0] == '.') rest.erase(0, 1);
+		if (!cJSON_IsArray(child)) return;
+		for (const cJSON *c = child->child; c != nullptr; c = c->next) stringsAt(c, rest, out);
+		return;
+	}
+	if (!rest.empty() && rest[0] == '.') rest.erase(0, 1);
+	stringsAt(child, rest, out);
+}
+
+} // namespace
+
+std::vector<std::string> packageProblems(const std::function<bool(const std::string &, std::string &)> &entry)
+{
+	std::vector<std::string> lines;
+	auto table = [&](const std::string &code, Table &out) {
+		std::string bytes, error;
+		const std::string name = "languages/" + code + ".json";
+		if (!entry(name, bytes)) { lines.push_back(name + " is not in the package"); return false; }
+		if (!readTable(bytes.data(), bytes.size(), out, error)) { lines.push_back(name + ": " + error); return false; }
+		return true;
+	};
+	Table english;
+	if (!table("en", english)) return lines;
+	for (const Language &l : languages())
+	{
+		Table other;
+		if (l.code == "en" || !table(l.code, other)) continue;
+		for (const std::string &line : compare(english, other, l.code)) lines.push_back(line);
+	}
+	/* the declarations' texts: keys, never words written in */
+	for (const char *field : kTextFields)
+	{
+		const std::string spec(field);
+		const size_t colon = spec.find(':');
+		const std::string file = spec.substr(0, colon);
+		std::string bytes;
+		if (!entry(file, bytes)) continue;
+		cJSON *root = cJSON_ParseWithLength(bytes.data(), bytes.size());
+		if (root == nullptr) continue;
+		std::vector<std::string> values;
+		stringsAt(root, spec.substr(colon + 1), values);
+		cJSON_Delete(root);
+		for (const std::string &v : values)
+		{
+			const std::string key = v.substr(0, v.find('\x1f'));
+			const Table::Entry *e = english.find(key.c_str());
+			if (e == nullptr)
+			{
+				lines.push_back(file + ": " + spec.substr(colon + 1) + " is not a key of languages/en.json: \"" + key + "\"");
+				continue;
+			}
+			/* each %1..%9 its text uses is given */
+			const size_t given = static_cast<size_t>(std::count(v.begin(), v.end(), '\x1f'));
+			for (const std::string &p : placeholders(e->forms.empty() ? e->text : e->forms.back().second))
+				if (p[1] != 'n' && static_cast<size_t>(p[1] - '0') > given)
+				{
+					lines.push_back(file + ": " + spec.substr(colon + 1) + " \"" + key + "\" uses " + p + " and is given "
+						+ std::to_string(given) + " argument(s)");
+					break;
+				}
+		}
+	}
+	return lines;
+}
+
 std::string fill(const std::string &pattern, const std::vector<std::string> &args)
 {
 	std::string out;
@@ -252,32 +430,235 @@ std::string fill(const std::string &pattern, const std::vector<std::string> &arg
 	return out;
 }
 
-std::string text(const char *key, std::initializer_list<std::string> args)
+std::string tr(const char *key, std::initializer_list<std::string> args)
 {
-	return text(key, -1, args);
+	return tr(key, -1, args);
 }
 
-std::string text(const char *key, int64_t count, std::initializer_list<std::string> args)
+namespace {
+
+/* an entry's text for a count, its %n replaced; below zero: the "other" form */
+std::string patternFor(const Table::Entry &entry, const std::string &code, int64_t count)
+{
+	if (entry.forms.empty()) return entry.text;
+	const std::string form = count < 0 ? std::string("other") : pluralForm(code, count);
+	std::string pattern = entry.forms.back().second;
+	for (const auto &f : entry.forms)
+	{
+		if (f.first == form) { pattern = f.second; break; }
+	}
+	const std::string number = std::to_string(count < 0 ? 0 : count);
+	for (size_t at = pattern.find("%n"); at != std::string::npos; at = pattern.find("%n", at + number.size()))
+	{
+		pattern.replace(at, 2, number);
+	}
+	return pattern;
+}
+
+} // namespace
+
+std::string tr(const char *key, int64_t count, std::initializer_list<std::string> args)
 {
 	const std::shared_ptr<const Table> table = tableInUse();
 	const Table::Entry *entry = table->find(key);
 	if (entry == nullptr) return key;
-	std::string pattern = entry->text;
-	if (!entry->forms.empty())
+	return fill(patternFor(*entry, inUse(), count), std::vector<std::string>(args));
+}
+
+void PackageTexts::read(const std::function<bool(const std::string &, std::string &)> &entry)
+{
+	std::lock_guard<std::mutex> hold(lock_);
+	raw_.clear();
+	code_.clear();
+	englishRead_ = false;
+	for (const Language &l : languages())
 	{
-		const std::string form = count < 0 ? std::string("other") : pluralForm(inUse(), count);
-		pattern = entry->forms.back().second;
-		for (const auto &f : entry->forms)
+		std::string bytes;
+		if (entry("languages/" + l.code + ".json", bytes)) raw_[l.code] = std::move(bytes);
+	}
+}
+
+std::string PackageTexts::text(const std::string &message) const
+{
+	std::lock_guard<std::mutex> hold(lock_);
+	return textLocked(message);
+}
+
+std::string PackageTexts::textLocked(const std::string &message) const
+{
+	if (raw_.empty()) return message;
+	auto readOne = [this](const std::string &code, Table &out) {
+		out = Table();
+		auto it = raw_.find(code);
+		std::string error;
+		if (it != raw_.end()) readTable(it->second.data(), it->second.size(), out, error);
+	};
+	const std::string code = inUse();
+	if (code_ != code)
+	{
+		code_ = code;
+		readOne(code, table_);
+	}
+	if (!englishRead_)
+	{
+		englishRead_ = true;
+		readOne("en", english_);
+	}
+	std::vector<std::string> parts;
+	for (size_t at = 0;;)
+	{
+		const size_t cut = message.find('\x1f', at);
+		parts.push_back(message.substr(at, cut == std::string::npos ? std::string::npos : cut - at));
+		if (cut == std::string::npos) break;
+		at = cut + 1;
+	}
+	const std::string key = parts.front();
+	parts.erase(parts.begin());
+	const Table::Entry *entry = table_.find(key.c_str());
+	std::string language = code;
+	if (entry == nullptr)
+	{
+		entry = english_.find(key.c_str());
+		language = "en";
+	}
+	if (entry == nullptr) return message;
+	/* an argument that is a key itself (an emulator's own reason, put inside
+	 * the core's sentence) is its text */
+	for (std::string &part : parts)
+	{
+		if (const Table::Entry *inner = table_.find(part.c_str())) part = patternFor(*inner, code, -1);
+		else if (const Table::Entry *english = english_.find(part.c_str())) part = patternFor(*english, "en", -1);
+	}
+	int64_t count = -1;
+	if (!entry->forms.empty() && !parts.empty())
+	{
+		char *end = nullptr;
+		const long long n = std::strtoll(parts.front().c_str(), &end, 10);
+		if (end != parts.front().c_str() && *end == '\0' && n >= 0) count = n;
+	}
+	return fill(patternFor(*entry, language, count), parts);
+}
+
+namespace {
+
+void appendUtf8(std::string &out, uint32_t c)
+{
+	if (c < 0x80) out += char(c);
+	else if (c < 0x800) { out += char(0xC0 | (c >> 6)); out += char(0x80 | (c & 0x3F)); }
+	else if (c < 0x10000) { out += char(0xE0 | (c >> 12)); out += char(0x80 | ((c >> 6) & 0x3F)); out += char(0x80 | (c & 0x3F)); }
+	else
+	{
+		out += char(0xF0 | (c >> 18));
+		out += char(0x80 | ((c >> 12) & 0x3F));
+		out += char(0x80 | ((c >> 6) & 0x3F));
+		out += char(0x80 | (c & 0x3F));
+	}
+}
+
+/* a JSON string's contents, its escapes undone; false for a broken one */
+bool unescape(const std::string &json, size_t from, size_t to, std::string &out)
+{
+	out.clear();
+	auto hex4 = [&json](size_t at, uint32_t &v) {
+		v = 0;
+		for (size_t k = at; k < at + 4; k++)
 		{
-			if (f.first == form) { pattern = f.second; break; }
+			const char c = json[k];
+			v <<= 4;
+			if (c >= '0' && c <= '9') v |= uint32_t(c - '0');
+			else if (c >= 'a' && c <= 'f') v |= uint32_t(c - 'a' + 10);
+			else if (c >= 'A' && c <= 'F') v |= uint32_t(c - 'A' + 10);
+			else return false;
 		}
-		const std::string number = std::to_string(count < 0 ? 0 : count);
-		for (size_t at = pattern.find("%n"); at != std::string::npos; at = pattern.find("%n", at + number.size()))
+		return true;
+	};
+	for (size_t i = from; i < to; i++)
+	{
+		if (json[i] != '\\') { out += json[i]; continue; }
+		if (++i >= to) return false;
+		switch (json[i])
 		{
-			pattern.replace(at, 2, number);
+		case 'b': out += '\b'; break;
+		case 'f': out += '\f'; break;
+		case 'n': out += '\n'; break;
+		case 'r': out += '\r'; break;
+		case 't': out += '\t'; break;
+		case 'u':
+		{
+			uint32_t c = 0;
+			if (i + 4 >= to) return false;
+			if (!hex4(i + 1, c)) return false;
+			i += 4;
+			if (c >= 0xD800 && c < 0xDC00 && i + 6 < to && json[i + 1] == '\\' && json[i + 2] == 'u')
+			{
+				uint32_t low = 0;
+				if (hex4(i + 3, low) && low >= 0xDC00 && low < 0xE000)
+				{
+					c = 0x10000 + ((c - 0xD800) << 10) + (low - 0xDC00);
+					i += 6;
+				}
+			}
+			appendUtf8(out, c);
+			break;
+		}
+		default: out += json[i]; break;   /* \" \\ \/ */
 		}
 	}
-	return fill(pattern, std::vector<std::string>(args));
+	return true;
+}
+
+std::string escape(const std::string &text)
+{
+	std::string out = "\"";
+	for (const char c : text)
+	{
+		if (c == '"' || c == '\\') { out += '\\'; out += c; }
+		else if (c == '\n') out += "\\n";
+		else if (c == '\t') out += "\\t";
+		else if (static_cast<unsigned char>(c) < 0x20)
+		{
+			char code[8];
+			std::snprintf(code, sizeof code, "\\u%04x", static_cast<unsigned>(static_cast<unsigned char>(c)));
+			out += code;
+		}
+		else out += c;
+	}
+	return out + "\"";
+}
+
+} // namespace
+
+std::string PackageTexts::texts(const std::string &json) const
+{
+	size_t first = json.find_first_not_of(" \t\r\n");
+	if (first == std::string::npos || (json[first] != '{' && json[first] != '['))
+		return text(json);
+	std::lock_guard<std::mutex> hold(lock_);
+	if (raw_.empty()) return json;
+	std::string out;
+	out.reserve(json.size());
+	size_t copied = 0;
+	std::string value;
+	for (size_t i = first; i < json.size(); i++)
+	{
+		if (json[i] != '"') continue;
+		const size_t open = i;
+		for (i++; i < json.size() && json[i] != '"'; i++)
+			if (json[i] == '\\') i++;
+		if (i >= json.size()) break;   /* not JSON after all: what was done stands */
+		const size_t close = i;
+		/* a member's name is not a text */
+		size_t next = json.find_first_not_of(" \t\r\n", close + 1);
+		if (next != std::string::npos && json[next] == ':') continue;
+		if (!unescape(json, open + 1, close, value)) continue;
+		const std::string now = textLocked(value);
+		if (now == value) continue;
+		out.append(json, copied, open - copied);
+		out += escape(now);
+		copied = close + 1;
+	}
+	out.append(json, copied, std::string::npos);
+	return out;
 }
 
 } // namespace chimera::lang
@@ -329,7 +710,7 @@ const char *ce_text(const char *key, int64_t count, const char *const *args, int
 	std::vector<std::string> filled;
 	for (int32_t i = 0; args != nullptr && i < arg_count && i < 9; i++) filled.emplace_back(args[i] != nullptr ? args[i] : "");
 	/* the pattern first, then the arguments: an argument's own %1 is not filled */
-	const std::string pattern = chimera::lang::text(key, count);
+	const std::string pattern = chimera::lang::tr(key, count);
 	*g_text = chimera::lang::fill(pattern, filled);
 	return g_text->c_str();
 }
