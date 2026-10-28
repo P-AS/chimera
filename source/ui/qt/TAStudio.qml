@@ -80,8 +80,6 @@ ApplicationWindow {
     WindowOptions { id: windowOptions; window: tas; tool: "tastudio"; vm: tas.toolWindows; mainWindow: tas.mainWindow }
     // "<< Hide": the main window offers it back
     property bool hiddenByPerson: false
-    // where the last wheel seek with the right button held was going
-    property int wheelTarget: -1
     title: !tas.session.hasProject ? qsTr("TAStudio")
          : qsTr("TAStudio - %1%2").arg(tas.session.projectTitle).arg(tas.session.unsaved ? "*" : "")
     width: 720
@@ -453,13 +451,9 @@ ApplicationWindow {
                         onRightDraggedTo: (row) => tas.pianoRoll.run("rightDragTo", [row])
                         onRightDragEnded: tas.pianoRoll.run("rightDragEnd")
                         onMarkerDropped: (from, to) => tas.pianoRoll.run("moveMarker", [from, to])
-                        // Chimera's right button held and the wheel turned: a frame back a notch up, on from
-                        // where a seek still under way is going
-                        onWheelSeekRequested: (notches) => {
-                            const from = tas.wheelTarget >= 0 && tas.session.frame !== tas.wheelTarget ? tas.wheelTarget : tas.session.frame
-                            tas.wheelTarget = Math.max(0, from - notches)
-                            tas.session.run("seek", [tas.wheelTarget])
-                        }
+                        // Chimera's right button held and the wheel turned: a frame back a notch up, from the
+                        // current frame at the first notch of a hold
+                        onWheelSeekRequested: (notches, first) => tas.session.run("wheelSeek", [notches, first])
                         selectFirst: tas.pianoRoll.selectFirst
                         selectLast: tas.pianoRoll.selectLast
                         // Chimera's numbers for the branches, its green arrow, and the row a seek is going to

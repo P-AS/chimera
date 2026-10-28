@@ -686,7 +686,7 @@ void PianoRollItem::mousePressEvent(QMouseEvent *e)
 		if (rows_ != nullptr && at.y() >= hs)
 		{
 			rightHeld_ = true;
-			rightWheeled_ = false;
+			rightWheeled_ = rightSeeked_ = false;
 			rightRow_ = rowOnLine(static_cast<qint64>((at.y() - hs) / rowHeight_));
 			/* on a frame number: Chimera's drags with Shift, Ctrl or Alt */
 			rightDragging_ = at.x() >= cursorWidth() && at.x() < frameColumnWidth() && rightRow_ < rowCount();
@@ -823,7 +823,11 @@ void PianoRollItem::wheelEvent(QWheelEvent *e)
 	if (rightHeld_)
 	{
 		rightWheeled_ = true;
-		if (notches != 0) Q_EMIT wheelSeekRequested(notches);
+		if (notches != 0)
+		{
+			Q_EMIT wheelSeekRequested(notches, !rightSeeked_);
+			rightSeeked_ = true;
+		}
 		e->accept();
 		return;
 	}

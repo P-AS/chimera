@@ -6641,6 +6641,37 @@ bool greenzoneChoice(const char *package, const char *rom)
  * however many cells it crosses, frames added at the end count none, a
  * branch loaded over the movie counts one; the count is kept with the
  * project and over a restart. */
+/* TAStudio's right button held and the wheel turned: a frame a notch; the
+ * first notch of a hold from the frame the machine is on, the next on from
+ * where the last was going (reported 2026-10-28: a new hold went on from an
+ * old hold's frame) */
+bool wheelSeek(const char *package, const char *rom)
+{
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
+	std::string error;
+	openGame(session, package, std::string(rom), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	for (int i = 0; i < 30; i++) session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 30; }, 20));
+	/* a hold: three notches up, then one down before the machine is there */
+	CHECK(session.run("wheelSeek", {int64_t{3}, true}, error) == Value(int64_t{27}));
+	CHECK(session.run("wheelSeek", {int64_t{-1}, false}, error) == Value(int64_t{28}));
+	CHECK(d.until([&] { return session.frame.get() == 28; }, 20));
+	/* the machine moved another way, then a new hold */
+	session.run("seek", {int64_t{15}}, error);
+	CHECK(d.until([&] { return session.frame.get() == 15; }, 20));
+	CHECK(session.run("wheelSeek", {int64_t{1}, true}, error) == Value(int64_t{14}));
+	CHECK(d.until([&] { return session.frame.get() == 14; }, 20));
+	CHECK(session.run("wheelSeek", {int64_t{20}, false}, error) == Value(int64_t{0}));
+	CHECK(d.until([&] { return session.frame.get() == 0; }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	return true;
+}
+
 bool rerecordCount(const char *package, const char *rom)
 {
 	namespace fs = std::filesystem;
@@ -9685,6 +9716,7 @@ int main(int argc, char **argv)
 			ranMachine = settings(argv[1], argv[2]) && ranMachine;
 			ranMachine = newProject(argv[1], argv[2]) && ranMachine;
 			ranMachine = rerecordCount(argv[1], argv[2]) && ranMachine;
+			ranMachine = wheelSeek(argv[1], argv[2]) && ranMachine;
 			ranMachine = recordingMode(argv[1], argv[2]) && ranMachine;
 			ranMachine = freezes(argv[1], argv[2]) && ranMachine;
 			ranMachine = scriptsOnMachine(argv[1], argv[2]) && ranMachine;

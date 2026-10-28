@@ -142,8 +142,9 @@ Q_SIGNALS:
 	void markerDropped(qint64 from, qint64 to);
 	/* the pointer on a column's title (its name), or off every title (""), for the window's tooltip */
 	void titleHovered(const QString &name, qreal x, qreal y);
-	/* the wheel turned with the right button held on a row: Chimera's seek by a frame a notch */
-	void wheelSeekRequested(int notches);
+	/* the wheel turned with the right button held on a row: Chimera's seek by a frame a notch;
+	 * first: the first notch since the button went down */
+	void wheelSeekRequested(int notches, bool first);
 	/* the frame numbers pressed or dragged over, or Shift-pressed */
 	void selectionRequested(qint64 first, qint64 last);
 	void selectionChanged();
@@ -179,6 +180,8 @@ private:
 	/* the right button held on a row: its menu opens when it is let go, unless the wheel turned meanwhile */
 	bool rightHeld_ = false;
 	bool rightWheeled_ = false;
+	/* a wheel seek sent since the right button went down */
+	bool rightSeeked_ = false;
 	qint64 rightRow_ = -1;
 	/* a right-button drag on the frame numbers: where it is, and whether keys made it an edit */
 	bool rightDragging_ = false, rightEditing_ = false, rightMoved_ = false;

@@ -1081,6 +1081,8 @@ private:
 	 * the machine's moves; restoredMovesM_ and restoredAtM_ say how many there
 	 * had been, and where it was, when the last edit had moved it. */
 	int64_t restoreFrameM_ = -1, restoredAtM_ = -1;
+	/* where the last wheel seek was going (wheelSeek) */
+	int64_t wheelTarget_ = -1;
 	uint64_t movesM_ = 0, restoredMovesM_ = 0;
 	/* edits the window has made (counted on its thread as each is sent), and
 	 * the count the edit job now running was sent at: more since means a

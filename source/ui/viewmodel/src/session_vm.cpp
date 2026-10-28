@@ -1629,6 +1629,21 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			submit([this, target] { seekAsAskedOnMachine(target); });
 			return {};
 		}, &isOpen);
+	/* the first notch from the frame the machine is on: a target kept from an
+	 * earlier hold took the person back there after they had moved on */
+	command("wheelSeek", "the wheel turned with the right button held over TAStudio, as Chimera's: a frame back a notch "
+		"up, on a notch down. The first notch of a hold goes from the frame the machine is on; the next go on from "
+		"where the last was going, which a seek may not have reached yet. The frame it goes to", {"notches", "first"},
+		[this](const Args &a, std::string &error) -> Value {
+			int64_t notches = 0;
+			bool first = true;
+			if (!arg(a, 0, notches, error) || !arg(a, 1, first, error)) return {};
+			const int64_t from = first || wheelTarget_ < 0 ? frame.get() : wheelTarget_;
+			const int64_t target = std::max<int64_t>(0, from - notches);
+			wheelTarget_ = target;
+			submit([this, target] { seekAsAskedOnMachine(target); });
+			return target;
+		}, &isOpen);
 	command("seekToRestore", "goes back to the frame the first of a run of edits found the machine on (Chimera's green arrow)",
 		{}, [this](const Args &, std::string &) -> Value {
 			submit([this] {
