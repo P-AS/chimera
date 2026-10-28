@@ -495,7 +495,7 @@ static ce_project *openProject(const char *path, const char **error_out)
 	/* the format is strict: a key this build does not know is an error, not
 	 * something to drop silently on the next save */
 	static const char *known[] = { "id", "title", "description", "core", "rerecords", "clockStart",
-		"files", "settings", "firmware", "coreCache", "input", "inputs", "markers", "branches", "subtitles",
+		"files", "settings", "firmware", "coreCache", "inputs", "markers", "branches", "subtitles",
 		"headers", "tastudio" };
 	for (cJSON *item = root->child; item != nullptr; item = item->next)
 	{
@@ -623,14 +623,6 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsObject(j)) return rejectP("\"tastudio\" is not an object");
 		p->tastudio = cJSON_Duplicate(j, 1);
 	}
-	/* "inputs", as this build writes it; "input", the text block, as builds
-	 * before 2026-10-28 wrote it */
-	if ((j = cJSON_GetObjectItemCaseSensitive(root, "input")) != nullptr)
-	{
-		if (cJSON_GetObjectItemCaseSensitive(root, "inputs") != nullptr) return rejectP("the project has both \"input\" and \"inputs\"");
-		if (!cJSON_IsString(j)) return rejectP("\"input\" is not a string");
-		p->log = j->valuestring;
-	}
 	if ((j = cJSON_GetObjectItemCaseSensitive(root, "inputs")) != nullptr)
 	{
 		std::string why;
@@ -678,23 +670,20 @@ static ce_project *openProject(const char *path, const char **error_out)
 		if (!cJSON_IsArray(j)) return rejectP("\"branches\" is not an array");
 		for (cJSON *item = j->child; item != nullptr; item = item->next)
 		{
-			if (const char *k = unknownKey(item, { "name", "frame", "input", "inputs", "time", "markers" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch");
+			if (const char *k = unknownKey(item, { "name", "frame", "inputs", "time", "markers" })) return rejectP(std::string("unknown key \"") + k + "\" in a branch");
 			cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
 			cJSON *frame = cJSON_GetObjectItemCaseSensitive(item, "frame");
-			cJSON *input = cJSON_GetObjectItemCaseSensitive(item, "input");
 			cJSON *inputs = cJSON_GetObjectItemCaseSensitive(item, "inputs");
 			cJSON *time = cJSON_GetObjectItemCaseSensitive(item, "time");
 			cJSON *markers = cJSON_GetObjectItemCaseSensitive(item, "markers");
-			if (!cJSON_IsString(name) || !cJSON_IsNumber(frame) || (input == nullptr) == (inputs == nullptr) ||
-				(input != nullptr && !cJSON_IsString(input)))
+			if (!cJSON_IsString(name) || !cJSON_IsNumber(frame) || inputs == nullptr)
 			{
 				return rejectP("every branch needs string \"name\", number \"frame\" and its \"inputs\"");
 			}
 			Branch b;
 			b.name = name->valuestring;
 			b.frame = static_cast<int64_t>(frame->valuedouble);
-			if (input != nullptr) b.log = input->valuestring;
-			else if (std::string why; !lumpOf(inputs, b.log, why)) return rejectP("a branch's \"inputs\" " + why);
+			if (std::string why; !lumpOf(inputs, b.log, why)) return rejectP("a branch's \"inputs\" " + why);
 			if (time != nullptr)
 			{
 				if (!cJSON_IsString(time)) return rejectP("a branch's \"time\" is not a string");

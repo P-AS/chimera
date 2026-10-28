@@ -573,7 +573,7 @@ int main(int argc, char **argv)
 
 	{ // The input as the file holds it (owner, 2026-10-28): "inputs", its key's
 	  // groups of columns and one entry a line, not the movie's text block as a
-	  // string; the old string still opens; the key comes back byte for byte
+	  // string; the old string is refused; the key comes back byte for byte
 	  // even where a name holds the key's own separators
 		auto text = [](const std::string &path) {
 			std::string out;
@@ -606,16 +606,12 @@ int main(int argc, char **argv)
 		got = ce_project_branch_log_text(p, 0, &len);
 		assert(std::string(got, len) == exotic);
 		ce_project_free(p);
-		// the text block as builds before wrote it
-		writeFile("old-input.chimeraProject", "{\"input\": \"[Input]\\nLogKey:#P1 Up|\\n|U|\\n[/Input]\\n\", "
-			"\"branches\": [{\"name\": \"b\", \"frame\": 0, \"input\": \"|.|\\n\"}]}");
-		p = ce_project_open((g_dir + "/old-input.chimeraProject").c_str(), &err);
-		assert(p != nullptr);
-		const char *old = ce_project_log_text(p, &len);
-		assert(std::string(old, len) == "[Input]\nLogKey:#P1 Up|\n|U|\n[/Input]\n");
-		old = ce_project_branch_log_text(p, 0, &len);
-		assert(std::string(old, len) == "|.|\n");
-		ce_project_free(p);
+		// the text block as builds before 2026-10-28 wrote it is not read: no
+		// old forms are kept (owner, 2026-10-28)
+		writeFile("old-input.chimeraProject", "{\"input\": \"[Input]\\nLogKey:#P1 Up|\\n|U|\\n[/Input]\\n\"}");
+		err = nullptr;
+		assert(ce_project_open((g_dir + "/old-input.chimeraProject").c_str(), &err) == nullptr);
+		assert(err != nullptr && std::strstr(err, "unknown project key \"input\"") != nullptr);
 		// what is not an input is refused, and says where
 		for (const char *bad : { "{\"inputs\": [], \"input\": \"\"}", "{\"inputs\": {\"entries\": [\"LogKey:#A|\"]}}",
 			"{\"inputs\": {\"columns\": [\"A\"]}}", "{\"inputs\": {\"keys\": []}}",

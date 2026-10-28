@@ -4515,17 +4515,16 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	char sha[41];
 	const std::string romBytes = readFile(rom);
 	ce_sha1_hex(reinterpret_cast<const uint8_t *>(romBytes.data()), romBytes.size(), sha);
-	std::string input = "[Input]\nLogKey:#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|\n";
-	for (const auto &e : entries) input += e + "\n";
-	input += "[/Input]\n";
-	std::string escaped;
-	for (char c : input) escaped += c == '\n' ? std::string("\\n") : std::string(1, c);
+	std::string inputsJson = "{\"columns\": [[\"P1 Up\", \"P1 Down\", \"P1 Left\", \"P1 Right\", \"P1 A\", \"P1 B\", \"P1 Select\", \"P1 Start\"]], "
+		"\"entries\": [";
+	for (size_t i = 0; i < entries.size(); i++) inputsJson += (i ? ", \"" : "\"") + entries[i] + "\"";
+	inputsJson += "]}";
 	{
 		std::ofstream out(dir / "p.chimeraProject", std::ios::binary);
 		out << "{\"title\": \"gridWalker.win\", \"core\": {\"name\": \"Synth\", \"version\": \"\", \"sha1\": \"\"}, "
 			<< "\"headers\": {\"MovieVersion\": \"Chimera Project File v1.1\", \"Platform\": \"Synth\"}, "
 			<< "\"files\": [{\"name\": \"gridWalker.testrom\", \"sha1\": \"" << sha << "\", \"slot\": \"rom\"}], "
-			<< "\"input\": \"" << escaped << "\"}";
+			<< "\"inputs\": " << inputsJson << "}";
 	}
 
 	ManualDispatcher d;

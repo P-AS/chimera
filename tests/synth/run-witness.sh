@@ -275,7 +275,7 @@ def write(path, pin="", settings=None, firmware=None):
         "core": {"name": "Synth", "version": "", "sha1": pin},
         "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
         "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-        "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+        "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
     }
     if settings is not None: doc["settings"] = settings
     if firmware is not None: doc["firmware"] = firmware
@@ -330,8 +330,8 @@ def write(path, start=None):
         "title": "clock",
         "core": {"name": "Synth", "version": "", "sha1": ""},
         "files": [{"name": "clock.testrom", "sha1": sha1, "slot": "rom"}],
-        "input": "[Input]\nLogKey:#P1 Up|P1 Down|P1 Left|P1 Right|P1 A|P1 B|P1 Select|P1 Start|\n"
-                 + "|........|\n" * 3 + "[/Input]\n",
+        "inputs": {"columns": [["P1 Up", "P1 Down", "P1 Left", "P1 Right", "P1 A", "P1 B", "P1 Select", "P1 Start"]],
+                   "entries": ["|........|"] * 3},
     }
     if start is not None: doc["clockStart"] = start
     json.dump(doc, open(path, "w"))
@@ -1697,7 +1697,7 @@ json.dump({
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
     "settings": {"initFillByte": 171},
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 PY
 		pjob="$work/job.project.txt"
@@ -1750,7 +1750,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 MCPPY
 			cp "$config" "$wdir/settings.json"
@@ -1870,7 +1870,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 TASPY
 		textend=8
@@ -2049,7 +2049,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 PY
 			cjob="$work/job.stops-$cname.txt"
@@ -2104,7 +2104,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 PY
 			rjob="$work/job.reboot-$roll.txt"
@@ -2149,7 +2149,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 PY
 		djob="$work/job.reboot-dies.txt"
@@ -2202,7 +2202,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 ENCPY
 		evideo="$work/encode.mkv"
@@ -2279,7 +2279,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": sys.argv[2].split("/")[-1], "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 REOPENPY
 		}

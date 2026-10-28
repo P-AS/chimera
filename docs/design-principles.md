@@ -10805,14 +10805,15 @@ entries of their own.
   the key byte for byte, whatever the names hold; a name with its own `#`
   or `|` only looks split in the file. A key that cannot be split is kept
   as `key`.
-- The old `input` string still opens and is written as `inputs` at the
-  next save; a file with both, or with an entry that is not a frame's
-  input, is refused and says why. A build from before cannot open a project
-  saved by this one.
+- The old `input` string is not read: the owner wants no mechanism that
+  keeps old forms working in Chimera ("I want Chimera's code to be extremely
+  clean"), so a project saved before 2026-10-28 is refused, naming the
+  `input` key. A file with an entry that is not a frame's input is refused
+  and says why. A build from before cannot open a project saved by this
+  one.
 
 Tested: the engine's project test saves a project and a branch, checks the
 file holds `inputs` written a group and an entry a line, opens it to the
 same text block (for a key with "P1 \"#" in it and one with "| @" and
-"# >"), opens a file in the old form, and refuses five broken ones. It was
-seen to fail with the input left out of the file.
-
+"# >"), refuses a file in the old form and five broken ones. It was seen to
+fail with the input left out of the file.

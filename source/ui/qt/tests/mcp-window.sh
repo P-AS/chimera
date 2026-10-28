@@ -25,7 +25,7 @@ json.dump({
     "core": {"name": "Synth", "version": "", "sha1": ""},
     "headers": {"MovieVersion": "Chimera Project File v1.1", "Platform": "Synth"},
     "files": [{"name": "gridWalker.testrom", "sha1": sha1, "slot": "rom"}],
-    "input": "[Input]\nLogKey:" + logkey + "\n" + "\n".join(entries) + "\n[/Input]\n",
+    "inputs": {"columns": [g.split("|")[:-1] for g in logkey.split("#")[1:]], "entries": entries},
 }, open(sys.argv[3], "w"))
 MCPPY
 printf 'ready=%s/ready\ndone=%s/done\n' "$dir" "$dir" > "$dir/job.txt"

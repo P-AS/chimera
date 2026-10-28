@@ -77,8 +77,9 @@ themselves, which are named by their SHA1:
   one string a frame, `|..|........|`, in the same groups. A branch has
   its own `inputs`. A file written before 2026-10-28 has `input` instead,
   the movie's text block (`[Input]`, a `LogKey:` line, the entries,
-  `[/Input]`) as one string; it still opens, and the next save writes
-  `inputs`. A build from before cannot open a project saved after.
+  `[/Input]`) as one string; it is not read (owner, 2026-10-28: Chimera
+  keeps no old forms), and opening it says `unknown project key "input"`.
+  A build from before cannot open a project saved after.
   The groups and names are split from the movie's key, and joined back to
   it byte for byte: a control whose name holds a `#` or `|` of its own
   (a keypad's "P1 #", a keyboard's "| @") is still read whole by the

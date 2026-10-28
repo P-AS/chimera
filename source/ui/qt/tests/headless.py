@@ -110,7 +110,7 @@ check(r is not None and r.returncode == 65 and "[headless] The core stopped:" in
 proj, _ = project("unplayable")
 with open(proj) as f:
     doc = json.load(f)
-doc["input"] = "[Input]\nLogKey:#\n|zz|\n|zz|\n"
+doc["inputs"] = {"columns": [[]], "entries": ["|zz|", "|zz|"]}
 with open(proj, "w") as f:
     json.dump(doc, f)
 r = run(proj, script("unplayable", "emu.frameadvance()\nclient.exit()\n"), seconds=60)
