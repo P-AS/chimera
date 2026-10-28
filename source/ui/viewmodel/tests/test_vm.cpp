@@ -3998,6 +3998,17 @@ bool machine(const char *package, const char *rom)
 	/* a picture came out of it */
 	Picture::Frame f;
 	CHECK(session.screen.takeIfNewer(0, f) && f.width > 0 && f.height > 0 && f.pixels.size() == size_t(f.width) * f.height);
+	/* opaque, whatever the core left in the fourth byte: a desktop that takes
+	 * it as see-through showed through the picture (issue 393) */
+	CHECK(std::all_of(f.pixels.begin(), f.pixels.end(), [](uint32_t p) { return p >> 24 == 0xFF; }));
+	{
+		Picture picture;
+		const uint32_t left[4] = {0x00102030u, 0x7F405060u, 0xFF708090u, 0x01A0B0C0u};
+		picture.publish(left, 2, 2, 1.0);
+		const std::vector<uint32_t> opaque = {0xFF102030u, 0xFF405060u, 0xFF708090u, 0xFFA0B0C0u};
+		Picture::Frame shown;
+		CHECK(picture.takeIfNewer(0, shown) && shown.pixels == opaque);
+	}
 	/* and it saves as chimera-run writes one: a TGA, rows bottom-up */
 	{
 		namespace fs = std::filesystem;

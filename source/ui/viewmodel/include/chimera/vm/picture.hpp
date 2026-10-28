@@ -3,7 +3,6 @@
  * in each frame; the window copies out the newest one when it next draws. */
 
 #include <cstdint>
-#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -15,7 +14,7 @@ public:
 	struct Frame
 	{
 		int32_t width = 0, height = 0;
-		/* BGRA, width * height */
+		/* BGRA, width * height, every A 0xFF */
 		std::vector<uint32_t> pixels;
 		/* the shape the picture is shown at, width over height */
 		double aspect = 4.0 / 3.0;
@@ -28,7 +27,11 @@ public:
 		std::lock_guard<std::mutex> lock(m_);
 		const size_t n = static_cast<size_t>(width) * static_cast<size_t>(height);
 		frame_.pixels.resize(n);
-		if (n) std::memcpy(frame_.pixels.data(), pixels, n * sizeof(uint32_t));
+		/* the fourth byte is the core's to leave as it likes, and the window
+		 * draws it as it comes: a desktop that takes it as see-through
+		 * (Wayland's) showed what was behind the window through the picture
+		 * (issue 393) */
+		for (size_t i = 0; i < n; i++) frame_.pixels[i] = pixels[i] | 0xFF000000u;
 		frame_.width = width;
 		frame_.height = height;
 		frame_.aspect = aspect;
