@@ -10954,3 +10954,31 @@ a copy of the project under the same project id, both share one cache
 folder, and the next run's window restores the copy's state history for a
 movie with other input; afterwards no state is found, not even frame 0.
 
+
+## Chimera and every core in 26 languages (user-decided, 2026-10-28)
+
+The owner asked for as many languages as could be done with confidence, and
+for every text of Chimera and of every core in each. There are now 26:
+English and German, Spanish, French, Italian, Japanese, Brazilian
+Portuguese, Simplified Chinese, Korean, Traditional Chinese, Russian,
+Ukrainian, Polish, Czech, Dutch, Swedish, Danish, Norwegian Bokmal,
+Finnish, Turkish, Hungarian, Romanian, Greek, Indonesian, Vietnamese and
+Catalan. Chimera's table has 2551 texts; the 56 cores' tables hold about
+6200 more between them.
+
+- The texts were translated by an AI model (Claude Haiku, as the owner
+  chose), one language at a time, from the English in chunks of about 20000
+  characters, with the rules of docs/translations.md as the instructions,
+  and each language's existing words (German Film, French Image) kept where
+  Chimera already had a table. No speaker of the languages has read them;
+  corrections are welcome and are an edit of one file.
+- Every chunk was checked against its English by the rules the engine
+  holds a table to (the same keys, the same %1 to %9, the language's plural
+  forms in CLDR's order, a shortcut letter, the spaces at either end).
+  Plural forms a language does not have were dropped, invisible characters
+  (soft hyphens) removed, and what failed went to a second, smaller round
+  of translation; a handful of texts were written by hand. Turkish writes a
+  percent sign before the number (%50), which the engine reads as a
+  placeholder: those percentages are written in words.
+- Names stay as they are in every language: game titles, consoles and
+  emulators, file names, setting identifiers, control names.

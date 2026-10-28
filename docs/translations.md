@@ -119,9 +119,28 @@ In every language but English the Language menu's own name carries
 "(Language)" beside it, so a person who picked a language they cannot read
 can find the way back.
 
+## The languages
+
+There are 26: English (`en`), German (`de`), Spanish (`es`), French
+(`fr`), Italian (`it`), Japanese (`ja`), Brazilian Portuguese (`pt`),
+Simplified Chinese (`zh_CN`), Korean (`ko`), Traditional Chinese
+(`zh_TW`), Russian (`ru`), Ukrainian (`uk`), Polish (`pl`), Czech (`cs`),
+Dutch (`nl`), Swedish (`sv`), Danish (`da`), Norwegian Bokmal (`nb`),
+Finnish (`fi`), Turkish (`tr`), Hungarian (`hu`), Romanian (`ro`), Greek
+(`el`), Indonesian (`id`), Vietnamese (`vi`) and Catalan (`ca`). Every core
+carries the same 26.
+
+The texts in languages other than English were translated from the
+English by an AI model (Claude), a language at a time, and checked by the
+tests below; no speaker of each language has read them yet. A correction
+from someone who speaks the language is welcome.
+
 ## Adding or correcting a language
 
-A correction is an edit of one text in that language's file.
+A correction is an edit of one text in that language's file. A `%` before
+a digit is read as one of the program's `%1` to `%9`, so a language that
+writes the percent sign first (Turkish `%50`) spells a percentage out in
+words.
 
 A language is added as `languages/<code>.json` with every key `en.json`
 has, and its code in `languages/meson.build`. The engine needs the
