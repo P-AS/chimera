@@ -395,15 +395,29 @@ ApplicationWindow {
                     id: recentMenu
                     title: qsTr("&Recent Projects"); icon.source: "qrc:/chimera/menu/RecentProjects.png"
                     enabled: root.session.recentProjects !== ""
+                    // as wide as the longest path, up to most of the screen; each path whole in its tooltip
+                    property real widest: 0
+                    width: Math.min(Math.max(200, recentMenu.widest), Math.max(400, Screen.desktopAvailableWidth * 0.7))
+                    function fitWidth() {
+                        let w = 0
+                        for (let i = 0; i < recentMenu.count; i++) {
+                            const item = recentMenu.itemAt(i)
+                            if (item) w = Math.max(w, item.implicitWidth)
+                        }
+                        recentMenu.widest = w + recentMenu.leftPadding + recentMenu.rightPadding
+                    }
                     Instantiator {
                         model: root.session.recentProjects === "" ? [] : root.session.recentProjects.split("\n")
                         delegate: MenuItem {
                             required property string modelData
                             text: modelData
                             onTriggered: root.openProject(modelData)
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 500
+                            ToolTip.text: modelData
                         }
-                        onObjectAdded: (index, object) => recentMenu.insertItem(index, object)
-                        onObjectRemoved: (index, object) => recentMenu.removeItem(object)
+                        onObjectAdded: (index, object) => { recentMenu.insertItem(index, object); Qt.callLater(recentMenu.fitWidth) }
+                        onObjectRemoved: (index, object) => { recentMenu.removeItem(object); Qt.callLater(recentMenu.fitWidth) }
                     }
                 }
                 // a project not saved yet asks where it goes
