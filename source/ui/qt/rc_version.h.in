@@ -1,0 +1,3 @@
+/* Generated at every build by meson's vcs_tag (source/ui/meson.build): the
+ * version and the commit the program was built from, for chimera.rc. */
+#define CHIMERA_VERSION_TEXT "@VERSION@"

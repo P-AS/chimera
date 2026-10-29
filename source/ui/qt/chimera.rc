@@ -4,3 +4,37 @@ IDI_ICON1 ICON "images/logo.ico"
 
 // UTF-8 file names in every narrow call (chimera.manifest)
 1 24 "chimera.manifest"
+
+// What the program's file says it is, as Windows shows it in the file's
+// Properties: its name, its version and the commit it was built from
+// (rc_version.h, made at every build), and its licence (LICENSE)
+#include <winver.h>
+#include "rc_version.h"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION CHIMERA_VERSION_NUMBERS
+PRODUCTVERSION CHIMERA_VERSION_NUMBERS
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "040904B0"
+		BEGIN
+			VALUE "FileDescription", "Chimera"
+			VALUE "FileVersion", CHIMERA_VERSION_TEXT
+			VALUE "InternalName", "chimera"
+			VALUE "LegalCopyright", "Copyright (c) 2026 Sergio Martin, and the BizHawk team for the parts named in NOTICE. MIT License."
+			VALUE "OriginalFilename", "chimera.exe"
+			VALUE "ProductName", "Chimera"
+			VALUE "ProductVersion", CHIMERA_VERSION_TEXT
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x409, 1200
+	END
+END

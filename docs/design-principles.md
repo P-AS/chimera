@@ -11231,3 +11231,29 @@ history (it failed with the loader emptying first); the earlier check that
 a history in an older format is dropped without the list now finds the
 states held kept. The MCP agent run against the cache that broke it: every
 check passed (before: every seek back answered "interrupted").
+
+## The Windows program says what it is (user-decided, 2026-10-29)
+
+Windows Defender removed chimera.exe from the published Windows build of
+development build c1abf86d as soon as the zip was unpacked on the owner's
+PC, calling it Program:Win32/Contebrew.A!ml. The "!ml" means a guess of
+Defender's machine learning, not a known signature. chimera.exe is the small
+launcher that loads the window from lib\ (docs/qt-interface.md).
+
+What was measured on that PC, with Defender running: the published
+chimera.exe is removed even when copied alone into an empty folder; the same
+launcher built here (it differs in 4 bytes, the time stamp and the checksum)
+and the one in the 2026-10-28 nightly are not. The verdict belongs to that
+one file, not to how the launcher is made, so no change to it can be shown
+to help.
+
+The owner chose to give chimera.exe the version information every program
+carries (Windows shows it in the file's Properties): Chimera, the version and
+the commit it was built from, and the licence; the next build replaces the
+flagged file anyway. Loading the window's DLL through a manifest instead of
+by the launcher's own code was not done.
+
+Tested: Windows reads FileDescription Chimera, FileVersion and
+ProductVersion "0.1 (c1abf86d)", the copyright and licence line and
+OriginalFilename chimera.exe from the new file. Defender left the new file in
+place, as it left the unchanged one, which shows nothing about the flag.

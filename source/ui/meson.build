@@ -263,8 +263,25 @@ if qt_dep.found()
   # zstd, which a Qt built without zstd (the Windows one) cannot unpack
   qt_rcc = qt6.compile_resources(sources: ['qt/ui.qrc'], extra_args: ['--no-zstd'])
   qt_dialogs_rcc = qt6.compile_resources(name: 'dialogs', sources: ['qt/dialogs.qrc'], extra_args: ['--no-zstd'])
-  # Chimera's icon on the program and its windows on Windows
-  qt_icon = host_machine.system() == 'windows' ? import('windows').compile_resources('qt/chimera.rc', depend_files: 'qt/chimera.manifest') : []
+  # Chimera's icon on the program and its windows on Windows, and what the
+  # program's file says it is (name, version with the commit, licence),
+  # the version read again at every build
+  qt_icon = []
+  if host_machine.system() == 'windows'
+    rc_version_h = vcs_tag(
+      command: ['git', '-C', repo_root, 'log', '-1', '--abbrev=8', '--format=' + meson.project_version() + ' (%h)'],
+      input: 'qt/rc_version.h.in',
+      output: 'rc_version.h',
+      replace_string: '@VERSION@',
+      fallback: meson.project_version(),
+    )
+    version_numbers = meson.project_version().split('.') + ['0', '0', '0']
+    qt_icon = import('windows').compile_resources('qt/chimera.rc',
+      depend_files: 'qt/chimera.manifest',
+      depends: rc_version_h,
+      include_directories: include_directories('.'),
+      args: ['-DCHIMERA_VERSION_NUMBERS=' + ','.join(version_numbers[0], version_numbers[1], version_numbers[2], version_numbers[3])])
+  endif
   qt_sources = [
     'qt/main.cpp',
     'qt/headless_run.cpp',

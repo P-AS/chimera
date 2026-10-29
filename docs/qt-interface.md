@@ -129,6 +129,9 @@ Chimera's window: Qt 6.12, QML views over C++ view models. The code is in
   loads the window from lib\chimera-qt-app.dll. A qt.conf built into that
   DLL sends Qt to lib\ for its plugins and QML, and a program in bin\ finds
   miniBox's DLLs in ..\lib. tools/stage-qt-windows.py lays the folder out.
+  chimera.exe carries the version information every program has, which
+  Windows shows in the file's Properties: Chimera, the version and the
+  commit it was built from (0.1 (c1abf86d)), and the licence.
 - **Folders are named in lower case** (owner, 2026-10-24): every folder the
   window makes or suggests by default - cores, firmware, themes, movies
   (with backup and macros), tools, lua, reports, each system's own folder
