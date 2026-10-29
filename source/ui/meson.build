@@ -371,6 +371,15 @@ if qt_dep.found()
       repo_root / 'build/Cores/synth-box.chimeraCore', '--play', '--lua', files('qt/tests/lua-config-names.lua')],
     timeout: 60,
   )
+  # a script's questions about TAStudio's cells reach the rolls the window
+  # draws, which TAStudio's window makes after the program has started
+  test(
+    'tastudio queries',
+    find_program('python3'),
+    args: [window_run, meson.current_build_dir() / 'tastudio-queries-test', '50', chimera_qt, window_game[0],
+      repo_root / 'build/Cores/synth-box.chimeraCore', '--play', '--lua', files('qt/tests/tastudio-queries.lua')],
+    timeout: 60,
+  )
   # Chimera's command line, as the window that replaces it takes it
   test(
     'command line',

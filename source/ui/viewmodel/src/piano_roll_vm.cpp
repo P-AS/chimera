@@ -1374,7 +1374,10 @@ void PianoRollViewModel::trimHistory()
 
 void PianoRollViewModel::historyChanged()
 {
-	historyRows_.reset.emit();
+	/* a frame recorded while the machine runs joins the step before: as
+	 * many steps, the last one longer */
+	historyRows_.refreshed(historyTold_);
+	historyTold_ = historyRows_.rowCount();
 }
 
 std::string PianoRollViewModel::describe(const Step &step)
@@ -2733,6 +2736,8 @@ void PianoRollViewModel::refreshRun(int64_t frame)
 
 void PianoRollViewModel::listMarkers()
 {
+	/* the run's end moves on every frame recorded: as many markers, one moved */
+	const auto before = static_cast<int64_t>(markerList_.size());
 	markerList_.clear();
 	markerList_.push_back({0, tr("piano_roll.marker_run_start"), true, true});
 	markerList_.push_back({lastInputFrame.get(), tr("piano_roll.marker_last_input"), true, true});
@@ -2744,7 +2749,7 @@ void PianoRollViewModel::listMarkers()
 		return a.permanent && !b.permanent;
 	});
 	pickCurrentMarker();
-	markerRows_.reset.emit();
+	markerRows_.refreshed(before);
 }
 
 void PianoRollViewModel::pickCurrentMarker()

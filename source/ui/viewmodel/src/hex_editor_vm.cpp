@@ -63,6 +63,7 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 	expose("lineCount", "lines of 16 bytes the domain has", lineCount);
 	expose("topLine", "the first line shown", topLine, true);
 	expose("visibleLines", "how many lines are shown", visibleLines, true);
+	expose("watching", "read again after each frame (the window is open)", watching, true);
 	expose("picked", "the address highlighted, -1 for none", picked, true);
 	expose("secondaryCount", "addresses highlighted beside it", secondaryCount);
 	expose("writable", "the domain can be written", writable);
@@ -571,7 +572,13 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 		return {};
 	});
 
-	hooks_ = session_.addMachineHooks([this](ce_session *s) { readOnMachine(s); },
+	/* after each frame only while the window is open; closed, the next read
+	 * compares with nothing, so it marks no byte as changed */
+	hooks_ = session_.addMachineHooks(
+		[this](ce_session *s) {
+			if (watchingM_.load()) readOnMachine(s);
+			else lastM_.clear();
+		},
 		[this](ce_session *) {
 			lastM_.clear();
 			lastFromM_ = -1;
@@ -581,6 +588,10 @@ HexEditorViewModel::HexEditorViewModel(Dispatcher &dispatcher, SessionViewModel 
 		reread();
 	};
 	topWatch_ = topLine.changed.connect(moved);
+	watchingWatch_ = watching.changed.connect([this] {
+		watchingM_.store(watching.get());
+		if (watching.get()) reread();
+	});
 	visibleWatch_ = visibleLines.changed.connect(moved);
 	sizeWatch_ = size.changed.connect([this] {
 		if (size.get() != 1 && size.get() != 2 && size.get() != 4) size.set(1);
@@ -709,7 +720,7 @@ void HexEditorViewModel::readOnMachine(ce_session *s)
 				changedShown_ = outChanged_;
 				shownFrom_ = outFrom_;
 			}
-			lines_.reset.emit();
+			lines_.refreshed(lines_.rowCount());
 		});
 }
 

@@ -5525,6 +5525,8 @@ bool hexEditor(const char *package, const char *rom)
 	SessionViewModel session(d, inputs);
 	session.turboSeek.set(true);
 	HexEditorViewModel hex(d, session);
+	/* its window open: read again after each frame */
+	hex.watching.set(true);
 	std::string error;
 	openGame(session, package, std::string(rom), error);
 	CHECK(d.until([&] { return session.isOpen.get() && !hex.domains.get().empty(); }, 60));
@@ -9737,6 +9739,76 @@ bool wideButtons(const char *package, const char *rom)
 	return true;
 }
 
+/* While a game plays, the window's lists change in place and are not made
+ * again (issue 404): the run's end marker moving on, the step the frames
+ * played join growing, the whole movie's macro zone growing with it, and
+ * the Hex Editor's bytes read again. Each was told as a reset on every
+ * frame, and a view builds every row it shows anew on a reset: the window
+ * drew 13 to 20 frames a second while the machine ran 60. The Hex Editor
+ * reads only while its window is open. */
+bool listsWhilePlaying(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	PianoRollViewModel roll(d, inputs, session);
+	MacroToolViewModel macros(d, roll, session);
+	HexEditorViewModel hex(d, session);
+	std::string error;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-lists-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	session.cacheFolder.set((dir / "cache").string());
+	openGame(session, package, (dir / "walker.testrom").string(), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	auto named = [](ViewModel &vm, const std::string &name) -> RowModel * {
+		for (const auto &r : vm.rowLists())
+			if (r.name == name) return r.model;
+		return nullptr;
+	};
+	RowModel *const lists[] = {named(roll, "history"), named(roll, "markers"), named(macros, "zones"), named(hex, "lines")};
+	const char *const names[] = {"the undo history", "the markers", "the macro zones", "the Hex Editor's lines"};
+	int resets[4] = {}, changes[4] = {};
+	std::vector<Connection> watches;
+	for (int i = 0; i < 4; i++)
+	{
+		CHECK(lists[i] != nullptr);
+		if (lists[i] == nullptr) return true;
+		watches.push_back(lists[i]->reset.connect([&resets, i] { resets[i]++; }));
+		watches.push_back(lists[i]->changed.connect([&changes, i](int64_t, int64_t) { changes[i]++; }));
+	}
+	/* the window closed: the Hex Editor reads nothing as frames run (once
+	 * the read a game's opening asks for is done) */
+	session.run("play", {}, error);
+	CHECK(d.until([&] { return session.frame.get() >= 5; }, 20));
+	resets[3] = changes[3] = 0;
+	CHECK(d.until([&] { return session.frame.get() >= 15; }, 20));
+	session.run("pause", {}, error);
+	CHECK(d.until([&] { return !session.running.get(); }, 10));
+	CHECK(changes[3] == 0 && resets[3] == 0);
+	/* open: read after each frame; and a first stretch played, whose
+	 * first frame starts a step of its own (as many steps as before no more) */
+	hex.watching.set(true);
+	session.run("play", {}, error);
+	CHECK(d.until([&] { return session.frame.get() >= 15; }, 20));
+	for (int i = 0; i < 4; i++) resets[i] = changes[i] = 0;
+	const int64_t from = session.frame.get();
+	CHECK(d.until([&] { return session.frame.get() >= from + 30; }, 20));
+	session.run("pause", {}, error);
+	CHECK(d.until([&] { return !session.running.get(); }, 10));
+	for (int i = 0; i < 4; i++)
+	{
+		if (resets[i] != 0 || changes[i] == 0) std::printf("FAIL %s: %d resets, %d changes in 30 frames\n", names[i], resets[i], changes[i]);
+		CHECK(resets[i] == 0 && changes[i] > 0);
+	}
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 /* A core that mixes its sound at 48000 Hz is heard at 44100 (issue 372):
  * each frame hands the speakers 44100/48000 of what the core made, so the
  * sound keeps its pitch and nothing runs ahead to be dropped. The window
@@ -10087,14 +10159,15 @@ int main(int argc, char **argv)
 			if (argc >= 11) ranMachine = coreMenu(argv[1], argv[2], argv[6], argv[10]) && ranMachine;
 			else std::printf("SKIP the Emulator menu: no packages that import movies and are games given\n");
 			if (argc >= 12) ranMachine = firmwareWindow(argv[1], argv[6], argv[11], argv[8]) && ranMachine;
+			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");
 			if (argc >= 9) ranMachine = createForAgent(argv[1], argv[2], argv[7]) && ranMachine;
 			if (argc >= 13) ranMachine = compileStep(argv[12], argv[2]) && ranMachine;
+			else std::printf("SKIP the compile step: no compiling package given\n");
 			if (argc >= 14) ranMachine = squarePixels(argv[1], argv[13], argv[2]) && ranMachine;
 			if (argc >= 15) ranMachine = soundRate(argv[14], argv[2]) && ranMachine;
 			if (argc >= 16) ranMachine = wideButtons(argv[15], argv[2]) && ranMachine;
-			else std::printf("SKIP the compile step: no compiling package given\n");
+			ranMachine = listsWhilePlaying(argv[1], argv[2]) && ranMachine;
 			if (argc >= 9) ranMachine = coreManager(argv[1], argv[6], argv[8]) && ranMachine;
-			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");
 		}
 		else
 			std::printf("SKIP the machine tests: %s or %s is missing\n", argv[1], argv[2]);

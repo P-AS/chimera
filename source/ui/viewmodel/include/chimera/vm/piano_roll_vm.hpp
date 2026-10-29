@@ -321,6 +321,8 @@ private:
 		PianoRollViewModel &vm_;
 	};
 	HistoryRows historyRows_{*this};
+	/* the steps the history list was last told it has */
+	int64_t historyTold_ = 0;
 	void historyChanged();
 	struct Row
 	{

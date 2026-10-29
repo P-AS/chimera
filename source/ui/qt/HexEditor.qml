@@ -28,7 +28,10 @@ ApplicationWindow {
     height: 420
 
     WindowOptions { id: windowOptions; window: win; tool: "hexEditor"; vm: win.toolWindows; mainWindow: win.mainWindow }
-    onVisibleChanged: if (visible) windowOptions.placeBack(false)
+    onVisibleChanged: {
+        win.vm.watching = visible
+        if (visible) windowOptions.placeBack(false)
+    }
 
     // the colours: Custom Colors where set, else the theme's
     readonly property var custom: JSON.parse(win.vm.colors || "{}")

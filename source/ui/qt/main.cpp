@@ -7,12 +7,14 @@
  *           [--screenshot <path>] [--lua <script>] [--describe]
  *
  * --measure runs for that long and prints what it measured, then quits:
- * frames the machine ran, pictures drawn, the window's frame intervals and,
- * with --scroll, how long each piano roll paint took while it scrolled. */
+ * frames the machine ran, pictures drawn, the window's frame intervals and
+ * TAStudio's, and how long each piano roll paint took (with --scroll, while
+ * it scrolled). */
 
 #include <QSysInfo>
 #include <QCommandLineParser>
 #include <QElapsedTimer>
+#include <QPointer>
 #include <QClipboard>
 #include <QBuffer>
 #include <QSurfaceFormat>
@@ -213,6 +215,23 @@ static QString runnerProgram()
 {
 	const QString named = qEnvironmentVariable("CHIMERA_RUN");
 	return named.isEmpty() ? besideProgram(QStringLiteral("chimera-run")) : named;
+}
+
+/* the first input roll, found among what the windows draw: TAStudio's rolls
+ * are made by a Repeater, and those are not among a window's QObject children */
+static qt::PianoRollItem *firstRoll()
+{
+	std::function<qt::PianoRollItem *(QQuickItem *)> walk = [&walk](QQuickItem *item) -> qt::PianoRollItem * {
+		auto *roll = qobject_cast<qt::PianoRollItem *>(item);
+		if (roll != nullptr && roll->objectName() == QStringLiteral("pianoRoll")) return roll;
+		for (QQuickItem *child : item->childItems())
+			if (qt::PianoRollItem *found = walk(child)) return found;
+		return nullptr;
+	};
+	for (QWindow *w : QGuiApplication::topLevelWindows())
+		if (auto *q = qobject_cast<QQuickWindow *>(w))
+			if (qt::PianoRollItem *found = walk(q->contentItem())) return found;
+	return nullptr;
 }
 
 /* on Windows the window is a DLL in lib\, started by launcher.c */
@@ -1765,18 +1784,17 @@ int main(int argc, char **argv)
 
 	/* measuring */
 	std::mutex swapM;
-	std::vector<qint64> swaps;
+	std::vector<qint64> swaps, rollSwaps;
 	QElapsedTimer clock;
 	clock.start();
 	std::vector<double> paints;
-	auto *roll = window->findChild<qt::PianoRollItem *>(QStringLiteral("pianoRoll"));
-	/* the script asked about each cell as the roll is drawn (Lua's tastudio.onqueryitem...):
+	QPointer<qt::PianoRollItem> roll;
+	/* the script asked about each cell as a roll is drawn (Lua's tastudio.onqueryitem...):
 	 * the window's thread waits while the roll is drawn, so the script is not running */
-	if (roll != nullptr)
-		roll->setQuery([&lua](int kind, qint64 row, const QString &column) {
-			static const char *const hooks[] = {"__chimera_query_bg", "__chimera_query_text", "__chimera_query_icon"};
-			return QString::fromStdString(lua.query(hooks[std::clamp(kind, 0, 2)], row, column.toStdString()));
-		});
+	qt::PianoRollItem::setQuery([&lua](int kind, qint64 row, const QString &column) {
+		static const char *const hooks[] = {"__chimera_query_bg", "__chimera_query_text", "__chimera_query_icon"};
+		return QString::fromStdString(lua.query(hooks[std::clamp(kind, 0, 2)], row, column.toStdString()));
+	});
 	auto *picture = window->findChild<qt::PictureItem *>(QStringLiteral("picture"));
 	int64_t framesAtStart = -1;
 	qint64 shownAtStart = 0;
@@ -1790,10 +1808,8 @@ int main(int argc, char **argv)
 			std::lock_guard<std::mutex> lock(swapM);
 			swaps.push_back(clock.nsecsElapsed());
 		}, Qt::DirectConnection);
-		if (roll != nullptr)
-			QObject::connect(roll, &qt::PianoRollItem::painted, roll, [&] { paints.push_back(roll->lastPaintMs()); });
 		auto *scroller = new QTimer(&app);
-		if (args.isSet(scrollOpt) && roll != nullptr)
+		if (args.isSet(scrollOpt))
 		{
 			pianoRoll.followPlayback.set(false);
 			QObject::connect(scroller, &QTimer::timeout, &app, [&] {
@@ -1809,13 +1825,25 @@ int main(int argc, char **argv)
 				framesAtStart = session.frame.get();
 				shownAtStart = picture != nullptr ? picture->framesShown() : 0;
 				runClock.start();
+				/* the roll's paints, and its window's frames when it has one of its own (TAStudio's) */
+				roll = firstRoll();
+				if (roll != nullptr)
+				{
+					QObject::connect(roll, &qt::PianoRollItem::painted, roll, [&] { paints.push_back(roll->lastPaintMs()); });
+					if (roll->window() != nullptr && roll->window() != window)
+						QObject::connect(roll->window(), &QQuickWindow::frameSwapped, roll->window(), [&] {
+							std::lock_guard<std::mutex> lock(swapM);
+							rollSwaps.push_back(clock.nsecsElapsed());
+						}, Qt::DirectConnection);
+				}
 			}
 		});
 		QTimer::singleShot(static_cast<int>(seconds * 1000), &app, [&] {
-			std::vector<double> intervals;
+			std::vector<double> intervals, rollIntervals;
 			{
 				std::lock_guard<std::mutex> lock(swapM);
 				for (size_t i = 1; i < swaps.size(); i++) intervals.push_back((swaps[i] - swaps[i - 1]) / 1.0e6);
+				for (size_t i = 1; i < rollSwaps.size(); i++) rollIntervals.push_back((rollSwaps[i] - rollSwaps[i - 1]) / 1.0e6);
 			}
 			const double ran = runClock.isValid() ? runClock.nsecsElapsed() / 1.0e9 : 0;
 			const int64_t frames = framesAtStart >= 0 ? session.frame.get() - framesAtStart : 0;
@@ -1831,6 +1859,12 @@ int main(int argc, char **argv)
 				intervals.size() + (swaps.empty() ? 0 : 1), w.median, w.p95, w.worst);
 			std::printf("piano roll: %lld rows, %zu paints, ms median %.3f, 95th %.3f, worst %.3f\n",
 				static_cast<long long>(inputs.size()), paints.size(), p.median, p.p95, p.worst);
+			if (!rollSwaps.empty())
+			{
+				const Spread r = spread(rollIntervals);
+				std::printf("piano roll's window frames: %zu, interval ms median %.2f, 95th %.2f, worst %.2f\n",
+					rollSwaps.size(), r.median, r.p95, r.worst);
+			}
 			if (args.isSet(shotOpt))
 			{
 				std::printf("screenshot: %s\n", window->grabWindow().save(args.value(shotOpt)) ? "saved" : "FAILED");
@@ -1853,6 +1887,8 @@ int main(int argc, char **argv)
 	}
 
 	int rc = app.exec();
+	/* no roll asks the script once the window has stopped */
+	qt::PianoRollItem::setQuery({});
 	/* a run nobody watches ends with what ended it, whatever else asked to close meanwhile */
 	if (headlessRun.endedWith() >= 0) rc = headlessRun.endedWith();
 	/* nothing more handed over once the window's things start going */

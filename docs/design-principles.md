@@ -11257,3 +11257,59 @@ Tested: Windows reads FileDescription Chimera, FileVersion and
 ProductVersion "0.1 (c1abf86d)", the copyright and licence line and
 OriginalFilename chimera.exe from the new file. Defender left the new file in
 place, as it left the unchanged one, which shows nothing about the flag.
+
+## TAStudio keeps up with the game (2026-10-29, issue 404)
+
+The piano roll looked like it ran at 10 frames a second while the game
+played. Measured on Linux with the window's own timing (--measure, which now
+also times TAStudio's window, see below): the machine ran 60 frames a second
+but the window drew 13 to 20, and its thread was busy most of the time. Most
+of that was lists being built again from nothing: four of them were told on
+every frame that everything had changed (a reset), and a list told so makes
+every row it shows anew. In 8 seconds of play:
+
+- the undo history, 474 times: each frame played past the end of the movie
+  joins the step before, so the history had as many steps as before;
+- TAStudio's markers, 330 times: the run's end marker moves on with each
+  frame added;
+- Macro Input's zones, 301 times: the zone of the whole movie grows with it;
+- the Hex Editor's lines, 293 times: it read memory after every frame,
+  with its window closed too.
+
+Now a list read again with as many rows as before says its rows changed in
+place (RowModel::refreshed), Macro Input changes only the whole movie's row,
+and the Hex Editor reads after each frame only while its window is open (its
+window sets watching, as the Surface Viewer's does).
+
+On Windows the roll's own drawing then showed: 7.7 ms a frame against 2.3 on
+Linux. Two parts were most of it. Each cell asked where its column starts,
+and that adds up the widths of every column before it, so a frame cost rows
+times columns squared (for a controller of 594 buttons, far worse); the
+places are now worked out once a drawing. And the grid's thin lines, drawn as
+lines, took 3 ms; they are filled one screen pixel wide now, which looks the
+same (checked at 125% on Windows, the line under the titles drawn last so the
+first row does not cover it).
+
+Found on the way: the window gave a script's cell questions
+(tastudio.onqueryitembg, onqueryitemtext, onqueryitemicon) to the roll it
+found when it started, but TAStudio's window makes its rolls later, so no
+roll ever asked and a script's colours and texts never showed. Every roll
+asks the one script runner now, a roll made later too. --measure looked for
+the roll the same way and counted no paints; it now finds it in what the
+windows draw and also times TAStudio's window.
+
+Tested:
+- view models: while a game plays 30 frames past the end of its movie, none
+  of the four lists is reset and each changes in place; the Hex Editor reads
+  nothing with its window closed. With the old resets put back all five
+  checks failed (30 resets in 30 frames each).
+- tastudio queries (new): a script's questions are asked by the roll in the
+  real window; before the fix the roll asked 0 times.
+- Linux, off-screen: both windows draw a frame every 16.6 ms (median), with
+  the synthetic core and with FreeJ2ME (before: 50 to 75 ms).
+- Windows, the GTX 1060, FreeJ2ME playing a new project's empty movie, as the
+  report: the main window drew 618 of 1,042 frames (286 of 1,037 before) and
+  TAStudio's window a frame every 17.0 ms (median), its roll in 0.97 ms. Some
+  frames still take two or three refreshes there (95th percentile 50 ms),
+  with this core on Windows only: the synthetic core draws 809 of 811, and
+  muting the sound changed nothing. That is not explained yet.

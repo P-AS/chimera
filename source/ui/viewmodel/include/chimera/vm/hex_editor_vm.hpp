@@ -45,6 +45,8 @@ public:
 	Property<int64_t> lineCount{0};
 	Property<int64_t> topLine{0};
 	Property<int64_t> visibleLines{32};
+	/* read again after each frame (the window is open) */
+	Property<bool> watching{false};
 	/* the address highlighted (-1 none), and how many others are */
 	Property<int64_t> picked{-1};
 	Property<int64_t> secondaryCount{0};
@@ -120,7 +122,9 @@ private:
 	RamWatchViewModel *ramWatch_ = nullptr;
 	Lines lines_{*this};
 	int hooks_ = 0;
-	Connection opensWatch_, domainWatch_, topWatch_, visibleWatch_, sizeWatch_, pickedWatch_, endianWatch_, freezesWatch_, pickedFrozenWatch_;
+	Connection opensWatch_, domainWatch_, topWatch_, visibleWatch_, sizeWatch_, pickedWatch_, endianWatch_, freezesWatch_, pickedFrozenWatch_,
+		watchingWatch_;
+	std::atomic<bool> watchingM_{false};
 	/* any byte of the place at address frozen, in the domain shown */
 	bool placeFrozen(int64_t address) const;
 	void freezesShown();

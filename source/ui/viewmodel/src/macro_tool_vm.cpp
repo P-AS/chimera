@@ -223,9 +223,13 @@ MacroToolViewModel::MacroToolViewModel(Dispatcher &dispatcher, PianoRollViewMode
 	};
 	/* the movie's columns are the movie's: read again as it changes */
 	lengthWatch_ = roll_.frameCount.changed.connect([this] {
-		if (!zones_.empty() && zones_[0].whole) zones_[0].length = roll_.frameCount.get();
 		readColumns();
-		rows_.reset.emit();
+		/* the zone of the whole movie is as long as the movie: its row alone changes */
+		if (!zones_.empty() && zones_[0].whole)
+		{
+			zones_[0].length = roll_.frameCount.get();
+			rows_.changed.emit(0, 0);
+		}
 	});
 	opensWatch_ = session_.opens.changed.connect(restart);
 	restart();

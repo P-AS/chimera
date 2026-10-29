@@ -53,6 +53,17 @@ public:
 	Signal<int64_t, int64_t> changed;
 	/* rows were added at the end; the new count is rowCount() */
 	Signal<int64_t, int64_t> appended;
+
+	/* the rows read again, the columns as they were: changed in place while
+	 * there are as many rows as before, else the whole list again. A reset
+	 * makes a view build every row it shows anew, which a list told so on
+	 * every frame turned into most of the window's time (issue 404) */
+	void refreshed(int64_t rowsBefore)
+	{
+		const int64_t now = rowCount();
+		if (now != rowsBefore) reset.emit();
+		else if (now > 0) changed.emit(0, now - 1);
+	}
 };
 
 } // namespace chimera::vm

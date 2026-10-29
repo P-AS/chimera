@@ -99,9 +99,11 @@ public:
 	bool horizontal() const { return horizontal_; }
 	QString extraColumns() const { return extraJson_; }
 	void setExtraColumns(const QString &json);
-	/* what the script says of a cell while the roll is drawn: kind 0 its colour, 1 its text; "" nothing */
+	/* what the script says of a cell while a roll is drawn: kind 0 its colour, 1 its text; "" nothing.
+	 * One for every roll, made now or later: TAStudio's window makes its
+	 * rolls itself, after the program has started */
 	using Query = std::function<QString(int kind, qint64 row, const QString &column)>;
-	void setQuery(Query query) { query_ = std::move(query); }
+	static void setQuery(Query query);
 	qint64 iconEpoch() const { return iconEpoch_; }
 	void setIconEpoch(qint64 epoch)
 	{
@@ -225,7 +227,7 @@ private:
 	std::vector<Extra> extras_;
 	QString extraJson_ = QStringLiteral("[]");
 	bool queries_ = false;
-	Query query_;
+	static Query &query();
 	qint64 iconEpoch_ = 0;
 	/* the icons a script named, read once each */
 	QHash<QString, QImage> icons_;

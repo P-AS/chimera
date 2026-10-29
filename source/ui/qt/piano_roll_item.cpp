@@ -20,6 +20,17 @@
 
 namespace chimera::qt {
 
+PianoRollItem::Query &PianoRollItem::query()
+{
+	static Query asked;
+	return asked;
+}
+
+void PianoRollItem::setQuery(Query query)
+{
+	PianoRollItem::query() = std::move(query);
+}
+
 PianoRollItem::PianoRollItem(QQuickItem *parent) : QQuickPaintedItem(parent)
 {
 	setOpaquePainting(true);
@@ -421,7 +432,28 @@ void PianoRollItem::paint(QPainter *p)
 	const int fx = frameColumnWidth(), cx0 = cursorWidth();
 	const int columns = rows.columnCount();
 	const int extraCount = static_cast<int>(extras_.size());
-	const int right = columnX(columns + extraCount);
+	/* the columns' places, widths, players and kinds, worked out once a
+	 * paint: asked for each cell, adding up the widths before a column cost
+	 * more than all the drawing (issue 404) */
+	std::vector<int> xs(static_cast<size_t>(columns + extraCount) + 1), ws(static_cast<size_t>(columns));
+	std::vector<int32_t> players(static_cast<size_t>(columns));
+	std::vector<bool> numbers(static_cast<size_t>(columns)), shownColumns(static_cast<size_t>(columns));
+	xs[0] = fx;
+	for (int c = 0; c < columns + extraCount; c++)
+	{
+		const size_t i = static_cast<size_t>(c);
+		if (c < columns)
+		{
+			ws[i] = columnW(c);
+			players[i] = rows.columnPlayer(c);
+			numbers[i] = rows.columnIsNumber(c);
+			shownColumns[i] = ws[i] > 0;
+		}
+		xs[i + 1] = xs[i] + (c < columns ? ws[i] : extras_[static_cast<size_t>(c - columns)].width);
+	}
+	auto colX = [&](int c) { return xs[static_cast<size_t>(c)]; };
+	auto colW = [&](int c) { return ws[static_cast<size_t>(c)]; };
+	const int right = colX(columns + extraCount);
 	const qint64 count = rows.rowCount();
 	const int shown = visibleRows() + 1;
 	const QFontMetrics fm(font_);
@@ -435,52 +467,42 @@ void PianoRollItem::paint(QPainter *p)
 	 * pointer lit; the frame numbers' headed Frame# */
 	p->fillRect(0, 0, w, hs, header);
 	for (int c = 0; c < columns; c++)
-		if (columnW(c) > 0 && rows.columnEmphasized(c)) p->fillRect(columnX(c) + 1, 1, columnW(c) - 1, hs - 1, k.emphasis);
-	const bool titleLit = hoverTitles_ && hoverColumn_ >= -1 && hoverColumn_ < columns && (hoverColumn_ < 0 || columnW(hoverColumn_) > 0);
+		if (colW(c) > 0 && rows.columnEmphasized(c)) p->fillRect(colX(c) + 1, 1, colW(c) - 1, hs - 1, k.emphasis);
+	const bool titleLit = hoverTitles_ && hoverColumn_ >= -1 && hoverColumn_ < columns && (hoverColumn_ < 0 || colW(hoverColumn_) > 0);
 	if (titleLit)
-		p->fillRect(hoverColumn_ < 0 ? QRect(cx0 + 1, 1, fx - cx0 - 1, hs - 1) : QRect(columnX(hoverColumn_) + 1, 1, columnW(hoverColumn_) - 1, hs - 1), picked);
+		p->fillRect(hoverColumn_ < 0 ? QRect(cx0 + 1, 1, fx - cx0 - 1, hs - 1) : QRect(colX(hoverColumn_) + 1, 1, colW(hoverColumn_) - 1, hs - 1), picked);
 	p->setPen(titleLit && hoverColumn_ == -1 ? pickedText : headerText);
 	label(QRect(cx0 + 4, 0, fx - cx0 - 4, hs), left, QStringLiteral("Frame#"), false);
 	for (int c = 0; c < columns; c++)
 	{
-		if (columnW(c) == 0) continue; /* hidden */
+		if (colW(c) == 0) continue; /* hidden */
 		p->setPen(titleLit && hoverColumn_ == c ? pickedText : headerText);
-		label(QRect(columnX(c) + 4, 0, columnW(c) - 4, hs), left, horizontal_ ? title(c) : fm.elidedText(title(c), Qt::ElideRight, columnW(c) - 4), false);
+		label(QRect(colX(c) + 4, 0, colW(c) - 4, hs), left, horizontal_ ? title(c) : fm.elidedText(title(c), Qt::ElideRight, colW(c) - 4), false);
 	}
 	p->setPen(headerText);
 	for (int e = 0; e < extraCount; e++)
-		label(QRect(columnX(columns + e) + 4, 0, extras_[static_cast<size_t>(e)].width - 4, hs), left, extras_[static_cast<size_t>(e)].text, false);
-	/* one screen pixel wide at any display scale: a pen one unit wide drew
-	 * some lines one pixel and some two on a scaled screen */
-	QPen border(k.columnBorder, 0);
-	border.setCosmetic(true);
-	p->setPen(border);
-	p->drawLine(0, 0, w, 0);
-	p->drawLine(0, hs, w, hs);
-	p->drawLine(cx0, 0, cx0, hs);
+		label(QRect(colX(columns + e) + 4, 0, extras_[static_cast<size_t>(e)].width - 4, hs), left, extras_[static_cast<size_t>(e)].text, false);
+	/* the lines, one screen pixel wide at any display scale (a pen one unit
+	 * wide drew some lines one pixel and some two on a scaled screen), end
+	 * to end, filled: drawn as lines they took 3 ms a paint on Windows */
+	const double px = 1.0 / p->device()->devicePixelRatioF();
+	auto across = [&](int y, int x0, int x1, const QColor &color) { p->fillRect(QRectF(x0, y, x1 - x0 + px, px), color); };
+	auto down = [&](int x, int y0, int y1, const QColor &color) { p->fillRect(QRectF(x, y0, px, y1 - y0 + px), color); };
+	across(0, 0, w, k.columnBorder);
+	down(cx0, 0, hs, k.columnBorder);
 	for (int c = 0; c <= columns + extraCount; c++)
-		if (c == columns + extraCount || c >= columns || columnW(c) > 0) p->drawLine(columnX(c), 0, columnX(c), hs);
+		if (c == columns + extraCount || c >= columns || colW(c) > 0) down(colX(c), 0, hs, k.columnBorder);
 	/* a thick line where a player's columns start and end, the players as
 	 * the core declares them (the console's a group too) */
-	std::vector<bool> playerEdge;
-	{
-		std::vector<int32_t> players;
-		std::vector<bool> shownColumns;
-		for (int c = 0; c < columns; c++)
-		{
-			players.push_back(rows.columnPlayer(c));
-			shownColumns.push_back(columnW(c) > 0);
-		}
-		playerEdge = chimera::vm::PianoRollViewModel::playerEdges(players, shownColumns);
-	}
+	const std::vector<bool> playerEdge = chimera::vm::PianoRollViewModel::playerEdges(players, shownColumns);
 	auto thickLines = [&](int top, int bottom, const QColor &color) {
 		for (int c = 0; c <= columns; c++)
-			if (playerEdge[static_cast<size_t>(c)]) p->fillRect(QRectF(columnX(c) - 1.0, top, 2.0, bottom - top), color);
+			if (playerEdge[static_cast<size_t>(c)]) p->fillRect(QRectF(colX(c) - 1.0, top, 2.0, bottom - top), color);
 	};
 	thickLines(0, hs, k.columnBorder);
 
 	/* what the script says of a cell, when it says anything */
-	auto ask = [&](int kind, qint64 row, const QString &column) { return queries_ && query_ ? query_(kind, row, column) : QString(); };
+	auto ask = [&](int kind, qint64 row, const QString &column) { return queries_ && query() ? query()(kind, row, column) : QString(); };
 	/* an icon the script names for a cell, drawn in it */
 	auto icon = [&](qint64 row, const QString &column, const QRect &cell) {
 		const QString path = ask(2, row, column);
@@ -539,10 +561,10 @@ void PianoRollItem::paint(QPainter *p)
 		/* every second player's columns */
 		for (int c = 0; c < columns; c++)
 		{
-			const int cw = columnW(c);
+			const int cw = colW(c);
 			if (cw == 0) continue;
-			if (const int32_t player = rows.columnPlayer(c); player > 0 && player % 2 == 0)
-				p->fillRect(columnX(c), y, cw, rowHeight_, altPlayer);
+			if (const int32_t player = players[static_cast<size_t>(c)]; player > 0 && player % 2 == 0)
+				p->fillRect(colX(c), y, cw, rowHeight_, altPlayer);
 		}
 		/* the frame number's own colour: a marker's (when markers are told by colour), else Set Colors' Frame#
 		 * Column on a frame the greenzone holds, else the wash over the row */
@@ -560,15 +582,15 @@ void PianoRollItem::paint(QPainter *p)
 		if (const QColor c(ask(0, row, QStringLiteral("FrameColumn"))); c.isValid()) p->fillRect(cx0, y, fx - cx0, rowHeight_, c);
 		for (int c = 0; c < columns; c++)
 		{
-			const int cw = columnW(c);
+			const int cw = colW(c);
 			if (cw == 0) continue;
-			if (row == pickedRow_ && c == pickedColumn_) p->fillRect(columnX(c), y, cw, rowHeight_, analogEdit);
+			if (row == pickedRow_ && c == pickedColumn_) p->fillRect(colX(c), y, cw, rowHeight_, analogEdit);
 			if (queries_)
-				if (const QColor b(ask(0, row, QString::fromStdString(rows.columnName(c)))); b.isValid()) p->fillRect(columnX(c), y, cw, rowHeight_, b);
+				if (const QColor b(ask(0, row, QString::fromStdString(rows.columnName(c)))); b.isValid()) p->fillRect(colX(c), y, cw, rowHeight_, b);
 		}
 		for (int e = 0; e < extraCount; e++)
 			if (const QColor b(ask(0, row, extras_[static_cast<size_t>(e)].name)); b.isValid())
-				p->fillRect(columnX(columns + e), y, extras_[static_cast<size_t>(e)].width, rowHeight_, b);
+				p->fillRect(colX(columns + e), y, extras_[static_cast<size_t>(e)].width, rowHeight_, b);
 		/* the frames picked, the whole row a third of the way to the selection colour, as Chimera's */
 		const bool isPicked = selectFirst_ >= 0 && row >= selectFirst_ && row <= selectLast_;
 		if (isPicked) p->fillRect(0, y, right, rowHeight_, QColor(picked.red(), picked.green(), picked.blue(), 84));
@@ -587,7 +609,7 @@ void PianoRollItem::paint(QPainter *p)
 		label(QRect(cx0 + 4 + 7, y, fx - cx0 - 11, rowHeight_), left, QString::number(row).rightJustified(digits, QLatin1Char('0')), true);
 		for (int c = 0; c < columns; c++)
 		{
-			const int cx = columnX(c), cw = columnW(c);
+			const int cx = colX(c), cw = colW(c);
 			if (cw == 0) continue; /* hidden */
 			const QString columnName = queries_ ? QString::fromStdString(rows.columnName(c)) : QString();
 			icon(row, columnName, QRect(cx, y, cw, rowHeight_));
@@ -595,7 +617,7 @@ void PianoRollItem::paint(QPainter *p)
 			bool numberRight = false;
 			if (said.isEmpty())
 			{
-				if (rows.columnIsNumber(c))
+				if (numbers[static_cast<size_t>(c)])
 				{
 					int64_t value = 0;
 					if (vm::fromValue(rows.cell(row, c), value)) said = QString::number(value), numberRight = true;
@@ -631,7 +653,7 @@ void PianoRollItem::paint(QPainter *p)
 		for (int e = 0; e < extraCount; e++)
 		{
 			const Extra &x = extras_[static_cast<size_t>(e)];
-			const int cx = columnX(columns + e);
+			const int cx = colX(columns + e);
 			icon(row, x.name, QRect(cx, y, x.width, rowHeight_));
 			if (const QString said = ask(1, row, x.name); !said.isEmpty())
 			{
@@ -643,14 +665,13 @@ void PianoRollItem::paint(QPainter *p)
 
 	/* the grid: a line at every column's left and the last's right, and between the rows, each one
 	 * screen pixel wide; a thick one where a player's columns start and end */
-	QPen gridPen(grid, 0);
-	gridPen.setCosmetic(true);
-	p->setPen(gridPen);
 	const int bottom = std::min(h, hs + rowHeight_ * shown);
-	p->drawLine(cx0, hs + 1, cx0, bottom);
+	down(cx0, hs + 1, bottom, grid);
 	for (int c = 0; c <= columns + extraCount; c++)
-		if (c >= columns || columnW(c) > 0) p->drawLine(columnX(c), hs + 1, columnX(c), bottom);
-	for (int i = 1; i < shown; i++) p->drawLine(0, hs + rowHeight_ * i, w, hs + rowHeight_ * i);
+		if (c >= columns || colW(c) > 0) down(colX(c), hs + 1, bottom, grid);
+	for (int i = 1; i < shown; i++) across(hs + rowHeight_ * i, 0, w, grid);
+	/* the titles' bottom line over the first row, which would cover it */
+	across(hs, 0, w, k.columnBorder);
 	thickLines(hs + 1, bottom, k.columnBorder);
 
 	lastPaintMs_ = timer.nsecsElapsed() / 1.0e6;
