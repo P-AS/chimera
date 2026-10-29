@@ -1,0 +1,72 @@
+name: Published cores
+
+# The cores as they are published, checked against this Chimera. It is a
+# workflow of its own and not part of CI (owner, 2026-10-29): Chimera is
+# independent of every core, so a core that has not published, or published a
+# package this check refuses, never keeps CI, and the releases that follow
+# it, from passing. What it finds is for the cores' own repositories to fix.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # daily, after the cores' own nightlies have had time to publish
+    - cron: '0 18 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  published-cores:
+    # The cores as they are actually published. Chimera ships none and builds
+    # none, so nothing else here would notice a frontend change that broke the
+    # generic waterbox adapter for every core at once - it would surface the
+    # first time somebody downloaded one.
+    #
+    # So: fetch what each core last published and check the CONTRACT against it.
+    # No rom, no firmware, no emulation and no core build - that a package can be
+    # read, understood and turned into a working factory. Whether the emulation
+    # is still right is each core repository's own gate, which runs against this
+    # repository's main and is the same check from the other side.
+    #
+    # A core that has published nothing is skipped, not a failure: the cores gain
+    # their release pipeline one at a time. Note what that means when NOTHING is
+    # fetched - every test is inconclusive and the job goes green having checked
+    # nothing at all, which is exactly what hid this job needing the engine until
+    # the first real packages arrived. The step below fails the job if the fetch
+    # produced no packages, so a silent nothing cannot pass again.
+    name: published cores (package contract)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Cache Qt
+        uses: actions/cache@v4
+        with:
+          path: ~/qt
+          key: qt-6.12.0-linux-aqt-3.3.0
+
+      - name: Build Chimera (reading a package is the engine's; the contract test is the window's)
+        run: ./tools/ci-chimera.sh "$HOME/qt"
+
+      - name: Fetch every published core package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tools/fetch-cores.sh
+
+      - name: What was fetched
+        # All fifteen cores publish, so an empty build/Cores means the fetch
+        # broke, not that the cores are young. Passing on nothing is how this job
+        # spent its first day validating nothing.
+        run: |
+          ls -la build/Cores || true
+          count=$(find build/Cores -name '*.chimeraCore' 2>/dev/null | wc -l)
+          echo "$count package(s) fetched"
+          [ "$count" -gt 0 ] || { echo "::error::no core packages were fetched; there is nothing to check" >&2; exit 1; }
+
+      - name: The frontend against real packages
+        run: build/meson-linux/source/ui/test-packages build/Cores

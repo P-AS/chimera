@@ -11153,3 +11153,23 @@ out); the View item is drawn "View" until Alt is pressed, "&View" after,
 and plain again after a click or Alt let go (each failed when broken).
 Qt's menu bar takes the keyboard on Alt let go only on Windows, so the
 forgetting was not tried: not tried on Windows.
+
+## Chimera's CI depends on no core (user-decided, 2026-10-29)
+
+CI had a job that fetched every core's published package and ran the package
+contract tests (test-packages) against them. After the language pass, some
+cores' nightlies had not been rebuilt yet, and one (srb2) is published from a
+repository Chimera does not control, whose pull request with the tables was
+not merged. The job failed, CI failed with it, and Release, which publishes
+only a commit whose CI passed, published no development build or nightly
+for any of Chimera's own fixes. The owner: Chimera must be modular and
+independent of core packages, and never blocked by them.
+
+The job is now a workflow of its own, Published cores (cores.yml), run on
+every push to main, daily and by hand. It checks the same contract and says
+what it finds, but CI no longer includes it, so Release does not wait on it.
+Nothing else in CI uses a core: the end-to-end tests use the synthetic core
+built from this repository.
+
+Tested: both workflow files read as YAML; CI's jobs are the two witness
+jobs. The workflows themselves run on push.

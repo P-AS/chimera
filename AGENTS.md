@@ -51,7 +51,8 @@ nothing under `source/`.
   (`source/ui/meson.build`).
 - `tools/` - bundles, publishing (`publish-core.sh`, `write-core-index.sh`),
   `fetch-cores.sh`.
-- `official-cores.json` - the roster CI goes by. The frontend does not read it.
+- `official-cores.json` - the roster the Published cores workflow goes by (not
+  CI: Chimera depends on no core). The frontend does not read it.
 - `docs/` - one document per subject; `design-principles.md` is the log.
 - `build/` - every output. Ignored by git. `build/Cores` is where a core's
   `build-package.sh -r <this checkout>` installs its package.

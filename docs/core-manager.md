@@ -363,9 +363,9 @@ Nothing in Chimera's own CI builds a real core any more, so a frontend change
 could break the generic waterbox adapter for every core at once and nothing
 here would notice - it would surface the first time somebody tried one.
 
-The `published-cores` job closes that. `tools/fetch-cores.sh` downloads what
-each core last published into `build/Cores`, and `test-packages` runs against
-the real packages:
+The `Published cores` workflow (`.github/workflows/cores.yml`) closes that.
+`tools/fetch-cores.sh` downloads what each core last published into
+`build/Cores`, and `test-packages` runs against the real packages:
 
 * every package can be read;
 * every package's guest ABI is one this build runs;
@@ -382,6 +382,12 @@ takes seconds. **Whether the emulation is still right is each core
 repository's own gate**, which checks out Chimera's main and replays real
 movies against it - the same check from the other side, run by the repository
 that has the content to run it.
+
+It is not part of CI (owner, 2026-10-29): Chimera is independent of every
+core, so a core that has not published, or has published a package this
+check refuses, never keeps CI, and the releases that follow CI, from
+passing. The workflow runs on every push to main, daily and by hand, and
+what it finds is for the cores' repositories to fix.
 
 A core that has published nothing is skipped rather than failing the job. Note
 what that means when NOTHING is fetched, because it bit us: every test is
