@@ -489,13 +489,13 @@ Windows (the GTX 1060, through WSL, screen locked):
   Comments, Edit Subtitles, Undo History, TAStudio Settings) are now in a TAStudio window, and the
   separate Branches window is gone: the branches are TAStudio's Branches
   box, as in Chimera.
-- **Copies of a project share a cache folder.** A project saved under
-  another name gets an id of its own (2026-10-29), but a file copied by
-  hand or a backup keeps its original's id, and the cache folder is by id.
-  The window does not yet check the path the cache recorded (the
-  2026-10-15 rule), so opening such a copy can load the other's state
-  history, and opening one can clear a branch state only the other's
-  branch had.
+- **Copies of a project shared a cache folder** (fixed 2026-10-29). The
+  cache folder is by id, and a copy kept its original's id, so opening one
+  could load the other's state history. A project saved under another name
+  now gets an id of its own; a file copied by hand, a moved one or a backup
+  still keeps the id, and opened from another path than the one its cache
+  recorded, it drops the cache's history and branch states (the 2026-10-15
+  rule, now in the window too).
 
 - **A project's columns before its buttons** (2026-10-26). A project
   with no piano roll columns saved (every one New Project makes) was

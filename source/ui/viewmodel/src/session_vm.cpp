@@ -32,6 +32,18 @@
 namespace chimera::vm {
 
 namespace {
+/* Two paths to one project file: the same file when both are there (as the
+ * system matches names and links), else the same whole path. */
+bool samePlace(const std::string &a, const std::string &b)
+{
+	namespace fs = std::filesystem;
+	std::error_code both, one, other;
+	const bool same = fs::equivalent(fs::path(a), fs::path(b), both);
+	if (!both) return same;
+	const fs::path x = fs::weakly_canonical(fs::path(a), one), y = fs::weakly_canonical(fs::path(b), other);
+	return !one && !other ? x == y : a == b;
+}
+
 /* A zip of the files given, each stored as it is (the savedata export's,
  * for more than one file; a zip any unzipper opens) */
 uint32_t crc32Of(const std::vector<uint8_t> &bytes)
@@ -3652,6 +3664,32 @@ void SessionViewModel::tidyBranchStatesOnMachine()
 	for (const fs::path &f : gone) fs::remove(f, ec);
 }
 
+void SessionViewModel::forgetElsewhereCacheOnMachine(const std::string &path)
+{
+	/* Opened from another path than the one its cache was last opened or
+	 * saved from: a file copied by hand, a moved one, a backup or a recovered
+	 * copy, each keeping the id and so the folder. The state history and the
+	 * branches' states there were made for whatever the other file held, so
+	 * they go and the project starts with an empty greenzone; the budgets
+	 * stay, being the person's choice for the project. A cache that never
+	 * said where its project was is left alone (user-decided, 2026-10-15). */
+	namespace fs = std::filesystem;
+	const fs::path dir = projectCacheOnMachine();
+	if (path.empty() || dir.empty()) return;
+	std::ifstream in(dir / "about.json", std::ios::binary);
+	const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	json::Json about;
+	std::string err;
+	if (text.empty() || !json::parse(text, about, err) || about.kind != json::Json::Kind::Object) return;
+	const json::Json *was = about.find("projectPath");
+	if (was == nullptr || was->kind != json::Json::Kind::String || was->text.empty() || samePlace(was->text, path)) return;
+	/* a history the session closing now is still writing may be this folder's */
+	if (s_ != nullptr) ce_session_history_save_wait(s_);
+	std::error_code ec;
+	fs::remove(dir / "history.bin", ec);
+	fs::remove_all(dir / "branches", ec);
+}
+
 std::string SessionViewModel::movieTextOnMachine() const
 {
 	if (s_ == nullptr) return {};
@@ -4399,6 +4437,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	projectPathM_ = path;
 	rememberLocalPathsOnMachine();
 	package_ = package;
+	forgetElsewhereCacheOnMachine(path);
 	tidyBranchStatesOnMachine();
 	rememberAboutOnMachine(path);
 	const std::string title = ce_project_title(p) != nullptr ? ce_project_title(p) : "";
@@ -4824,9 +4863,7 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 	 * nothing to start from. A backup is the same project kept, and keeps
 	 * its id. */
 	namespace fs = std::filesystem;
-	std::error_code same;
-	const bool another = !backup && !projectPathM_.empty()
-		&& fs::weakly_canonical(fs::path(projectPathM_), same) != fs::weakly_canonical(fs::path(path), same);
+	const bool another = !backup && !projectPathM_.empty() && !samePlace(projectPathM_, path);
 	const fs::path cacheWas = another ? projectCacheOnMachine() : fs::path();
 	const fs::path recoveryWas = another ? recoveryDirOf(projectM_) : fs::path();
 	const char *error = nullptr;

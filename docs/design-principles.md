@@ -11038,3 +11038,21 @@ one lacking a key and an Italian one that is not JSON: with French in use
 the German text, with Spanish the Spanish and, for the missing key, the
 German, with Italian the German. Broken once (the step left out) and seen
 to fail.
+
+## The window drops a cache made for a project at another path (2026-10-29)
+
+The owner's 2026-10-15 rule, which the Qt window did not have: a project
+opened from another path than the one its cache last recorded (about.json's
+projectPath) - a file copied by hand, a moved one, a backup, a recovered
+copy, all of which keep the id - has the cache's state history and branch
+states removed and starts with an empty greenzone. The budgets stay, and a
+cache that never recorded a path is left alone. With Save As giving the copy
+an id of its own (above), this covers the copies that keep one. Paths are
+the same when they name one file, as the system matches names and links.
+
+Tested: view models saves a project, copies the file, and opens the copy:
+no history, no branch states, an empty greenzone, the budgets kept and the
+copy's path recorded; the copy's own history, saved, is then kept for the
+first file once the cache's path is taken away. With the path check made to
+always match, it failed. meson test 47/47, witness 122/0, the Windows build
+compiles.

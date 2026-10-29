@@ -4870,6 +4870,36 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(session.lastSeekFrames.get() == end);
 	CHECK(session.readDomain("RAM") == std::vector<uint8_t>(ram.begin(), ram.end()));
 
+	/* Opened from another path - a file copied by hand, a moved one, a
+	 * backup - the project keeps its id, but what its cache holds was made
+	 * for the other file: the greenzone and the branches' states go, and the
+	 * budgets stay. A cache that never said where its project was is left
+	 * alone (user-decided, 2026-10-15). */
+	session.run("saveProject", {std::string()}, error);
+	CHECK(d.until([&] { return session.status.get().rfind("Saved " + branched, 0) == 0; }, 20));
+	CHECK(d.until([&] { return fs::exists(history); }, 20));
+	CHECK(!filesIn(ownStates, ".state").empty());
+	const std::string copied = (dir / "copied.chimeraProject").string();
+	fs::copy_file(branched, copied, fs::copy_options::overwrite_existing);
+	std::ofstream(projectCache / "budgets.json") << "{\"memoryMb\": 256}";
+	CHECK(openIt(copied));
+	d.until([] { return false; }, 0.2);
+	CHECK(session.projectId.get() == ownId);
+	CHECK(!fs::exists(history) && filesIn(ownStates, ".state").empty() && session.greenEnd.get() == 0);
+	CHECK(fs::exists(projectCache / "budgets.json"));
+	CHECK(readFile(projectCache / "about.json").find("copied.chimeraProject") != std::string::npos);
+	session.run("seek", {end}, error);
+	CHECK(d.until([&] { return session.frame.get() == end; }, 30));
+	session.run("saveProject", {std::string()}, error);
+	CHECK(d.until([&] { return session.status.get().rfind("Saved " + copied, 0) == 0; }, 20));
+	CHECK(d.until([&] { return fs::exists(history); }, 20));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove(projectCache / "about.json");
+	CHECK(openIt(branched));
+	CHECK(d.until([&] { return session.greenEnd.get() > 0; }, 10));
+	fs::remove(projectCache / "budgets.json");
+
 	/* opened with no package given: the installed core is found for it, and
 	 * a cores folder without it says which core is missing */
 	{

@@ -767,6 +767,9 @@ private:
 	std::string machineIdOnMachine();
 	/* the state files no branch of the project has any more go */
 	void tidyBranchStatesOnMachine();
+	/* a project opened from another path than its cache last knew it at:
+	 * the greenzone and the branches' states kept there go */
+	void forgetElsewhereCacheOnMachine(const std::string &path);
 	static void loadMovieOnMachine(ce_session *s, const std::string &text);
 	void openProjectOnMachine(const std::string &path, const std::string &package, bool keepInputs,
 		ce_project *reuse = nullptr);
