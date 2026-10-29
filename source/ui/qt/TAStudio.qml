@@ -1143,13 +1143,20 @@ ApplicationWindow {
     ProjectDetails { id: commentsWindow; part: "comments"; vm: tas.projectDetails; visible: false }
     ProjectDetails { id: subtitlesWindow; part: "subtitles"; vm: tas.projectDetails; visible: false }
     UndoHistory { id: undoHistoryWindow; vm: tas.pianoRoll; rollColor: tas.rollColor; visible: false }
-    // a TAStudio colour as the roll draws it: its own (Set Colors), else the theme's
+    // a TAStudio colour as the roll draws it: its own (Set Colors), else the
+    // theme's, each read when it changes (asked for every cell of the branch
+    // and marker lists on every frame, read each time it kept the window busy)
+    readonly property var ownRollColors: {
+        try { return JSON.parse(tas.pianoRoll.rollColors || "{}") } catch (e) { return {} }
+    }
+    readonly property var themeRollColors: {
+        // read again when the theme changes: its colours and the palette it gives the window
+        if (!tas.mainRoll || !tas.mainWindow.themeColorMap || !tas.palette.base) return {}
+        try { return JSON.parse(tas.mainRoll.themeColors()) } catch (e) { return {} }
+    }
     function rollColor(role) {
-        let own = {}, theme = {}
-        try { own = JSON.parse(tas.pianoRoll.rollColors || "{}") } catch (e) {}
-        if (own[role] !== undefined) return own[role]
-        try { theme = JSON.parse(tas.mainRoll.themeColors()) } catch (e) {}
-        return theme[role] || ""
+        if (tas.ownRollColors[role] !== undefined) return tas.ownRollColors[role]
+        return tas.themeRollColors[role] || ""
     }
     TAStudioSettings { id: tastudioSettingsWindow; session: tas.session; pianoRoll: tas.pianoRoll; branches: tas.branches; themeColorsOf: () => tas.mainRoll ? tas.mainRoll.themeColors() : "{}"; ownerWindow: tas; visible: false }
 }

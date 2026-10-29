@@ -421,6 +421,24 @@ void luaConsole()
 	console.frameDone();
 	run("execute", {std::string("n, seen")});
 	CHECK(lastLine() == "3\t2" && console.running.get() && console.anyEnabled.get());
+	/* the window's part of a frame, and the list it shows, ask the scripts'
+	 * thread nothing: what they show comes with the frame (issue 404: in
+	 * the window each question waited for the frame the machine was running) */
+	{
+		int asked = 0;
+		lua.toScripts = [&asked](const std::function<void()> &job) {
+			asked++;
+			job();
+			return true;
+		};
+		const LuaBridge::Seen seen = lua.seen();
+		CHECK(asked == 1 && seen.running && seen.states.size() == 2);
+		asked = 0;
+		console.afterFrame(seen);
+		CHECK(cell(list, 2, 2) == "running" && cell(list, 3, 2) == "running" && console.running.get());
+		CHECK(asked == 0);
+		lua.toScripts = nullptr;
+	}
 	/* paused: its code waits; what it registered is still called, as Chimera's */
 	run("select", {int64_t{2}, std::string("only")});
 	CHECK(console.selectedCount.get() == 1 && console.selectedScripts.get() == 1 && list.cell(2, 4) == Value(true));

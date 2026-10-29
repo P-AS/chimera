@@ -425,12 +425,11 @@ Windows (the GTX 1060, through WSL, screen locked):
 - **The window on screen (issue 404, 2026-10-29):** FreeJ2ME playing a
   new project's empty movie past its end, as a person recording does, with
   TAStudio open. Before: the main window drew 286 of 1,037 frames (a
-  window frame every 58 ms). After: 618 of 1,042, TAStudio's window a frame
-  every 17.0 ms (median), its roll drawn in 0.97 ms (7.7 ms before). Some
-  frames still take two or three refreshes (the 95th percentile is 50 ms)
-  with this core on Windows only; the synthetic core draws 809 of 811.
-  Windows lets no Direct3D window present frames while the screen is
-  locked, so these runs need it unlocked.
+  window frame every 58 ms). After: 1,339 of 1,344, both windows a frame
+  every 16.6 ms (median), the roll drawn in 1.0 ms (7.7 ms before). What
+  is left are a few pauses of QML's script memory clean-up, 15 to 37 ms,
+  about one every two seconds. Windows lets no Direct3D window present
+  frames while the screen is locked, so these runs need it unlocked.
 
 ## What went wrong, and what was done
 

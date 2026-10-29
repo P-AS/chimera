@@ -573,6 +573,17 @@ bool LuaBridge::running() const
 	return onScripts([&] { return !scripts_.empty(); });
 }
 
+LuaBridge::Seen LuaBridge::seen()
+{
+	return onScripts([&] {
+		Seen s;
+		s.running = !scripts_.empty();
+		for (const Script &script : scripts_) s.states[script.id] = script.state;
+		s.stamp = askHere("__chimera_registered_stamp", {});
+		return s;
+	});
+}
+
 void LuaBridge::consoleClosed()
 {
 	onScripts([&] {

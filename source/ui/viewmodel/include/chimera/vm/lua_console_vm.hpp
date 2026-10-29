@@ -78,8 +78,9 @@ public:
 	 * machine's thread and the window its part with afterFrame) */
 	void frameDone();
 	/* the window's part of a frame done: the write count for the frame
-	 * begins again, and the list and functions are said again */
-	void afterFrame();
+	 * begins again, and the list and functions are said again, as the
+	 * scripts were seen at the end of the frame */
+	void afterFrame(const LuaBridge::Seen &seen);
 	/* text the scripts wrote, line ends and all */
 	void append(const std::string &text);
 
@@ -164,12 +165,18 @@ private:
 	std::vector<size_t> selectedRows() const;
 	void listChanged();
 	void markChanged();
+	/* the list and functions said again, as the scripts are now (asked of
+	 * the scripts' thread and waited for) or as they were seen */
 	void refresh();
+	void refresh(const LuaBridge::Seen &seen);
 	void refreshFunctions(bool always);
+	void refreshFunctions(bool always, const std::string &stamp);
 	void addRecent(Property<std::string> &list, const std::string &path);
 	void line(const std::string &text);
 
 	LuaBridge &lua_;
+	/* the scripts as last seen: what the list shows */
+	LuaBridge::Seen seen_;
 	std::function<void(const std::string &)> echo_;
 	std::vector<Entry> entries_;
 	std::vector<std::string> output_;

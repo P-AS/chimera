@@ -11313,3 +11313,39 @@ Tested:
   frames still take two or three refreshes there (95th percentile 50 ms),
   with this core on Windows only: the synthetic core draws 809 of 811, and
   muting the sound changed nothing. That is not explained yet.
+
+## The window waits on nothing after a frame (2026-10-29, issue 404)
+
+After the lists and the roll's drawing were fixed (above), the window on
+Windows still drew only 618 of 1,042 frames of FreeJ2ME, while the
+synthetic core drew nearly all. Linux has no such stall, so its cause was
+found on Windows itself: a thread in the window that paused the window's
+own thread every 2 ms and read where it was (Windows' stack unwinding, a
+temporary build, not kept).
+
+In those samples (taken with the screen locked, which stops the drawing but
+not the rest) the window's thread spent about 42% of its time waiting for
+the machine's. After every frame the Lua Console's view model asked the scripts, which
+live on the machine's thread, whether any ran, each one's state and the
+stamp of their registered functions, and its list asked each row's state
+again as it was drawn. Every question waited for the frame the machine was
+running by then, which for FreeJ2ME (a Java machine in the sandbox) is long.
+Now the machine's thread reads all three at the end of the frame, where it
+costs nothing (LuaBridge::seen), and hands them to the window with the
+frame; the list shows the states from what was seen. Asked by a person
+(starting or pausing a script), the console still asks and waits, once.
+
+The next samples showed the window's script memory being cleaned up more
+than it needed: TAStudio's branch and marker lists ask a colour for each
+cell, and each answer read the roll's colours and the theme's from JSON
+text again. They are read once now, when they change.
+
+Tested: view models gains a check that the window's part of a frame, and
+the list it shows, ask the scripts' thread nothing (with the old asking put
+back it counted the questions and failed). On Windows, GTX 1060, FreeJ2ME
+playing a new project's empty movie: 1,339 of 1,344 frames drawn (618 of
+1,042 before), both windows a frame every 16.6 ms (median). In 10 seconds of
+samples 6 pauses remain, of 15 to 37 ms, QML's script memory clean-up; the
+95th percentile of the window's frame times is 33 ms, a frame now and then
+waiting one more refresh as the machine's 60.07 frames a second drift
+against the screen's.

@@ -1372,11 +1372,13 @@ int main(int argc, char **argv)
 	session.setScriptTurns([&lua] { lua.frameStart(); },
 		[&lua, &luaConsole, &dispatcher, &consoleSaid] {
 			lua.frameDone();
-			/* the console's list and functions said again, once a pass of the window */
+			/* the console's list and functions said again, once a pass of the
+			 * window, as the scripts are seen here, between frames: asked from
+			 * the window, it waited for the frame the machine was running */
 			if (!consoleSaid.exchange(true))
-				dispatcher.post([&luaConsole, &consoleSaid] {
+				dispatcher.post([&luaConsole, &consoleSaid, seen = lua.seen()] {
 					consoleSaid = false;
-					luaConsole.afterFrame();
+					luaConsole.afterFrame(seen);
 				});
 		});
 	/* when no frame is run, the scripts that wait in emu.yield go on, as Chimera's loop resumes them */
@@ -1384,9 +1386,9 @@ int main(int argc, char **argv)
 		[&lua, &luaConsole, &dispatcher, &consoleSaid] {
 			lua.yieldTurn();
 			if (!consoleSaid.exchange(true))
-				dispatcher.post([&luaConsole, &consoleSaid] {
+				dispatcher.post([&luaConsole, &consoleSaid, seen = lua.seen()] {
 					consoleSaid = false;
-					luaConsole.afterFrame();
+					luaConsole.afterFrame(seen);
 				});
 		});
 	/* a script's event.oninputpoll: at each read of the controls a core reports, inside its frame */

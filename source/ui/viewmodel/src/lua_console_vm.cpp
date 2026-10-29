@@ -920,6 +920,12 @@ void LuaConsoleViewModel::listChanged()
 
 void LuaConsoleViewModel::refresh()
 {
+	refresh(lua_.seen());
+}
+
+void LuaConsoleViewModel::refresh(const LuaBridge::Seen &seen)
+{
+	seen_ = seen;
 	int64_t total = 0, active = 0, paused = 0, selected = 0, selectedFiles = 0;
 	for (const Entry &e : entries_)
 	{
@@ -929,7 +935,8 @@ void LuaConsoleViewModel::refresh()
 		selectedFiles += e.selected;
 		if (e.script == 0) continue;
 		active++;
-		paused += lua_.state(e.script) == LuaBridge::State::Paused;
+		const auto state = seen_.states.find(e.script);
+		paused += state != seen_.states.end() && state->second == LuaBridge::State::Paused;
 	}
 	std::string s = tr("lua_console.scripts", total);
 	if (total != 0) s += " " + tr("lua_console.scripts_state", {std::to_string(active), std::to_string(paused)});
@@ -942,13 +949,17 @@ void LuaConsoleViewModel::refresh()
 	selectedCount.set(selected);
 	selectedScripts.set(selectedFiles);
 	anyEnabled.set(active != 0);
-	running.set(lua_.running());
-	refreshFunctions(false);
+	running.set(seen_.running);
+	refreshFunctions(false, seen_.stamp);
 }
 
 void LuaConsoleViewModel::refreshFunctions(bool always)
 {
-	const std::string stamp = lua_.ask("__chimera_registered_stamp");
+	refreshFunctions(always, lua_.ask("__chimera_registered_stamp"));
+}
+
+void LuaConsoleViewModel::refreshFunctions(bool always, const std::string &stamp)
+{
 	if (!always && stamp == functionsStamp_) return;
 	functionsStamp_ = stamp;
 	functions_.clear();
@@ -991,14 +1002,13 @@ void LuaConsoleViewModel::addRecent(Property<std::string> &list, const std::stri
 void LuaConsoleViewModel::frameDone()
 {
 	lua_.frameDone();
-	afterFrame();
+	afterFrame(lua_.seen());
 }
 
-void LuaConsoleViewModel::afterFrame()
+void LuaConsoleViewModel::afterFrame(const LuaBridge::Seen &seen)
 {
 	messages_ = 0;
-	refresh();
-	refreshFunctions(false);
+	refresh(seen);
 }
 
 void LuaConsoleViewModel::line(const std::string &text) { append(text + "\n"); }
@@ -1127,7 +1137,10 @@ Value LuaConsoleViewModel::Scripts::cell(int64_t row, int32_t column) const
 	case 2:
 		if (e.separator) return std::string();
 		if (e.script == 0) return std::string("stopped");
-		return std::string(vm_.lua_.state(e.script) == LuaBridge::State::Paused ? "paused" : "running");
+		{
+			const auto state = vm_.seen_.states.find(e.script);
+			return std::string(state != vm_.seen_.states.end() && state->second == LuaBridge::State::Paused ? "paused" : "running");
+		}
 	case 3: return e.separator;
 	case 4: return e.selected;
 	default: return {};

@@ -22,6 +22,7 @@
  * waiting on the window: see toScripts and toWindow. */
 
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,18 @@ public:
 	void stopAll();
 	/* whether any script is running or paused */
 	bool running() const;
+	/* what the Lua Console shows of the scripts: whether any runs, each
+	 * one's state, and the stamp of the functions they registered. Read on
+	 * the scripts' thread at the end of a frame and handed to the window
+	 * with it, the window waits on nothing: asked from the window, each
+	 * answer waited for the frame the machine was running (issue 404) */
+	struct Seen
+	{
+		bool running = false;
+		std::map<int64_t, State> states;
+		std::string stamp;
+	};
+	Seen seen();
 	/* told when a script stops, whatever stopped it (its end, its error, stop()) */
 	std::function<void(int64_t)> onStopped;
 
