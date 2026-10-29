@@ -2377,13 +2377,16 @@ void SessionViewModel::restoreOnMachine(int64_t target)
 	mcpFastM_ = false;
 	later([this] { running.set(false); fps.set(0.0); seekingTo.set(-1); });
 	/* where it starts from: the nearest stored state before the target, and
-	 * before the edit while the machine is past it. A short way, all the
-	 * greenzone holds, is gone at once */
+	 * before the edit while the machine is past it. All the greenzone holds
+	 * is gone at once */
 	const int64_t from = ce_session_frame(s_);
 	const int64_t stored = target > 0 ? ce_session_greenzone_nearest(s_, greenEndM_ < from ? std::min(target - 1, greenEndM_) : target - 1) : 0;
-	if (stored < target - 1)
+	/* with Turbo seek, a way no longer than a piece is gone at once, as any
+	 * seek of the machine's own; a longer one, and without Turbo seek any,
+	 * goes back to that state now (a short seek: the edit honoured), then the
+	 * rest */
+	if (stored < target - 1 && (!turboSeekM_.load() || target - 1 - std::max<int64_t>(stored, 0) > kTurboPieceFrames))
 	{
-		/* back to that state now (a short seek: the edit honoured), then the rest */
 		seekOnMachine(std::max<int64_t>(stored, 0), false);
 		const int64_t at = ce_session_frame(s_);
 		if (!turboSeekM_.load() && at < target)
