@@ -11349,3 +11349,46 @@ samples 6 pauses remain, of 15 to 37 ms, QML's script memory clean-up; the
 95th percentile of the window's frame times is 33 ms, a frame now and then
 waiting one more refresh as the machine's 60.07 frames a second drift
 against the screen's.
+
+## Files and folders are picked with the desktop's own chooser on Linux (2026-10-29)
+
+A person reported Linux's file dialog as unusable: Qt's own, drawn inside
+the window since issue 389. It is not the desktop's chooser, which many
+people prefer. A path cannot be typed into it. It has no way to show hidden
+files. Its folder dialog picks the folder highlighted in the list instead of
+the one shown. It lists no bookmarks, no drives and not even the root. They
+asked for the desktop's chooser through the XDG desktop portal, as PR 275
+did for the Windows Forms frontend, with a dialog of Chimera's own where
+there is no portal, and that dialog to fix the same points.
+
+- `ChimeraDialogs`' `FileDialog` and `FolderDialog` are now Chimera's own
+  objects with the properties of Qt's that the windows use, so no window
+  changed. On Windows and macOS they still open Qt's dialog, which is the
+  system's.
+- On Linux they ask the portal through libdbus, loaded when first needed,
+  since Chimera's Qt is built without D-Bus (`portal_file_chooser.cpp`). The
+  rules PR 275 found are kept: 2 within 300 ms is a chooser that never came
+  up, a later 2 is Cancel, the portal leaving the bus is no chooser, and the
+  windows take no input instead of being disabled. Under Wayland the chooser
+  is given no parent window.
+- Where there is no portal, Chimera's own chooser (`BuiltinChooser.qml`)
+  replaces Qt's: a Location box to type a path into, Show hidden files, the
+  root, home, the person's folders, GTK's and KDE's bookmarks and the mounted
+  drives beside the list, and a folder dialog that picks the folder it
+  shows. Issue 389 chose to fix Qt's dialog rather than write one of
+  Chimera's own. Qt's dialog has no way in for the points above, so this
+  goes the other way, and is the owner's to confirm.
+- The theme test set Fusion's style before the application was made. On
+  KDE, the platform theme then set Breeze's in its place, so the test drew
+  Breeze's controls, and its Lua form check failed on a KDE desktop whatever
+  the change. It now sets the style after the application, as the window
+  does.
+
+Measured: the new file chooser test passes both halves, with Chimera's
+chooser (no bus) and through a stand-in portal on a private bus (52 and 54
+checks). With the input filter not installed, the two checks of a key
+pressed while the chooser is open failed. Against this desktop's own portal
+(KDE Plasma), a request was taken and its request object was at the path
+Chimera listens on; choosing a file in KDE's dialog by hand has not been
+tried here. GNOME's, GTK's and the others' choosers, Windows and macOS were
+not tried with this change.
