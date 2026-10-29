@@ -11173,3 +11173,28 @@ built from this repository.
 
 Tested: both workflow files read as YAML; CI's jobs are the two witness
 jobs. The workflows themselves run on push.
+
+## A history of another machine leaves the greenzone as it was (2026-10-29)
+
+Found while testing issue 411. When the window opens a project it loads the
+state history kept in the project's cache, which the engine takes only when
+it was made by the same machine (core build, settings, files). The loader
+emptied the greenzone first and then checked whose history it was, so a
+history it refused - another core build's, say, after a core update - left
+the session with no state at all, not even the one taken of the first frame
+when the project opened. Every seek back then failed ("the seek was
+interrupted"): the end-to-end test's MCP agent hit it once the synthetic core
+was rebuilt, against a cache an earlier run had left behind.
+
+The states held stay now until a file is taken: one of another machine, one
+in a format no longer read, one that is not a history, or no file at all
+leaves them as they are. A file taken and then found damaged part way still
+empties the history; the session then takes the machine's state again, so
+it always has a frame to go back to.
+
+Tested: engine_state_history keeps a captured first frame through loading
+another machine's history, an old-format one and a file that is not a
+history (it failed with the loader emptying first); the earlier check that
+a history in an older format is dropped without the list now finds the
+states held kept. The MCP agent run against the cache that broke it: every
+check passed (before: every seek back answered "interrupted").

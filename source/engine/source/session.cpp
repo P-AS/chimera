@@ -4876,7 +4876,11 @@ static int32_t historyLoad(ce_session *s, const char *path, const char *machine_
 	std::vector<std::string> older;
 	for (uint32_t f = chimera::kOldestReadableStateFormat; f < chimera::kStateFormat; f++)
 		older.push_back(id.substr(0, id.size() - now.size()) + chimera::historyFormatSuffix(f));
-	return s->history.loadFrom(path, id.c_str(), s->error, older) ? 0 : 1;
+	if (s->history.loadFrom(path, id.c_str(), s->error, older)) return 0;
+	/* a file this machine's that turned out damaged has taken the states with
+	 * it: the machine's state now is the one it starts from again */
+	if (s->history.count() == 0) s->greenzoneCapture();
+	return 1;
 }
 
 int32_t ce_session_history_load(ce_session *s, const char *path, const char *machine_id)

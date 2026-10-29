@@ -3798,13 +3798,18 @@ bool StateHistory::saveWait(std::string &error)
 bool StateHistory::loadFrom(const char *path, const char *machineId, std::string &error,
 	const std::vector<std::string> &alsoReadable)
 {
-	clear();
+	/* The states held now (the frame a session opened on) stay until the
+	 * file is taken: one of another machine, of a format no longer read, or
+	 * no file at all leaves them as they are. Cleared first, a session that
+	 * opened on another machine's file kept no state at all, not even its
+	 * first frame's, and could seek back nowhere (2026-10-29). */
 	std::FILE *f = chimera::openFile(path, "rb");
 	if (f == nullptr) return true;   /* no history yet is not a failure */
+	bool taken = false;
 
 	auto give_up = [&](std::string why) {
 		std::fclose(f);
-		clear();
+		if (taken) clear();
 		error = std::move(why);
 		return false;
 	};
@@ -3827,7 +3832,6 @@ bool StateHistory::loadFrom(const char *path, const char *machineId, std::string
 		{
 			if (std::memcmp(magic, old, sizeof magic) != 0) continue;
 			std::fclose(f);
-			clear();
 			return true;
 		}
 		return give_up(chimera::lang::tr("history.not_history"));
@@ -3855,9 +3859,10 @@ bool StateHistory::loadFrom(const char *path, const char *machineId, std::string
 		/* Not damage, and not an error the user did anything about: these states
 		 * belong to a machine with other settings, files or core. */
 		std::fclose(f);
-		clear();
 		return true;
 	}
+	clear();
+	taken = true;
 
 	/* A body record. 3 and 4: length, bytes. 5: raw length, held length,
 	 * bytes - and held < raw is a zstd frame, taken as it is. A frame is not

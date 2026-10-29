@@ -337,13 +337,30 @@ int main(void)
 		assert(h.count() == 0);
 	}
 
+	{ // and the states held already stay: a session opens on its first frame,
+	  // and one that kept nothing could seek back nowhere (2026-10-29)
+		const chimera::HostApi api = fakeHost();
+		g_machine = Machine{};
+		History h;
+		h.configure(&api, nullptr, 64ull << 20);
+		h.capture(0);
+		assert(h.count() == 1);
+		write(historyFile("ChimeraHistory3", "one machine", 0, { 1, 2 }));
+		assert(h.loadFrom(kPath, "another machine", error));
+		assert(h.count() == 1 && h.nearest(0) == 0);
+		write(historyFile("ChimeraHistory1", "machine", 0, { 1, 2 }));   /* a format no longer read */
+		assert(h.loadFrom(kPath, "machine", error) && h.count() == 1);
+		write(historyFile("NotAHistory!!!!", "machine", 0, { 1, 2 }));   /* not a history: said, and nothing lost */
+		assert(!h.loadFrom(kPath, "machine", error) && h.count() == 1);
+	}
+
 	{ // one written in an older format this build still reads is kept (2026-10-18)
 		write(historyFile("ChimeraHistory3", "machine#f1", 0, { 1, 2 }));
 		History h;
 		assert(h.loadFrom(kPath, "machine#f2", error, { "machine#f1" }));
 		assert(h.count() == 3);
-		assert(h.loadFrom(kPath, "machine#f2", error));   /* and without the list, dropped */
-		assert(h.count() == 0);
+		assert(h.loadFrom(kPath, "machine#f2", error));   /* and without the list, not taken: */
+		assert(h.count() == 3);                            /* what is held stays */
 	}
 
 	{ // and so is one an older build wrote: losing a cache costs replaying
