@@ -141,7 +141,9 @@ Chimera's window: Qt 6.12, QML views over C++ view models. The code is in
   grids (column titles, grid lines, bold text, its colours), their icon
   buttons and tooltips (the hotkeys named), a branch dragged by its number
   into another's place, Edit Marker Frame, Turbo seek (off at first: a seek
-  past the greenzone plays there at the machine's own speed, as Chimera's),
+  past the greenzone plays there at the machine's own speed, as Chimera's;
+  the way back after an edit and the green arrow go the same way, so the
+  window is answered on the way: issue 406),
   and the status line (what was said, a seek's progress, the frames picked,
   states held and frames copied). The main window's status bar is Chimera's:
   icons for the movie (played back or recorded), paused or playing to a

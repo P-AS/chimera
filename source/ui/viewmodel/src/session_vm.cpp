@@ -1714,9 +1714,7 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		{}, [this](const Args &, std::string &) -> Value {
 			submit([this] {
 				if (s_ == nullptr || restoreFrameM_ < 0) return;
-				seekOnMachine(restoreFrameM_, false);
-				restoredMovesM_ = movesM_;
-				restoredAtM_ = frameM_;
+				restoreOnMachine(restoreFrameM_);
 			});
 			return {};
 		}, &isOpen);
@@ -2316,6 +2314,7 @@ int64_t SessionViewModel::clockOnMachine() const
 
 void SessionViewModel::seekAsAskedOnMachine(int64_t target)
 {
+	restoreToM_ = -1;
 	turboSeekToM_ = -1;
 	runningM_ = false;
 	pauseOnFrameM_ = -1;
@@ -2335,7 +2334,7 @@ void SessionViewModel::seekAsAskedOnMachine(int64_t target)
 			if (at == target) return;
 			if (at < target)
 			{
-				pauseOnFrameM_ = target;
+				pauseOnFrameM_ = playedSeekToM_ = target;
 				runningM_ = true;
 				due_ = fpsSince_ = Clock::now();
 				fpsFrames_ = 0;
@@ -2365,6 +2364,60 @@ void SessionViewModel::seekAsAskedOnMachine(int64_t target)
 	seekOnMachine(target);
 }
 
+void SessionViewModel::restoreOnMachine(int64_t target)
+{
+	/* a movie made shorter is followed to its end: going back adds no frames */
+	target = std::min(target, ce_session_movie_length(s_));
+	/* as Chimera's TAStudio: the machine paused first ("restore makes no
+	 * sense without pausing"), then the seek */
+	restoreToM_ = -1;
+	turboSeekToM_ = -1;
+	runningM_ = false;
+	pauseOnFrameM_ = -1;
+	mcpFastM_ = false;
+	later([this] { running.set(false); fps.set(0.0); seekingTo.set(-1); });
+	/* where it starts from: the nearest stored state before the target, and
+	 * before the edit while the machine is past it. A short way, all the
+	 * greenzone holds, is gone at once */
+	const int64_t from = ce_session_frame(s_);
+	const int64_t stored = target > 0 ? ce_session_greenzone_nearest(s_, greenEndM_ < from ? std::min(target - 1, greenEndM_) : target - 1) : 0;
+	if (stored < target - 1)
+	{
+		/* back to that state now (a short seek: the edit honoured), then the rest */
+		seekOnMachine(std::max<int64_t>(stored, 0), false);
+		const int64_t at = ce_session_frame(s_);
+		if (!turboSeekM_.load() && at < target)
+		{
+			/* Turbo seek off: played at the machine's own speed, every frame drawn */
+			restoreToM_ = pauseOnFrameM_ = playedSeekToM_ = target;
+			runningM_ = true;
+			due_ = fpsSince_ = Clock::now();
+			fpsFrames_ = 0;
+			later([this, at, target] { seekFrom.set(at); seekingTo.set(target); running.set(true); });
+			return;
+		}
+		if (turboSeekM_.load() && target - 1 - at > kTurboPieceFrames)
+		{
+			/* Turbo seek on: in pieces, between which the window is answered */
+			restoreToM_ = turboSeekToM_ = target;
+			turboPiece_ = kTurboPieceFrames;
+			turboFrom_ = at;
+			turboBegan_ = Clock::now();
+			later([this, at, target] { seekFrom.set(at); seekingTo.set(target); });
+			return;
+		}
+	}
+	seekOnMachine(target, false);
+	restoredOnMachine();
+}
+
+void SessionViewModel::restoredOnMachine()
+{
+	restoreToM_ = -1;
+	restoredMovesM_ = movesM_;
+	restoredAtM_ = frameM_;
+}
+
 void SessionViewModel::turboSeekPieceOnMachine()
 {
 	const int64_t target = turboSeekToM_;
@@ -2373,9 +2426,12 @@ void SessionViewModel::turboSeekPieceOnMachine()
 	if (next <= at || at >= target - 1)
 	{
 		/* there: the last frame run with its picture, the scripts' turn, as any seek lands;
-		 * what it ran and how long it took, the whole seek's */
+		 * what it ran and how long it took, the whole seek's. A way back after
+		 * an edit adds no frames to the movie */
+		const bool restoring = restoringOnMachine();
 		turboSeekToM_ = -1;
-		seekOnMachine(target);
+		seekOnMachine(target, !restoring);
+		if (restoring) restoredOnMachine();
 		const int64_t ran = target - turboFrom_;
 		const double ms = std::chrono::duration<double, std::milli>(Clock::now() - turboBegan_).count();
 		later([this, ran, ms] {
@@ -2388,9 +2444,12 @@ void SessionViewModel::turboSeekPieceOnMachine()
 	const auto began = Clock::now();
 	if (ce_session_seek(s_, next) != 0)
 	{
-		/* the window edited the movie under it, or it cannot go on: it lands where it is */
+		/* the window edited the movie under it, or it cannot go on: it lands where it is
+		 * (a way back after an edit as if there, so the edit's turn goes on to its frame) */
+		const bool restoring = restoringOnMachine();
 		turboSeekToM_ = -1;
-		seekOnMachine(std::min<int64_t>(target, ce_session_frame(s_)));
+		seekOnMachine(std::min<int64_t>(target, ce_session_frame(s_)), !restoring);
+		if (restoring) restoredOnMachine();
 		later([this] { seekingTo.set(-1); });
 		return;
 	}
@@ -5470,7 +5529,7 @@ int32_t SessionViewModel::advanceOnMachine()
 	}
 	else
 		fastUndrawn_ = 0;
-	const int32_t lag = stepOnMachine(true, recordingM_.load() || draw);
+	const int32_t lag = stepOnMachine(!playedSeekOnMachine(), recordingM_.load() || draw);
 	/* past the end the movie grew: the project has a change */
 	if (f >= size && !unsavedM_.exchange(true)) later([this] { markChanged(); });
 	/* TAStudio's "automatically pause at end of movie": the frame the movie
@@ -5495,6 +5554,7 @@ int32_t SessionViewModel::advanceOnMachine()
 	/* a seek that plays (Turbo seek off) stops on its frame */
 	if (pauseOnFrameM_ >= 0 && ce_session_frame(s_) >= pauseOnFrameM_)
 	{
+		if (restoringOnMachine()) restoredOnMachine();
 		pauseOnFrameM_ = -1;
 		runningM_ = false;
 		later([this] { running.set(false); seekingTo.set(-1); });
@@ -5897,23 +5957,40 @@ void SessionViewModel::edited(int64_t first)
 		editRunningM_ = sent;
 		greenEndM_ = std::min(greenEndM_, first);
 		forgetGameTimeAfterOnMachine(first);
+		/* a way back under way is this run of edits' own: its frame is kept */
+		const bool restoring = restoringOnMachine();
 		/* moved since the last edit moved it: that edit's frame is forgotten */
-		if (movesM_ != restoredMovesM_ || frameM_ != restoredAtM_) restoreFrameM_ = -1;
+		if (!restoring && (movesM_ != restoredMovesM_ || frameM_ != restoredAtM_)) restoreFrameM_ = -1;
 		const int64_t length = ce_session_movie_length(s_);
 		/* an edit that gave a movie made shorter its frames again (an undo)
 		 * lets the machine go on to where the first edit found it */
-		const bool shortOfIt = restore && restoreFrameM_ > frameM_ && length > frameM_;
+		const bool shortOfIt = restore && !restoring && restoreFrameM_ > frameM_ && length > frameM_;
 		if (frameM_ > first || shortOfIt)
 		{
 			/* The machine is past the edit. The engine honours it before the
 			 * machine next moves; here the window says where: with autoRestore
 			 * back on the frame it was on at the first edit, with the new
 			 * inputs, else at the edit. Going back adds no frames to the
-			 * movie: one made shorter is followed to its end. */
+			 * movie: one made shorter is followed to its end. It goes as a
+			 * seek asked for goes, never in one long run that keeps the
+			 * window waiting (issue 406) */
 			if (restoreFrameM_ < 0) restoreFrameM_ = frameM_;
-			seekOnMachine(restore ? restoreFrameM_ : first, false);
-			restoredMovesM_ = movesM_;
-			restoredAtM_ = frameM_;
+			restoreOnMachine(restore ? restoreFrameM_ : first);
+		}
+		else if (restoring && restoreToM_ > length)
+		{
+			/* the way back under way went past a movie made shorter ahead of
+			 * the machine: it stops at the end, or now when it is there */
+			if (pauseOnFrameM_ == restoreToM_) pauseOnFrameM_ = playedSeekToM_ = length;
+			if (turboSeekToM_ == restoreToM_) turboSeekToM_ = length;
+			restoreToM_ = length;
+			if (frameM_ >= length)
+			{
+				turboSeekToM_ = pauseOnFrameM_ = -1;
+				runningM_ = false;
+				later([this] { running.set(false); seekingTo.set(-1); });
+				restoredOnMachine();
+			}
 		}
 		report(-1, -1, -1, -1, -1);
 	});

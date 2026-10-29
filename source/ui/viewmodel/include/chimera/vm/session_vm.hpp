@@ -891,6 +891,23 @@ private:
 	std::string mcpStatusOnMachine() const;
 	/* TAStudio's seek: what greenzone holds at once, the rest played unless Turbo seek */
 	void seekAsAskedOnMachine(int64_t target);
+	/* the frame a seek that plays (Turbo seek off) goes to (-1 none): its
+	 * frames are the movie's, as Chimera's TAStudio plays them with
+	 * recording off, and none of them takes what the person holds */
+	int64_t playedSeekToM_ = -1;
+	bool playedSeekOnMachine() const { return runningM_ && pauseOnFrameM_ >= 0 && pauseOnFrameM_ == playedSeekToM_; }
+	/* The way back after an edit (issue 406), gone as a seek asked for goes
+	 * so the machine's thread answers the window on the way: the target, no
+	 * further than the movie's end. restoreToM_ is where it goes while it is
+	 * under way (-1 none); restoredOnMachine is its landing, after which the
+	 * edits that follow keep its frame. */
+	void restoreOnMachine(int64_t target);
+	int64_t restoreToM_ = -1;
+	bool restoringOnMachine() const
+	{
+		return restoreToM_ >= 0 && ((runningM_ && pauseOnFrameM_ == restoreToM_) || turboSeekToM_ == restoreToM_);
+	}
+	void restoredOnMachine();
 	/* the drives as last told to the window */
 	std::string drivesSaidM_ = "[]";
 	int64_t restoreSaidM_ = -1;

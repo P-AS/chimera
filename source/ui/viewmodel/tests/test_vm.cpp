@@ -4160,6 +4160,81 @@ bool machine(const char *package, const char *rom)
 		CHECK(d.until([&] { return session.frame.get() == at; }, 20));
 	}
 
+	/* A long way back after an edit goes as a seek asked for goes, never in
+	 * one run that keeps the window waiting (issue 406): a request the window
+	 * waits on is answered on the way. With Turbo seek in pieces; without it
+	 * played at the machine's speed, every frame drawn, the movie's frames
+	 * played as they are even in recording mode, and stopped where it was */
+	{
+		const int64_t at = session.frame.get();
+		const int64_t far = 200000;
+		auto waitedMs = [&] {
+			const auto began = std::chrono::steady_clock::now();
+			std::string e;
+			session.run("frameNow", {}, e);
+			return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
+		};
+		/* the longest the window waited in the second and a half after an
+		 * edit, while the way back went on; then that it got there */
+		auto watchWayBack = [&](int64_t to, double &worst) {
+			worst = 0;
+			const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+			while (std::chrono::steady_clock::now() < end)
+			{
+				worst = std::max(worst, waitedMs());
+				d.until([] { return false; }, 0.02);
+			}
+			return d.until([&] { return session.frame.get() == to && !session.running.get() && session.seekingTo.get() < 0; }, 60);
+		};
+		session.greenzonePeriod.set(0);
+		roll.run("fill", {far}, error);
+		session.run("seek", {far}, error);
+		CHECK(d.until([&] { return session.frame.get() == far; }, 60));
+		double worst = 0;
+		roll.run("toggle", {int64_t{3}, static_cast<int64_t>(right)}, error);
+		const auto began = std::chrono::steady_clock::now();
+		CHECK(watchWayBack(far, worst));
+		const double took = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
+		std::printf("turbo way back: %.0f ms, the window waited %.0f ms at most\n", took, worst);
+		CHECK(took > 1000 && worst < 500);
+		/* the green arrow kept for the edit after it */
+		CHECK(session.restoreFrame.get() == far);
+		/* played, at the machine's speed (here as fast as it goes) */
+		roll.run("paint", {int64_t{100}, int64_t{199}, static_cast<int64_t>(right), true}, error);
+		CHECK(d.until([&] { return session.frame.get() == far && !session.running.get(); }, 60));
+		const int64_t near = 20000;
+		session.run("seek", {near}, error);
+		CHECK(d.until([&] { return session.frame.get() == near; }, 60));
+		session.turboSeek.set(false);
+		session.unthrottled.set(true);
+		roll.run("toggle", {int64_t{3}, static_cast<int64_t>(right)}, error);
+		CHECK(watchWayBack(near, worst));
+		std::printf("played way back: the window waited %.0f ms at most\n", worst);
+		CHECK(worst < 500 && session.restoreFrame.get() == near);
+		/* a seek that plays takes the movie's frames as they are, recording
+		 * mode or not (an edit turns recording off, as Chimera's TAStudio
+		 * does, so it is turned on after the last edit) */
+		session.autoRestore.set(false);
+		roll.run("toggle", {int64_t{60}, static_cast<int64_t>(right)}, error);
+		CHECK(d.until([&] { return session.frame.get() == 60 && !session.running.get(); }, 60));
+		roll.run("toggle", {int64_t{60}, static_cast<int64_t>(right)}, error);
+		session.autoRestore.set(true);
+		session.recordingMode.set(true);
+		session.run("seek", {int64_t{300}}, error);
+		CHECK(d.until([&] { return session.frame.get() == 300 && !session.running.get(); }, 30));
+		bool kept = session.recordingMode.get();
+		for (int64_t f = 100; f <= 199; f++) kept = kept && (inputs.at(f) >> right & 1) != 0;
+		CHECK(kept && (inputs.at(250) >> right & 1) == 0);
+		session.recordingMode.set(false);
+		session.unthrottled.set(false);
+		session.turboSeek.set(true);
+		session.greenzonePeriod.set(1);
+		for (int64_t f = 100; f <= 199; f++) inputs.set(f, inputs.at(f) & ~(uint64_t{1} << right));
+		inputs.resize(at);
+		session.run("seek", {at}, error);
+		CHECK(d.until([&] { return session.frame.get() == at; }, 60));
+	}
+
 	/* restart: frame 0 again, the inputs kept */
 	const int64_t logged = inputs.size();
 	session.run("restart", {}, error);

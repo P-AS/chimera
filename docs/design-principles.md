@@ -11056,3 +11056,36 @@ copy's path recorded; the copy's own history, saved, is then kept for the
 first file once the cache's path is taken away. With the path check made to
 always match, it failed. meson test 47/47, witness 122/0, the Windows build
 compiles.
+
+## The way back after an edit goes as a seek does (2026-10-29)
+
+Issue 406: with the greenzone off, an edit far behind the machine left the
+window not responding for as long as the machine took to get back. After an
+edit, TAStudio sends the machine back before the edit and on to the frame it
+was on (auto-restore), or to the edit. The window did that as one blind
+replay on the machine's thread, and anything of the window's that waits on
+that thread (many requests do) waited until the replay ended. Measured on
+the synthetic core: a 400,000-frame way back took 8 seconds and the window
+answered nothing for 8.3 seconds.
+
+The old TAStudio went back as any seek goes, and so does this window's own
+seek: what the greenzone holds at once, and the rest played at the
+machine's speed with every frame drawn (Turbo seek off, the default) or as
+fast as it goes in pieces of about a tenth of a second (Turbo seek on). The
+way back after an edit, and the green arrow back to where the edits began,
+now go the same way. The machine is paused first, as the old TAStudio's
+"restore makes no sense without pausing" did, and between frames or pieces
+its thread answers the window. An edit made while it goes keeps the frame
+it goes back to; one that ends the movie before it stops it at the end.
+
+The frames of a seek that plays are the movie's, as they were in the old
+TAStudio, which turned recording off while it seeked: here a seek that
+played in recording mode wrote what the person held (usually nothing) over
+every frame it passed.
+
+Tested: view models fills 200,000 frames with the greenzone off and edits
+frame 3. With Turbo seek the way back took 4 seconds and a request the
+window waits on was answered within 61 ms throughout (4,014 ms with the
+old way back); played, within 1 ms. A seek in recording mode played through
+marked frames and left them marked (they were cleared with the frames
+played as live input).
