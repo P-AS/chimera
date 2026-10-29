@@ -110,10 +110,12 @@ Not in the project:
   uploaded again on every save. If present it is loaded, otherwise the
   session starts from a clean state-memory slate. A greenzone left beside
   an older project is moved into the cache the first time it is opened.
-  The cache also records the path the project was last opened or saved
-  from (user-decided, 2026-10-15): a copy keeps its original's id, so a
-  project opened from any other path - copied, moved, a backup, a
-  recovered copy - has its cached greenzone and branch states discarded
+  A project saved under another name gets an id of its own, and so a
+  cache folder of its own; its branches' states and budgets go with it
+  (user-decided, 2026-10-29). The cache also records the path the project
+  was last opened or saved from (user-decided, 2026-10-15): a file copied
+  by hand or a backup keeps its original's id, so a project opened from
+  any other path has its cached greenzone and branch states discarded
   and starts with an empty one. Losing it costs recomputation, never work. It records
   which machine made its states (core build, settings, firmware pins, file
   hashes) and is used only when the project still describes that machine:

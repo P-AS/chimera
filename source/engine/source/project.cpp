@@ -882,6 +882,15 @@ int32_t ce_project_save(ce_project *p, const char *path, const char **error_out)
 	return 0;
 }
 
+int32_t ce_project_save_as(ce_project *p, const char *path, const char **error_out)
+{
+	const std::string was = p->id;
+	p->id = mintProjectId();
+	if (ce_project_save(p, path, error_out) == 0) return 0;
+	p->id = was;
+	return 1;
+}
+
 /* ---- identity ---- */
 
 const char *ce_project_id(const ce_project *p) { return p->id.c_str(); }

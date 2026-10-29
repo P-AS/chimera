@@ -481,6 +481,22 @@ int main(int argc, char **argv)
 		assert(ce_project_save(a, ipath.c_str(), &err) == 0);
 		ce_project *c = ce_project_open(ipath.c_str(), &err);
 		assert(c != nullptr && idA == ce_project_id(c));
+
+		// Saved under a name of its own, it is a project of its own (owner,
+		// 2026-10-29): another id, written in, while the first file keeps its
+		// own; a save that fails leaves the id it had.
+		const std::string copyPath = g_dir + "/idless copy.chimeraProject";
+		assert(ce_project_save_as(c, copyPath.c_str(), &err) == 0);
+		const std::string idCopy = ce_project_id(c);
+		assert(!idCopy.empty() && idCopy != idA);
+		ce_project *copy = ce_project_open(copyPath.c_str(), &err);
+		ce_project *first = ce_project_open(ipath.c_str(), &err);
+		assert(copy != nullptr && first != nullptr && idCopy == ce_project_id(copy) && idA == ce_project_id(first));
+		const std::string nowhere = g_dir + "/no such folder/x.chimeraProject";
+		assert(ce_project_save_as(c, nowhere.c_str(), &err) != 0 && idCopy == ce_project_id(c));
+		ce_project_free(copy);
+		ce_project_free(first);
+		std::remove(copyPath.c_str());
 		ce_project_free(a);
 		ce_project_free(b);
 		ce_project_free(c);

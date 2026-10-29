@@ -3174,11 +3174,10 @@ void SessionViewModel::keepRecoveryOnMachine()
 	writeRecoveryRecord(dir, projectPathM_);
 }
 
-void SessionViewModel::dropRecoveryOnMachine(ce_project *p)
+void SessionViewModel::dropRecoveryOnMachine(const std::filesystem::path &dir)
 {
 	namespace fs = std::filesystem;
 	recoveryDue_ = {};
-	const fs::path dir = recoveryDirOf(p);
 	std::error_code ec;
 	if (dir.empty() || !fs::is_directory(dir, ec)) return;
 	/* only this window's own: another's work in progress, or a crash's not offered yet, stays */
@@ -3186,7 +3185,7 @@ void SessionViewModel::dropRecoveryOnMachine(ce_project *p)
 	if (readRecoveryRecord(dir, r) && !writtenByThisProcess(r)) return;
 	/* the journal let go of before its folder goes (Windows will not delete a
 	 * file being written), and the next one opened as soon as there is work */
-	if (s_ != nullptr && p == projectM_) ce_session_movie_journal_close(s_, 1);
+	if (s_ != nullptr) ce_session_movie_journal_close(s_, 1);
 	journalRetryDue_ = {};
 	fs::remove_all(dir, ec);
 }
@@ -3493,6 +3492,43 @@ void SessionViewModel::keepHistoryOnMachine()
 	{
 		ce_session_history_save_wait(s_);
 		fs::remove(history, ec);
+	}
+}
+
+void SessionViewModel::becameAnotherOnMachine(const std::filesystem::path &cacheWas, const std::filesystem::path &recoveryWas)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	/* the work kept against a crash under the old id is in the new file now */
+	dropRecoveryOnMachine(recoveryWas);
+	const fs::path dir = projectCacheOnMachine();
+	if (dir.empty()) return;
+	fs::create_directories(dir, ec);
+	/* The branches' states and notes, and the budgets: the history is written
+	 * again by this save, and the rest says where the project is now. A state
+	 * is written whole to a file of its own and moved into place, so the two
+	 * folders can share one until either writes it again; the rest is copied. */
+	auto bring = [&](const fs::path &from, const fs::path &to, bool share) {
+		fs::remove(to, ec);
+		if (share) fs::create_hard_link(from, to, ec);
+		if (!share || ec) fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
+	};
+	if (!cacheWas.empty())
+	{
+		if (fs::is_regular_file(cacheWas / "budgets.json", ec)) bring(cacheWas / "budgets.json", dir / "budgets.json", false);
+		if (fs::is_directory(cacheWas / "branches", ec))
+		{
+			fs::create_directories(dir / "branches", ec);
+			for (const fs::directory_entry &e : fs::directory_iterator(cacheWas / "branches", ec))
+				if (e.is_regular_file(ec)) bring(e.path(), dir / "branches" / e.path().filename(), e.path().extension() == ".state");
+		}
+	}
+	/* this window's session goes on under the new id */
+	if (!runningMarkM_.empty())
+	{
+		fs::remove(runningMarkM_, ec);
+		runningMarkM_ = dir / "session.running";
+		std::ofstream(runningMarkM_) << "a session of this project is running\n";
 	}
 }
 
@@ -3988,7 +4024,7 @@ void SessionViewModel::freeProjectOnMachine()
 {
 	/* let go cleanly: what was kept against a crash goes too, unless the
 	 * person closed without saving after the core stopped */
-	if (!keepWorkM_) dropRecoveryOnMachine(projectM_);
+	if (!keepWorkM_) dropRecoveryOnMachine(recoveryDirOf(projectM_));
 	if (projectM_ != nullptr) ce_project_free(projectM_);
 	projectM_ = nullptr;
 	projectPathM_.clear();
@@ -4356,7 +4392,7 @@ void SessionViewModel::bootProjectOnMachine(ce_project *p, const std::string &pa
 	}
 	if (projectM_ != nullptr && projectM_ != p)
 	{
-		dropRecoveryOnMachine(projectM_);
+		dropRecoveryOnMachine(recoveryDirOf(projectM_));
 		ce_project_free(projectM_);
 	}
 	projectM_ = p;
@@ -4781,8 +4817,20 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 		for (const Marker &m : b.markers) ce_project_branch_marker_add(projectM_, at, m.frame, m.text.c_str(), m.keepState ? 1 : 0);
 	}
 	gameTimeHeadersOnMachine(projectM_, n);
+	/* Saved under another name, the project becomes a project of its own
+	 * (owner, 2026-10-29). The two files used to share one id and so one
+	 * cache folder: the one opened next took the history the other's save
+	 * had written, states made for other input, and seeking back found
+	 * nothing to start from. A backup is the same project kept, and keeps
+	 * its id. */
+	namespace fs = std::filesystem;
+	std::error_code same;
+	const bool another = !backup && !projectPathM_.empty()
+		&& fs::weakly_canonical(fs::path(projectPathM_), same) != fs::weakly_canonical(fs::path(path), same);
+	const fs::path cacheWas = another ? projectCacheOnMachine() : fs::path();
+	const fs::path recoveryWas = another ? recoveryDirOf(projectM_) : fs::path();
 	const char *error = nullptr;
-	if (ce_project_save(projectM_, path.c_str(), &error) != 0)
+	if ((another ? ce_project_save_as(projectM_, path.c_str(), &error) : ce_project_save(projectM_, path.c_str(), &error)) != 0)
 	{
 		const std::string why = error != nullptr ? error : tr("common.no_reason");
 		if (!quiet) later([this, path, why] { status.set(tr("session.could_not_save", {path, why})); });
@@ -4793,13 +4841,16 @@ bool SessionViewModel::saveProjectOnMachine(const std::string &to, bool backup, 
 		if (!quiet) later([this, path] { status.set(tr("session.backup_saved", {path})); });
 		return true;
 	}
+	if (another) becameAnotherOnMachine(cacheWas, recoveryWas);
 	const bool first = projectPathM_ != path;
 	projectPathM_ = path;
 	keepHistoryOnMachine();
 	rememberAboutOnMachine(path);
 	rememberLocalPathsOnMachine();
-	later([this, path, n, first] {
+	const std::string id = ce_project_id(projectM_) != nullptr ? ce_project_id(projectM_) : "";
+	later([this, path, n, first, id] {
 		projectPath.set(path);
+		projectId.set(id);
 		if (first) addRecent(path);
 		status.set(tr("session.saved_frames", n, {path}));
 	});
@@ -4873,7 +4924,7 @@ void SessionViewModel::savedAt(uint64_t gen)
 	/* the work kept against a crash is in the project now; one kept between
 	 * the save and this goes too, and a change since is kept again at once */
 	submit([this] {
-		if (!unsavedM_.load()) dropRecoveryOnMachine(projectM_);
+		if (!unsavedM_.load()) dropRecoveryOnMachine(recoveryDirOf(projectM_));
 	});
 }
 

@@ -4788,20 +4788,42 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	std::ofstream(stateFile, std::ios::binary | std::ios::trunc) << state;
 	spoil();
 	loadIt(true);
-	/* kept with the project, and found again by it; what no branch has is
-	 * cleared away when the project opens (as Chimera does: a copy of a
-	 * project keeps its id and so shares the folder, and opening the other
-	 * copy would clear this branch's state - which costs a replay, no more) */
+	/* Kept with the project, and found again by it. Saved under another name
+	 * the project is a project of its own (owner, 2026-10-29): an id of its
+	 * own, and a folder of its own that its branches' states come into, while
+	 * the first file's folder keeps its own. What no branch has is cleared
+	 * away from a project's folder when it opens, and from no other. */
+	const fs::path firstFolder = stateFile.parent_path().parent_path();
+	const std::string firstHistory = readFile(firstFolder / "history.bin");
 	session.run("saveProject", {(dir / "branched.chimeraProject").string()}, error);
 	CHECK(d.until([&] { return session.projectPath.get() == (dir / "branched.chimeraProject").string(); }, 20));
+	json::Json branchedFile;
+	std::string branchedWhy;
+	CHECK(json::parse(readFile(dir / "branched.chimeraProject"), branchedFile, branchedWhy));
+	const json::Json *idField = branchedFile.find("id");
+	const std::string ownId = idField != nullptr ? idField->text : std::string();
+	CHECK(!ownId.empty() && ownId != firstFolder.filename().string());
+	const fs::path ownStates = cache / ownId / "branches";
+	CHECK(readFile(ownStates / stateFile.filename()) == state && readFile(ownStates / noteFile.filename()) == note);
+	/* the greenzone this save keeps goes to the new folder: the first file,
+	 * opened again, finds the history its own save wrote */
+	CHECK(d.until([&] { return fs::exists(cache / ownId / "history.bin"); }, 20));
+	CHECK(readFile(firstFolder / "history.bin") == firstHistory);
 	{
-		std::ofstream(stateFile.parent_path() / "0123456789abcdef.state") << "left behind";
-		std::ofstream(stateFile.parent_path() / "0123456789abcdef.note") << "left behind";
+		std::ofstream(ownStates / "0123456789abcdef.state") << "left behind";
+		std::ofstream(ownStates / "0123456789abcdef.note") << "left behind";
 	}
-	CHECK(filesNamed(".state").size() >= 2);
 	CHECK(openIt(dir / "branched.chimeraProject"));
 	CHECK(branches.count.get() == 1);
-	CHECK(filesNamed(".state") == std::vector<fs::path>{stateFile} && filesNamed(".note") == std::vector<fs::path>{noteFile});
+	auto filesIn = [&](const fs::path &folder, const char *extension) {
+		std::vector<fs::path> found;
+		for (const fs::path &f : filesNamed(extension))
+			if (f.parent_path() == folder) found.push_back(f);
+		return found;
+	};
+	CHECK(filesIn(ownStates, ".state") == std::vector<fs::path>{ownStates / stateFile.filename()});
+	CHECK(filesIn(ownStates, ".note") == std::vector<fs::path>{ownStates / noteFile.filename()});
+	CHECK(fs::exists(stateFile) && fs::exists(noteFile));
 	std::string branchName;
 	int64_t branchFrames = 0;
 	fromValue(branches.rowLists()[0].model->cell(0, 0), branchName);
@@ -4815,7 +4837,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	/* The greenzone is kept with the project: saved, it is there when the
 	 * project opens again, and going to the end runs from its states
 	 * rather than from the start. */
-	const fs::path projectCache = stateFile.parent_path().parent_path(), history = projectCache / "history.bin";
+	const fs::path projectCache = cache / ownId, history = projectCache / "history.bin";
 	const std::string branched = (dir / "branched.chimeraProject").string();
 	/* played through from the start, so it holds the frames near the end */
 	session.run("seek", {int64_t{0}}, error);

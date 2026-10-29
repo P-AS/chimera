@@ -10982,3 +10982,42 @@ Catalan. Chimera's table has 2551 texts; the 56 cores' tables hold about
   placeholder: those percentages are written in words.
 - Names stay as they are in every language: game titles, consoles and
   emulators, file names, setting identifiers, control names.
+
+## A project saved under another name gets an id of its own (user-decided, 2026-10-29)
+
+A project's cache folder (its state history, its branches' states) is named
+by the project's id, and Save As kept the id. The two files then shared one
+folder: the next save of either wrote its history there, and opening the
+other loaded states made for other input. The witness showed it: in a work
+folder kept from an earlier run, `M:mcp:window:changes` failed with "the
+seek was interrupted" on every seek back. The agent's `save_project` to
+another name had written a history holding one state, at frame 70, into the
+folder the next run's project opened from, and with no state at frame 0
+nothing before frame 70 could be reached. Each failing run then saved the
+same history again.
+
+The owner chose this over two others: the engine keeping, with each history,
+the movie it was made for and dropping the states past the first frame whose
+input differs (it would also cover a file copied by hand, at the cost of a
+new history format), or both. So: `ce_project_save_as` gives the project a
+new id and writes it into the file, and keeps the old id when the save
+fails. The window uses it when a project is saved to a path other than its
+own (not for a backup, which is the same project kept). The branches' states
+are linked into the new folder (copied where a link cannot be made), the
+budgets copied, the history written there by the save itself, the running
+mark moved, and the work kept against a crash under the old id dropped,
+since it is in the new file now. The first file's folder is left as it was.
+
+A file copied by hand, or a backup, still keeps its original's id. The
+2026-10-15 rule (a project opened from another path drops its cached
+greenzone) would cover those, and the Qt window does not have it yet
+(docs/qt-interface.md).
+
+Tested: engine_project checks the new id, written in, the first file's id
+kept, and a failed save keeping the id; view models checks a save under
+another name: an id of its own, the branch's state and note in the new
+folder, the first file's history unchanged, and the session's recovery
+journal under the new id. Each was broken once and seen to fail (the first
+file's history was overwritten, as in the witness). meson test 47/47;
+witness 122/0 twice in the same work folder; the Windows build compiles.
+

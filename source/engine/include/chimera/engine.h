@@ -592,6 +592,12 @@ CE_API ce_project *ce_project_new(void);
 CE_API ce_project *ce_project_open(const char *path, const char **error_out);
 /* 0 on success; resolved files are written with their ACTUAL hash */
 CE_API int32_t ce_project_save(ce_project *p, const char *path, const char **error_out);
+/* The same save under a name of its own: the project becomes another project,
+ * with an id of its own written into the file. Two files with one id share
+ * one cache folder, and the one reopened would take the other's state
+ * history, made for other input (owner, 2026-10-29). A save that fails leaves
+ * the project the id it had. */
+CE_API int32_t ce_project_save_as(ce_project *p, const char *path, const char **error_out);
 CE_API void ce_project_free(ce_project *p);
 
 /* This project's identity, and no other's: minted when it is created, carried

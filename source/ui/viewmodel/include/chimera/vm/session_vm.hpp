@@ -755,6 +755,10 @@ private:
 	/* the greenzone kept with the project as it is saved, when it may
 	 * outlive the session: written in the background */
 	void keepHistoryOnMachine();
+	/* a project just saved under a name of its own, with an id of its own:
+	 * what its old id's cache held that a save does not write again comes
+	 * along, and the work kept against a crash under the old id goes */
+	void becameAnotherOnMachine(const std::filesystem::path &cacheWas, const std::filesystem::path &recoveryWas);
 	/* who the project's cache belongs to, beside it ("about.json", as
 	 * Chimera's project cache writes it: title, the project's path, core,
 	 * system, games), so the Cache Manager can name it */
@@ -792,7 +796,7 @@ private:
 	std::filesystem::path recoveryDirOf(ce_project *p) const;
 	/* the work kept for a crash, written now (quietly) or let go */
 	void keepRecoveryOnMachine();
-	void dropRecoveryOnMachine(ce_project *p);
+	void dropRecoveryOnMachine(const std::filesystem::path &dir);
 	/* a crash's work for this project, rebuilt as a copy among the backups;
 	 * the copy's path and the time of its last work, or false for none */
 	bool recoveredCopyOnMachine(ce_project *p, const std::string &projectPath, std::string &copy, std::string &upTo,
