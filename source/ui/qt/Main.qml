@@ -120,8 +120,11 @@ ApplicationWindow {
     // where each thing over the picture goes: a corner and a distance from it, as Chimera does
     readonly property var osdPositions: JSON.parse(root.messages.positions)
     // Config > Display's Scale OSD text with system scale: off, what is over
-    // the picture keeps its size at 100% (the screen's pixels), as Chimera's
-    readonly property real osdScale: root.display.scaleOsd || root.Screen.devicePixelRatio <= 0 ? 1 : 1 / root.Screen.devicePixelRatio
+    // the picture keeps its size at 100% (the screen's pixels), as Chimera's;
+    // and Scale OSD text with the window: its 12 pixels are a 480-pixel-tall
+    // picture area's, and it grows with the window, never smaller (issue 401)
+    readonly property real osdScale: (root.display.scaleOsd || root.Screen.devicePixelRatio <= 0 ? 1 : 1 / root.Screen.devicePixelRatio)
+        * (root.display.osdFollowsWindow ? Math.max(1, pictureArea.height / 480) : 1)
     function osdX(name, w) {
         const p = root.osdPositions[name]
         if (!p) return 0
@@ -1435,6 +1438,9 @@ ApplicationWindow {
             anchors.fill: parent
             readonly property var shapes: JSON.parse(root.guiOverlay.shapes)
             onShapesChanged: requestPaint()
+            // a script's gui.text follows the counters' size
+            readonly property real textScale: root.osdScale
+            onTextScaleChanged: requestPaint()
             onImageLoaded: requestPaint()
             Connections { target: picture; function onPlacementChanged() { luaCanvas.requestPaint() } }
             onPaint: {
@@ -1446,14 +1452,16 @@ ApplicationWindow {
                 const sx = src.width > 0 ? shown.width / src.width : 1, sy = src.height > 0 ? shown.height / src.height : 1
                 for (const s of luaCanvas.shapes) {
                     if (s.k === "screentext") {
+                        // a script's gui.text, sized and placed as the counters are
+                        const k = root.osdScale
                         ctx.save()
-                        ctx.font = "12px monospace"
+                        ctx.font = "%1px monospace".arg(Math.round(12 * k))
                         ctx.textBaseline = "top"
                         const w = ctx.measureText(s.text).width
                         const right = s.anchor === "topright" || s.anchor === "bottomright" || s.anchor === "1" || s.anchor === "3"
                         const bottom = s.anchor === "bottomleft" || s.anchor === "bottomright" || s.anchor === "2" || s.anchor === "3"
                         ctx.fillStyle = s.color
-                        ctx.fillText(s.text, right ? width - s.x - w : s.x, bottom ? height - s.y - 12 : s.y)
+                        ctx.fillText(s.text, right ? width - s.x * k - w : s.x * k, bottom ? height - (s.y + 12) * k : s.y * k)
                         ctx.restore()
                         continue
                     }

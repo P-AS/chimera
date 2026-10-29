@@ -140,6 +140,8 @@ DisplayViewModel::DisplayViewModel(Dispatcher &dispatcher) : ViewModel("display"
 		fullscreenHacks, true);
 	expose("scaleOsd", "Chimera's Scale OSD text with system scale: off, what is drawn over the picture keeps its size at "
 		"100% on a scaled screen", scaleOsd, true);
+	expose("osdFollowsWindow", "what is drawn over the picture grows with the window: its 12 pixels are a 480-pixel-tall "
+		"picture area's, never smaller (issue 401)", osdFollowsWindow, true);
 	for (auto &[name, p] : std::initializer_list<std::pair<const char *, Property<int64_t> *>>{{"padLeft", &padLeft}, {"padTop", &padTop},
 			 {"padRight", &padRight}, {"padBottom", &padBottom}, {"clientLeft", &clientLeft}, {"clientTop", &clientTop},
 			 {"clientRight", &clientRight}, {"clientBottom", &clientBottom}})

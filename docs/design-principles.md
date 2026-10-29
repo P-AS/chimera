@@ -11107,3 +11107,20 @@ Tested: command line runs a copy of the program with no settings file
 named: a setting made by a script is written beside it; with its folder
 made read-only, in the person's folder. With the program's folder never
 used, the first check failed.
+
+## What is drawn over the picture grows with the window (user-decided, 2026-10-29)
+
+Issue 401: the counters, messages and watches over the picture were 12
+pixels whatever the window's size, as the old window drew them, and hard to
+read in a large one. The owner chose a Display setting, Scale OSD text with
+the window, on at first: the text and its distances from the corners grow
+with the picture area, 12 pixels being a 480-pixel-tall area's (the size of
+a doubled 240-line picture), and never shrink below 12. A script's gui.text
+is drawn the same way, so it stays the counters' size; Encode Video's
+Capture OSD is drawn at the machine's own size and is unchanged. The text
+is a key in all 26 language tables.
+
+Tested in a scratch run of the window: the scale was 1.32 in the default
+window (632 pixels tall), 1 at 120, 1.5 at 720, and 1 again with the
+setting off. The window test loads the Display window under the strict
+QML check.

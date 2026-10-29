@@ -26,7 +26,7 @@ ApplicationWindow {
     // the display view model's settings the window shows, and the session's two
     // the idle picture's: Chimera's Snowy null core
     readonly property var eyeNames: ["snowWhen", "snowIntensity", "snowBias", "snowFramerate"]
-    readonly property var vmNames: ["finalFilter", "prescale", "autoPrescale", "scaleOsd", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
+    readonly property var vmNames: ["finalFilter", "prescale", "autoPrescale", "scaleOsd", "osdFollowsWindow", "letterbox", "integerScale", "aspectMode", "customWidth", "customHeight", "ratioX",
         "ratioY", "cropLeft", "cropTop", "cropRight", "cropBottom", "minimalDisplay", "staticWindowTitles", "titleSuffix", "captionWindowed",
         "menuWindowed", "frameWindowed", "saveWindowPosition", "stayOnTop", "mouseCaptureForcesTop", "menuFullscreen", "statusBarFullscreen",
         "autohideMouseFullscreen", "fullscreenHacks", "allowDoubleClickFullscreen"]
@@ -183,6 +183,7 @@ ApplicationWindow {
                             }
                         }
                         Box { setting: "scaleOsd"; text: qsTrId("display_config.scale_osd_text_with_system_scale") }
+                        Box { setting: "osdFollowsWindow"; text: qsTrId("display_config.scale_osd_text_with_the_window") }
                     }
                 }
                 // Misc

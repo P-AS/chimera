@@ -87,6 +87,10 @@ public:
 	/* Chimera's Scale OSD text with system scale: off, what is drawn over the
 	 * picture keeps its size at 100% on a scaled screen */
 	Property<bool> scaleOsd{true};
+	/* what is drawn over the picture grows with the window: its 12 pixels are
+	 * a 480-pixel-tall picture area's, never smaller (owner, 2026-10-29,
+	 * issue 401) */
+	Property<bool> osdFollowsWindow{true};
 	/* the window's place and size kept for the next start, and what was kept ("x,y,w,h") */
 	Property<bool> saveWindowPosition{false};
 	Property<std::string> windowGeometry;

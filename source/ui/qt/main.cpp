@@ -1327,7 +1327,7 @@ int main(int argc, char **argv)
 	qt::QmlViewModel messagesQml(messages);
 	vm::DisplayViewModel display(dispatcher);
 	for (const char *name : {"aspectMode", "customWidth", "customHeight", "ratioX", "ratioY", "letterbox", "integerScale", "cropLeft",
-			 "cropTop", "cropRight", "cropBottom", "finalFilter", "prescale", "autoPrescale", "scaleOsd", "saveWindowPosition", "windowGeometry",
+			 "cropTop", "cropRight", "cropBottom", "finalFilter", "prescale", "autoPrescale", "scaleOsd", "osdFollowsWindow", "saveWindowPosition", "windowGeometry",
 			 "allowDoubleClickFullscreen", "menuWindowed", "captionWindowed", "frameWindowed", "menuFullscreen", "statusBarFullscreen",
 			 "autohideMouseFullscreen", "fullscreenHacks", "stayOnTop", "mouseCaptureForcesTop", "minimalDisplay", "staticWindowTitles", "titleSuffix", "resizeWithPicture",
 			 "windowScales"})

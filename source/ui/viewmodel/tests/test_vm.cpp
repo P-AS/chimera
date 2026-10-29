@@ -1146,6 +1146,14 @@ void displayFit()
 	/* the view model's values, kept in range */
 	ManualDispatcher d;
 	DisplayViewModel display(d);
+	/* what is drawn over the picture grows with the window at first, and a
+	 * script or the Display window can turn that off (issue 401) */
+	{
+		std::string error;
+		CHECK(display.get("osdFollowsWindow") && *display.get("osdFollowsWindow") == Value(true));
+		CHECK(display.set("osdFollowsWindow", false, error) && !display.osdFollowsWindow.get());
+		display.osdFollowsWindow.set(true);
+	}
 	display.aspectMode.set(9);
 	display.customWidth.set(-5);
 	CHECK(display.fit().aspectMode == 3 && display.fit().customWidth == 0 && display.fit().letterbox);

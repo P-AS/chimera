@@ -499,6 +499,7 @@
 		"display_config.rng_bias": "RNG-bias:",
 		"display_config.save_window_position": "Spara fönsterposition",
 		"display_config.scale_osd_text_with_system_scale": "Skala OSD-texten med systemskalan",
+		"display_config.scale_osd_text_with_the_window": "Skala OSD-texten med fönstret",
 		"display_config.scaling_and_filtering": "Skalning && filtrering",
 		"display_config.snowy_null_core": "Snöig nollkärna",
 		"display_config.some_tools_put_filenames_status_etc": "Vissa verktyg skriver filnamn, status m.m. i sina fönstertitlar.\nAtt markera detta stänger av de funktionerna.",
