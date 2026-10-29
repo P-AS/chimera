@@ -332,7 +332,9 @@ one Project Details window).
 The main window shows the picture alone. TAStudio is a window of its own,
 as in Chimera: it opens when a project opens, at the main window's right
 side with their tops level (moved left as far as needed to stay on the
-screen), and closes with the project. Its menus are Chimera's TAStudio
+screen), and closes with the project. Closing it closes the project, as
+Chimera's TAStudio did: unsaved changes are asked about first, and Cancel
+keeps both open (issue 400). Its menus are Chimera's TAStudio
 menus (Edit, Metadata, Settings, Columns, Window) with "<< Hide" at their
 right; hidden, the main window shows "Show TAStudio >>" at the right of
 its menus. Beside the roll are Chimera's boxes: Playback (previous

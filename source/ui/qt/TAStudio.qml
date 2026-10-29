@@ -116,6 +116,14 @@ ApplicationWindow {
         tas.show()
         tas.raise()
     }
+    // closed, it closes the project, as Chimera's TAStudio did: the changes are
+    // asked about first, and Cancel keeps both open (issue 400). "<< Hide" only
+    // hides it. A program on its way out closes it as it goes
+    onClosing: (close) => {
+        if (!tas.session.hasProject || tas.mainWindow.leaving) return
+        close.accepted = false
+        tas.mainWindow.leaveProject(() => tas.session.run("close"), tas)
+    }
     // Move with Main Window: the main window dragged brings this one along,
     // keeping its place beside it; this one dragged moves alone, and so does
     // the main window dragged with Shift held, as Chimera's

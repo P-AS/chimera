@@ -297,7 +297,11 @@ ApplicationWindow {
         if (root.session.unsaved && !root.leaving && !root.customize.neverAskSave) {
             close.accepted = false
             root.quitProgram()
+            return
         }
+        // the program quits with this window, and TAStudio is closed on the way
+        // without closing the project first
+        root.leaving = true
     }
     // frames copied or cut, by a menu, a script or a tool, go on the system's clipboard
     Connections {
