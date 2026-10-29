@@ -241,39 +241,14 @@ Chimera's window: Qt 6.12, QML views over C++ view models. The code is in
   chimera-run is given it with --project; a file a movie import offers as
   firmware is mounted beside the movie by name, since only the core's
   answer can say which firmware it is.
-- **Chimera's settings are carried over once** (owner, 2026-10-26): the
-  first time the window starts with no settings of its own, it reads
-  Chimera's config.ini from beside the program (where Chimera keeps it, so
-  where it will be when the Qt window takes Chimera's place) and keeps what
-  it understands as its own settings, saying how many were carried and
-  where from ("importedFrom" in its settings file). It never reads that
-  file again by itself. Config > Load Config From... takes Chimera's file
-  too. One list (chimera_settings.cpp) ties 119 of Chimera's settings to
-  the window's, and Lua's client.getconfig reads by the same list, so the
-  two cannot drift apart. The settings that are more than one value come
-  too: the hotkeys; the controllers' keys, autofire keys and analog
-  bindings, which Chimera keeps by controller name and the window by core,
-  so each core takes its controller's the first time it opens, once (keys
-  it already has of its own are kept); the paths, global and each
-  system's; the recent projects, scripts, sessions, watch files, macros,
-  searches and tables; the firmware chosen by hand; the main window's
-  place and each tool window's options and place; View > Window Size's
-  scale per system; and the tools' own settings (TAStudio's, the
-  branches', RAM Watch's, RAM Search's, the Lua Console's, the Hex
-  Editor's). On a real config.ini, 133 of its 177 settings were carried.
-  Not carried: the MCP server's permission to change the project (the
-  person gives it again); options Chimera no longer has (frame skip, run
-  in background and the like); what has no meaning here (sound output
-  method, video writers other than ffmpeg, the core list's own memory,
-  rumble bindings: the engine has no rumble); the columns shown in the
-  tools; the default core per system and the core settings kept for games
-  opened without a project, as no game runs without one; the main window
-  maximized (the owner chose to leave it out); and the movie options
-  (what happens at a movie's end, backup movies, compression, VBA-style
-  loading), which act only on movies without a project or on Chimera's
-  own cache file, and which the owner chose to remove from Chimera too.
-  Relative mouse sensitivity is carried, and is a box of Controller
-  Config's Analog tab.
+- **The settings file is beside the program** (owner, 2026-10-29, issue
+  403): settings.json next to the program, so each Chimera folder keeps
+  its own settings, as the old window's config.ini did. When the
+  program's folder cannot be written (Program Files, a system install),
+  the file is in the system's folder for the person's settings instead.
+  --config names another file. Nothing is carried over from an earlier
+  file or program (owner, 2026-10-27); Config > Load Config From... reads
+  a settings file of this window's, wherever it is.
 - **The work stays private** (owner, 2026-10-24): no public branch, CI or
   preview build until the owner says otherwise.
 - **macOS is a target** (owner, 2026-10-24): the code is kept portable to

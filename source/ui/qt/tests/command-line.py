@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # Chimera's command line (review, 2026-10-26): --version; a project named
 # with --project and its package with --core, opened and run; what is not a
-# project and its package refused; --chromeless and --luaconsole; and a
-# --show name no window has, said.
+# project and its package refused; --config, and the settings file beside
+# the program without it; --chromeless and --luaconsole; and a --show name
+# no window has, said.
 #   command-line.py <chimera> <work folder> <project> <package>
 import os
 import shutil
@@ -60,6 +61,46 @@ with open(own, "w") as f:
 r = run("--config", own, "--measure", "0.5")
 check(r is not None and r.returncode == 0 and os.path.exists(own + ".unreadable"), "--config names the settings file the window reads",
       r and r.stderr.strip())
+
+# with no file named, the settings are beside the program, so each Chimera
+# folder keeps its own (owner, 2026-10-29, issue 403); a folder that cannot
+# be written leaves them in the system's folder for the person's settings
+program = os.path.join(work, "program")
+os.makedirs(program)
+copy = os.path.join(program, os.path.basename(qt))
+shutil.copy2(qt, copy)
+setting = os.path.join(work, "set-a-hotkey.lua")
+with open(setting, "w") as f:
+    f.write("chimera.hotkeys.saved = '{\"Pause\":\"F7\"}'\n")
+own = dict(env, XDG_CONFIG_HOME=os.path.join(work, "xdg"),
+           LD_LIBRARY_PATH=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(qt)))))
+own.pop("CHIMERA_QT_CONFIG")
+
+
+def settings_in(folder):
+    for root, _, files in os.walk(folder):
+        if "settings.json" in files:
+            with open(os.path.join(root, "settings.json")) as f:
+                return f.read()
+    return ""
+
+
+def run_copy():
+    try:
+        return subprocess.run([copy, "--lua", setting, "--measure", "0.5"], env=own, timeout=60, capture_output=True, text=True)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+r = run_copy()
+check(r is not None and r.returncode == 0 and "F7" in settings_in(program) and settings_in(own["XDG_CONFIG_HOME"]) == "",
+      "the settings file is beside the program", r and r.stderr.strip()[-300:])
+os.remove(os.path.join(program, "settings.json"))
+os.chmod(program, 0o555)
+r = run_copy()
+os.chmod(program, 0o755)
+check(r is not None and r.returncode == 0 and settings_in(program) == "" and "F7" in settings_in(own["XDG_CONFIG_HOME"]),
+      "a program folder that cannot be written keeps them in the person's own", r and r.stderr.strip()[-300:])
 
 shot = os.path.join(work, "chromeless.png")
 r = run("--chromeless", "--luaconsole", "--measure", "0.5", "--screenshot", shot)

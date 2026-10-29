@@ -38,6 +38,7 @@
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QTemporaryDir>
+#include <QTemporaryFile>
 #include <QTimer>
 
 #include <algorithm>
@@ -434,10 +435,23 @@ int main(int argc, char **argv)
 		runFirmware[pair.left(eq).toStdString()] = QFileInfo(pair.mid(eq + 1)).absoluteFilePath().toStdString();
 	}
 	/* what the window remembers, in a file of its own (--config, as Chimera's;
-	 * CHIMERA_QT_CONFIG for a test) */
+	 * CHIMERA_QT_CONFIG for a test): beside the program, so each Chimera
+	 * folder keeps its own settings (owner, 2026-10-29, issue 403), else,
+	 * when the program's folder cannot be written, in the system's folder
+	 * for this person's settings */
+	auto settingsBesideProgram = [] {
+		const QString folder = QCoreApplication::applicationDirPath();
+		const QString path = folder + QStringLiteral("/settings.json");
+		if (QFileInfo::exists(path)) return path;
+		QTemporaryFile probe(QDir(folder).filePath(QStringLiteral("XXXXXX")));
+		return probe.open() ? path : QString();
+	};
 	const QString configPath = args.isSet(configOpt) ? QFileInfo(args.value(configOpt)).absoluteFilePath()
 		: qEnvironmentVariableIsSet("CHIMERA_QT_CONFIG") ? qEnvironmentVariable("CHIMERA_QT_CONFIG")
-		: QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
+		: [&] {
+			const QString beside = settingsBesideProgram();
+			return !beside.isEmpty() ? beside : QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation) + QStringLiteral("/settings.json");
+		}();
 	/* Chimera's single instance mode (Windows): with a window of this
 	 * program already running, the files named are handed to it and this
 	 * one ends before anything is made */

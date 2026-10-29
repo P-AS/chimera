@@ -11089,3 +11089,21 @@ window waits on was answered within 61 ms throughout (4,014 ms with the
 old way back); played, within 1 ms. A seek in recording mode played through
 marked frames and left them marked (they were cleared with the frames
 played as live input).
+
+## The settings file is beside the program (user-decided, 2026-10-29)
+
+Issue 403: the window kept its settings in the system's folder for the
+person's settings, so every Chimera folder on a computer shared one set,
+and a setting wanted for one build (to replay an old movie, say) changed
+it for all. The old window kept config.ini beside its program. The owner
+chose the same for this window: settings.json beside the program, and,
+when that folder cannot be written (Program Files, a system-wide install
+on Linux), the person's own folder as before. --config still names any
+file. Nothing is read from where the settings were kept before: a person
+who wants them back loads that file with Config > Load Config From...,
+which takes it as it is.
+
+Tested: command line runs a copy of the program with no settings file
+named: a setting made by a script is written beside it; with its folder
+made read-only, in the person's folder. With the program's folder never
+used, the first check failed.
