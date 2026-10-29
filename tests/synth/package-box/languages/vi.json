@@ -1,0 +1,29 @@
+{
+	"texts": {
+		"error.refused": "Core tổng hợp từ chối trò chơi %1 byte này.",
+		"game_firmware.gamelogo": "Logo trò chơi",
+		"game_setting.gamelogo": "Logo trò chơi",
+		"game_setting.gamelogo.about": "Riêng của trò chơi này: hiển thị logo của nó, từ một tệp riêng.",
+		"game_setting.not_the_package_s": "Không phải của gói",
+		"import.game_missing": "trò chơi %1 không có sẵn",
+		"import.no_movie": "không có movie: tệp \"movie\" chưa được gắn",
+		"import.note": "được nhập bởi core synth",
+		"import.which_game": "movie này được làm trên trò chơi nào? (importRom)",
+		"property.cursor_x": "Cột của ô mà con trỏ đang ở",
+		"property.letter": "Những gì core để lại trong hộp thư của nó",
+		"property.status": "Byte kết quả của mỗi ROM thử nghiệm",
+		"property.steps": "Số nước đã đi; quá 1000 thì thua",
+		"setting.initfillbyte": "Giá trị lấp đầy RAM ban đầu",
+		"setting.initfillbyte.about": "Byte dùng để lấp đầy RAM của máy trước khi ROM chạy. Định hình máy, nên đây là một thiết lập đồng bộ.",
+		"slot.rom": "Trò chơi",
+		"slot.rom.help": "Trò chơi thử nghiệm mà core tổng hợp chạy.",
+		"suggest.fill": "Core tổng hợp đề xuất lấp đầy bằng 9.",
+		"suggest.fill_disks": {
+			"other": "Core tổng hợp đề xuất lấp đầy bằng 9. Nó thấy %n đĩa, ở tốc độ đĩa %2."
+		},
+		"suggest.fill_disks_track": {
+			"other": "Core tổng hợp đề xuất lấp đầy bằng 9. Nó thấy %n đĩa và rãnh của disk1.cue, ở tốc độ đĩa %2."
+		},
+		"suggest.nothing": "Core tổng hợp không đề xuất gì cho trò chơi này."
+	}
+}

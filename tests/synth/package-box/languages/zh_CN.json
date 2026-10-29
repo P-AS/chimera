@@ -1,0 +1,29 @@
+{
+	"texts": {
+		"error.refused": "合成核心拒绝这个 %1 字节的游戏。",
+		"game_firmware.gamelogo": "游戏标志",
+		"game_setting.gamelogo": "游戏标志",
+		"game_setting.gamelogo.about": "此游戏专有：从它自己的文件显示其标志。",
+		"game_setting.not_the_package_s": "不属于软件包",
+		"import.game_missing": "游戏 %1 不在手边",
+		"import.no_movie": "没有录像：文件 \"movie\" 未挂载",
+		"import.note": "由 synth 核心导入",
+		"import.which_game": "这个录像是在哪个游戏上制作的？(importRom)",
+		"property.cursor_x": "光标所在单元格的列",
+		"property.letter": "核心在其信箱中留下的内容",
+		"property.status": "每个测试 ROM 的结果字节",
+		"property.steps": "已走的步数；超过 1000 则游戏失败",
+		"setting.initfillbyte": "RAM 初始填充",
+		"setting.initfillbyte.about": "在 ROM 运行前用来填充机器 RAM 的字节。它决定机器的状态，因此是同步设置。",
+		"slot.rom": "游戏",
+		"slot.rom.help": "合成核心运行的测试游戏。",
+		"suggest.fill": "合成核心建议填充值为 9。",
+		"suggest.fill_disks": {
+			"other": "合成核心建议填充值为 9。它看到 %n 张磁盘，磁盘速度为 %2。"
+		},
+		"suggest.fill_disks_track": {
+			"other": "合成核心建议填充值为 9。它看到 %n 张磁盘和 disk1.cue 的音轨，磁盘速度为 %2。"
+		},
+		"suggest.nothing": "合成核心对此游戏没有任何建议。"
+	}
+}

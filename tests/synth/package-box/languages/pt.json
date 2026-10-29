@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "O núcleo sintético recusa este jogo de %1 bytes.",
+		"game_firmware.gamelogo": "Logotipo do jogo",
+		"game_setting.gamelogo": "Logotipo do jogo",
+		"game_setting.gamelogo.about": "Próprio deste jogo: mostra seu logotipo, a partir de um arquivo próprio.",
+		"game_setting.not_the_package_s": "Não é do pacote",
+		"import.game_missing": "o jogo %1 não está à mão",
+		"import.no_movie": "nenhum filme: o arquivo \"movie\" não está montado",
+		"import.note": "importado pelo núcleo synth",
+		"import.which_game": "em qual jogo este filme foi feito? (importRom)",
+		"property.cursor_x": "Coluna da célula em que o cursor está",
+		"property.letter": "O que o núcleo deixou em sua caixa de correio",
+		"property.status": "O byte de resultado de cada ROM de teste",
+		"property.steps": "Movimentos feitos; passados 1000 o jogo está perdido",
+		"setting.initfillbyte": "Preenchimento inicial da RAM",
+		"setting.initfillbyte.about": "Byte com que a RAM da máquina é preenchida antes de a ROM rodar. Define a máquina, então é uma configuração de sincronia.",
+		"slot.rom": "Jogo",
+		"slot.rom.help": "O jogo de teste que o núcleo sintético executa.",
+		"suggest.fill": "O núcleo sintético sugere um preenchimento de 9.",
+		"suggest.fill_disks": {
+			"one": "O núcleo sintético sugere um preenchimento de 9. Ele vê %n disco, à velocidade de disco %2.",
+			"other": "O núcleo sintético sugere um preenchimento de 9. Ele vê %n discos, à velocidade de disco %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "O núcleo sintético sugere um preenchimento de 9. Ele vê %n disco e a faixa de disk1.cue, à velocidade de disco %2.",
+			"other": "O núcleo sintético sugere um preenchimento de 9. Ele vê %n discos e a faixa de disk1.cue, à velocidade de disco %2."
+		},
+		"suggest.nothing": "O núcleo sintético não sugere nada para este jogo."
+	}
+}

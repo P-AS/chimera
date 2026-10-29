@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "A szintetikus mag elutasítja ezt a játékot (%1 bájt).",
+		"game_firmware.gamelogo": "Játéklogó",
+		"game_setting.gamelogo": "Játéklogó",
+		"game_setting.gamelogo.about": "A játék saját beállítása: megjeleníti a logóját egy saját fájlból.",
+		"game_setting.not_the_package_s": "Nem a csomagé",
+		"import.game_missing": "nincs kéznél a játék: %1",
+		"import.no_movie": "nincs felvétel: a \"movie\" fájl nincs csatolva",
+		"import.note": "a synth mag importálta",
+		"import.which_game": "melyik játékon készült ez a felvétel? (importRom)",
+		"property.cursor_x": "Annak a cellának az oszlopa, amelyben a kurzor áll",
+		"property.letter": "Amit a mag a postaládájában hagyott",
+		"property.status": "Minden teszt-ROM eredménybájtja",
+		"property.steps": "Megtett lépések; 1000 felett a játék elveszett",
+		"setting.initfillbyte": "Kezdeti RAM-kitöltés",
+		"setting.initfillbyte.about": "Bájt, amellyel a gép RAM-ját feltöltik, mielőtt a ROM elindul. A gépet alakítja, így szinkronbeállítás.",
+		"slot.rom": "Játék",
+		"slot.rom.help": "A tesztjáték, amelyet a szintetikus mag futtat.",
+		"suggest.fill": "A szintetikus mag 9-es kitöltést javasol.",
+		"suggest.fill_disks": {
+			"one": "A szintetikus mag 9-es kitöltést javasol. %n lemezt lát, %2 lemezsebességgel.",
+			"other": "A szintetikus mag 9-es kitöltést javasol. %n lemezt lát, %2 lemezsebességgel."
+		},
+		"suggest.fill_disks_track": {
+			"one": "A szintetikus mag 9-es kitöltést javasol. %n lemezt és a disk1.cue sávját látja, %2 lemezsebességgel.",
+			"other": "A szintetikus mag 9-es kitöltést javasol. %n lemezt és a disk1.cue sávját látja, %2 lemezsebességgel."
+		},
+		"suggest.nothing": "A szintetikus mag semmit sem javasol ehhez a játékhoz."
+	}
+}

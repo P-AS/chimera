@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "De synthetische core weigert dit spel van %1 bytes.",
+		"game_firmware.gamelogo": "Spellogo",
+		"game_setting.gamelogo": "Spellogo",
+		"game_setting.gamelogo.about": "Van dit spel zelf: toont zijn logo, uit een eigen bestand.",
+		"game_setting.not_the_package_s": "Niet van het pakket",
+		"import.game_missing": "het spel %1 is niet bij de hand",
+		"import.no_movie": "geen opname: het bestand \"movie\" is niet gekoppeld",
+		"import.note": "geïmporteerd door de synth-core",
+		"import.which_game": "op welk spel is deze opname gemaakt? (importRom)",
+		"property.cursor_x": "Kolom van de cel waarin de cursor staat",
+		"property.letter": "Wat de core in zijn brievenbus achterliet",
+		"property.status": "De resultaatbyte van elke test-ROM",
+		"property.steps": "Gemaakte zetten; na 1000 is het spel verloren",
+		"setting.initfillbyte": "Begin-RAM-vulling",
+		"setting.initfillbyte.about": "Byte waarmee het RAM van de machine wordt gevuld voordat de ROM draait. Bepaalt de machine, dus het is een sync-instelling.",
+		"slot.rom": "Spel",
+		"slot.rom.help": "Het testspel dat de synthetische core draait.",
+		"suggest.fill": "De synthetische core stelt een vulling van 9 voor.",
+		"suggest.fill_disks": {
+			"one": "De synthetische core stelt een vulling van 9 voor. Hij ziet %n schijf, bij schijfsnelheid %2.",
+			"other": "De synthetische core stelt een vulling van 9 voor. Hij ziet %n schijven, bij schijfsnelheid %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "De synthetische core stelt een vulling van 9 voor. Hij ziet %n schijf en het spoor van disk1.cue, bij schijfsnelheid %2.",
+			"other": "De synthetische core stelt een vulling van 9 voor. Hij ziet %n schijven en het spoor van disk1.cue, bij schijfsnelheid %2."
+		},
+		"suggest.nothing": "De synthetische core stelt voor dit spel niets voor."
+	}
+}

@@ -1,0 +1,33 @@
+{
+	"texts": {
+		"error.refused": "Core-ul sintetic refuză acest joc (%1 octeți).",
+		"game_firmware.gamelogo": "Sigla jocului",
+		"game_setting.gamelogo": "Sigla jocului",
+		"game_setting.gamelogo.about": "Propriu acestui joc: îi arată sigla, dintr-un fișier al său.",
+		"game_setting.not_the_package_s": "Nu al pachetului",
+		"import.game_missing": "jocul %1 nu este la îndemână",
+		"import.no_movie": "niciun film: fișierul \"movie\" nu este montat",
+		"import.note": "importat de core-ul synth",
+		"import.which_game": "pe ce joc a fost făcut acest film? (importRom)",
+		"property.cursor_x": "Coloana celulei în care se află cursorul",
+		"property.letter": "Ce a lăsat core-ul în cutia sa poștală",
+		"property.status": "Octetul de rezultat al fiecărui ROM de test",
+		"property.steps": "Mutări făcute; după 1000 jocul este pierdut",
+		"setting.initfillbyte": "Umplere inițială a RAM",
+		"setting.initfillbyte.about": "Octetul cu care se umple RAM-ul mașinii înainte ca ROM-ul să ruleze. Modelează mașina, deci este o setare de sincronizare.",
+		"slot.rom": "Joc",
+		"slot.rom.help": "Jocul de test pe care îl rulează core-ul sintetic.",
+		"suggest.fill": "Core-ul sintetic sugerează o umplere cu 9.",
+		"suggest.fill_disks": {
+			"one": "Core-ul sintetic sugerează o umplere cu 9. Vede %n disc, la viteza de disc %2.",
+			"few": "Core-ul sintetic sugerează o umplere cu 9. Vede %n discuri, la viteza de disc %2.",
+			"other": "Core-ul sintetic sugerează o umplere cu 9. Vede %n de discuri, la viteza de disc %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Core-ul sintetic sugerează o umplere cu 9. Vede %n disc și pista din disk1.cue, la viteza de disc %2.",
+			"few": "Core-ul sintetic sugerează o umplere cu 9. Vede %n discuri și pista din disk1.cue, la viteza de disc %2.",
+			"other": "Core-ul sintetic sugerează o umplere cu 9. Vede %n de discuri și pista din disk1.cue, la viteza de disc %2."
+		},
+		"suggest.nothing": "Core-ul sintetic nu sugerează nimic pentru acest joc."
+	}
+}

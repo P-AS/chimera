@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "Il core sintetico rifiuta questo gioco di %1 byte.",
+		"game_firmware.gamelogo": "Logo del gioco",
+		"game_setting.gamelogo": "Logo del gioco",
+		"game_setting.gamelogo.about": "Proprio di questo gioco: mostra il suo logo, da un suo file.",
+		"game_setting.not_the_package_s": "Non del pacchetto",
+		"import.game_missing": "il gioco %1 non è a portata di mano",
+		"import.no_movie": "nessun filmato: il file \"movie\" non è montato",
+		"import.note": "importato dal core synth",
+		"import.which_game": "su quale gioco è stato fatto questo filmato? (importRom)",
+		"property.cursor_x": "Colonna della cella in cui si trova il cursore",
+		"property.letter": "Ciò che il core ha lasciato nella sua casella di posta",
+		"property.status": "Il byte di risultato di ogni ROM di test",
+		"property.steps": "Mosse fatte; oltre 1000 la partita è persa",
+		"setting.initfillbyte": "Riempimento iniziale della RAM",
+		"setting.initfillbyte.about": "Byte con cui viene riempita la RAM della macchina prima che la ROM parta. Definisce la macchina, quindi è un'impostazione di sincronia.",
+		"slot.rom": "Gioco",
+		"slot.rom.help": "Il gioco di prova che il core sintetico esegue.",
+		"suggest.fill": "Il core sintetico suggerisce un riempimento di 9.",
+		"suggest.fill_disks": {
+			"one": "Il core sintetico suggerisce un riempimento di 9. Vede %n disco, a velocità disco %2.",
+			"other": "Il core sintetico suggerisce un riempimento di 9. Vede %n dischi, a velocità disco %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Il core sintetico suggerisce un riempimento di 9. Vede %n disco e la traccia di disk1.cue, a velocità disco %2.",
+			"other": "Il core sintetico suggerisce un riempimento di 9. Vede %n dischi e la traccia di disk1.cue, a velocità disco %2."
+		},
+		"suggest.nothing": "Il core sintetico non suggerisce nulla per questo gioco."
+	}
+}

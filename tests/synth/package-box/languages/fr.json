@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "Le cœur synthétique refuse ce jeu de %1 octets.",
+		"game_firmware.gamelogo": "Logo du jeu",
+		"game_setting.gamelogo": "Logo du jeu",
+		"game_setting.gamelogo.about": "Propre à ce jeu : affiche son logo, depuis un fichier à lui.",
+		"game_setting.not_the_package_s": "Pas celui du paquet",
+		"import.game_missing": "le jeu %1 n'est pas sous la main",
+		"import.no_movie": "pas de film : le fichier \"movie\" n'est pas monté",
+		"import.note": "importé par le cœur synth",
+		"import.which_game": "sur quel jeu ce film a-t-il été fait ? (importRom)",
+		"property.cursor_x": "Colonne de la case où se trouve le curseur",
+		"property.letter": "Ce que le cœur a laissé dans sa boîte aux lettres",
+		"property.status": "L'octet de résultat de chaque ROM de test",
+		"property.steps": "Coups joués ; au-delà de 1000 la partie est perdue",
+		"setting.initfillbyte": "Remplissage initial de la RAM",
+		"setting.initfillbyte.about": "Octet dont la RAM de la machine est remplie avant que la ROM ne tourne. Il façonne la machine : c'est donc un réglage de synchronisation.",
+		"slot.rom": "Jeu",
+		"slot.rom.help": "Le jeu de test que fait tourner le cœur synthétique.",
+		"suggest.fill": "Le cœur synthétique suggère un remplissage de 9.",
+		"suggest.fill_disks": {
+			"one": "Le cœur synthétique suggère un remplissage de 9. Il voit %n disque, à la vitesse de disque %2.",
+			"other": "Le cœur synthétique suggère un remplissage de 9. Il voit %n disques, à la vitesse de disque %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Le cœur synthétique suggère un remplissage de 9. Il voit %n disque et la piste de disk1.cue, à la vitesse de disque %2.",
+			"other": "Le cœur synthétique suggère un remplissage de 9. Il voit %n disques et la piste de disk1.cue, à la vitesse de disque %2."
+		},
+		"suggest.nothing": "Le cœur synthétique ne suggère rien pour ce jeu."
+	}
+}

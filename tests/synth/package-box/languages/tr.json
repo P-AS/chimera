@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "Sentetik çekirdek bu %1 baytlık oyunu reddediyor.",
+		"game_firmware.gamelogo": "Oyun logosu",
+		"game_setting.gamelogo": "Oyun Logosu",
+		"game_setting.gamelogo.about": "Bu oyuna özgü: logosunu kendi dosyasından gösterir.",
+		"game_setting.not_the_package_s": "Paketin değil",
+		"import.game_missing": "%1 oyunu elde değil",
+		"import.no_movie": "film yok: \"movie\" dosyası bağlanmadı",
+		"import.note": "synth çekirdeği tarafından içe aktarıldı",
+		"import.which_game": "bu film hangi oyunda yapıldı? (importRom)",
+		"property.cursor_x": "İmlecin bulunduğu hücrenin sütunu",
+		"property.letter": "Çekirdeğin posta kutusunda bıraktığı şey",
+		"property.status": "Her test ROM'unun sonuç baytı",
+		"property.steps": "Yapılan hamleler; 1000'i geçince oyun kaybedilir",
+		"setting.initfillbyte": "İlk RAM Dolgusu",
+		"setting.initfillbyte.about": "ROM çalışmadan önce makinenin RAM'inin doldurulduğu bayt. Makineyi biçimlendirir, bu yüzden bir eşitleme ayarıdır.",
+		"slot.rom": "Oyun",
+		"slot.rom.help": "Sentetik çekirdeğin çalıştırdığı test oyunu.",
+		"suggest.fill": "Sentetik çekirdek 9 dolgusunu öneriyor.",
+		"suggest.fill_disks": {
+			"one": "Sentetik çekirdek 9 dolgusunu öneriyor. %n disk görüyor, disk hızı %2.",
+			"other": "Sentetik çekirdek 9 dolgusunu öneriyor. %n disk görüyor, disk hızı %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Sentetik çekirdek 9 dolgusunu öneriyor. %n disk ve disk1.cue dosyasının izini görüyor, disk hızı %2.",
+			"other": "Sentetik çekirdek 9 dolgusunu öneriyor. %n disk ve disk1.cue dosyasının izini görüyor, disk hızı %2."
+		},
+		"suggest.nothing": "Sentetik çekirdek bu oyun için bir şey önermiyor."
+	}
+}

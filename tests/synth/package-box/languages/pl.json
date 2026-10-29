@@ -1,0 +1,33 @@
+{
+	"texts": {
+		"error.refused": "Syntetyczny rdzeń odrzuca tę grę o rozmiarze %1 bajtów.",
+		"game_firmware.gamelogo": "Logo gry",
+		"game_setting.gamelogo": "Logo gry",
+		"game_setting.gamelogo.about": "Własne ustawienie tej gry: pokazuje jej logo z jej własnego pliku.",
+		"game_setting.not_the_package_s": "Nie z pakietu",
+		"import.game_missing": "gry %1 nie ma pod ręką",
+		"import.no_movie": "brak nagrania: plik \"movie\" nie jest zamontowany",
+		"import.note": "zaimportowane przez rdzeń synth",
+		"import.which_game": "na jakiej grze zrobiono to nagranie? (importRom)",
+		"property.cursor_x": "Kolumna komórki, w której jest kursor",
+		"property.letter": "Co rdzeń zostawił w swojej skrzynce pocztowej",
+		"property.status": "Bajt wyniku każdego testowego ROM-u",
+		"property.steps": "Wykonane ruchy; po 1000 gra jest przegrana",
+		"setting.initfillbyte": "Początkowe wypełnienie RAM",
+		"setting.initfillbyte.about": "Bajt, którym wypełniana jest pamięć RAM maszyny przed uruchomieniem ROM-u. Kształtuje maszynę, więc jest to ustawienie synchronizacji.",
+		"slot.rom": "Gra",
+		"slot.rom.help": "Gra testowa, którą uruchamia syntetyczny rdzeń.",
+		"suggest.fill": "Syntetyczny rdzeń proponuje wypełnienie wartością 9.",
+		"suggest.fill_disks": {
+			"one": "Syntetyczny rdzeń proponuje wypełnienie wartością 9. Widzi %n dysk, przy prędkości dysku %2.",
+			"few": "Syntetyczny rdzeń proponuje wypełnienie wartością 9. Widzi %n dyski, przy prędkości dysku %2.",
+			"many": "Syntetyczny rdzeń proponuje wypełnienie wartością 9. Widzi %n dysków, przy prędkości dysku %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Syntetyczny rdzeń proponuje wypełnienie wartością 9. Widzi %n dysk i ścieżkę disk1.cue, przy prędkości dysku %2.",
+			"few": "Syntetyczny rdzeń proponuje wypełnienie wartością 9. Widzi %n dyski i ścieżkę disk1.cue, przy prędkości dysku %2.",
+			"many": "Syntetyczny rdzeń proponuje wypełnienie wartością 9. Widzi %n dysków i ścieżkę disk1.cue, przy prędkości dysku %2."
+		},
+		"suggest.nothing": "Syntetyczny rdzeń nic nie proponuje dla tej gry."
+	}
+}

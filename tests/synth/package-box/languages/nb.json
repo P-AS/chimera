@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "Den syntetiske kjernen avviser dette spillet på %1 byte.",
+		"game_firmware.gamelogo": "Spillogo",
+		"game_setting.gamelogo": "Spillogo",
+		"game_setting.gamelogo.about": "Spillets eget: viser logoen fra en egen fil.",
+		"game_setting.not_the_package_s": "Ikke pakkens",
+		"import.game_missing": "spillet %1 er ikke for hånden",
+		"import.no_movie": "ingen film: filen \"movie\" er ikke montert",
+		"import.note": "importert av synth-kjernen",
+		"import.which_game": "hvilket spill ble denne filmen laget på? (importRom)",
+		"property.cursor_x": "Kolonnen til cellen markøren står i",
+		"property.letter": "Det kjernen la igjen i postkassen sin",
+		"property.status": "Resultatbyten for hver test-ROM",
+		"property.steps": "Utførte trekk; etter 1000 er spillet tapt",
+		"setting.initfillbyte": "Innledende RAM-fylling",
+		"setting.initfillbyte.about": "Byte som maskinens RAM fylles med før ROM-en kjører. Former maskinen, så det er en synkroniseringsinnstilling.",
+		"slot.rom": "Spill",
+		"slot.rom.help": "Testspillet den syntetiske kjernen kjører.",
+		"suggest.fill": "Den syntetiske kjernen foreslår en fylling på 9.",
+		"suggest.fill_disks": {
+			"one": "Den syntetiske kjernen foreslår en fylling på 9. Den ser %n disk, med diskhastighet %2.",
+			"other": "Den syntetiske kjernen foreslår en fylling på 9. Den ser %n disker, med diskhastighet %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Den syntetiske kjernen foreslår en fylling på 9. Den ser %n disk og sporet i disk1.cue, med diskhastighet %2.",
+			"other": "Den syntetiske kjernen foreslår en fylling på 9. Den ser %n disker og sporet i disk1.cue, med diskhastighet %2."
+		},
+		"suggest.nothing": "Den syntetiske kjernen foreslår ingenting for dette spillet."
+	}
+}

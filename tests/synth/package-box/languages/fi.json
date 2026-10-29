@@ -1,0 +1,31 @@
+{
+	"texts": {
+		"error.refused": "Synteettinen ydin hylkää tämän %1 tavun pelin.",
+		"game_firmware.gamelogo": "Pelin logo",
+		"game_setting.gamelogo": "Pelin logo",
+		"game_setting.gamelogo.about": "Tämän pelin oma: näyttää sen logon omasta tiedostostaan.",
+		"game_setting.not_the_package_s": "Ei paketin oma",
+		"import.game_missing": "peli %1 ei ole käsillä",
+		"import.no_movie": "ei elokuvaa: tiedostoa \"movie\" ei ole liitetty",
+		"import.note": "synth-ytimen tuoma",
+		"import.which_game": "millä pelillä tämä elokuva tehtiin? (importRom)",
+		"property.cursor_x": "Sen solun sarake, jossa kohdistin on",
+		"property.letter": "Mitä ydin jätti postilaatikkoonsa",
+		"property.status": "Jokaisen testi-ROMin tulostavu",
+		"property.steps": "Tehdyt siirrot; 1000:n jälkeen peli on hävitty",
+		"setting.initfillbyte": "RAMin alkutäyttö",
+		"setting.initfillbyte.about": "Tavu, jolla koneen RAM täytetään ennen kuin ROM käynnistyy. Muovaa konetta, joten se on synkronointiasetus.",
+		"slot.rom": "Peli",
+		"slot.rom.help": "Testipeli, jota synteettinen ydin ajaa.",
+		"suggest.fill": "Synteettinen ydin ehdottaa täyttöä 9.",
+		"suggest.fill_disks": {
+			"one": "Synteettinen ydin ehdottaa täyttöä 9. Se näkee %n levyn, levynopeudella %2.",
+			"other": "Synteettinen ydin ehdottaa täyttöä 9. Se näkee %n levyä, levynopeudella %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Synteettinen ydin ehdottaa täyttöä 9. Se näkee %n levyn ja tiedoston disk1.cue raidan, levynopeudella %2.",
+			"other": "Synteettinen ydin ehdottaa täyttöä 9. Se näkee %n levyä ja tiedoston disk1.cue raidan, levynopeudella %2."
+		},
+		"suggest.nothing": "Synteettinen ydin ei ehdota tälle pelille mitään."
+	}
+}

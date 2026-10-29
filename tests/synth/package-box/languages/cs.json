@@ -1,0 +1,33 @@
+{
+	"texts": {
+		"error.refused": "Syntetické jádro odmítá tuto hru o velikosti %1 bajtů.",
+		"game_firmware.gamelogo": "Logo hry",
+		"game_setting.gamelogo": "Logo hry",
+		"game_setting.gamelogo.about": "Vlastní nastavení této hry: zobrazuje její logo z jejího vlastního souboru.",
+		"game_setting.not_the_package_s": "Není z balíčku",
+		"import.game_missing": "hra %1 není po ruce",
+		"import.no_movie": "žádný záznam: soubor \"movie\" není připojen",
+		"import.note": "importováno jádrem synth",
+		"import.which_game": "na jaké hře byl tento záznam pořízen? (importRom)",
+		"property.cursor_x": "Sloupec buňky, ve které je kurzor",
+		"property.letter": "Co jádro nechalo ve své poštovní schránce",
+		"property.status": "Výsledný bajt každé testovací ROM",
+		"property.steps": "Provedené tahy; po 1000 je hra prohraná",
+		"setting.initfillbyte": "Počáteční výplň RAM",
+		"setting.initfillbyte.about": "Bajt, kterým se vyplní RAM stroje před spuštěním ROM. Určuje stroj, proto je to nastavení synchronizace.",
+		"slot.rom": "Hra",
+		"slot.rom.help": "Testovací hra, kterou spouští syntetické jádro.",
+		"suggest.fill": "Syntetické jádro navrhuje výplň 9.",
+		"suggest.fill_disks": {
+			"one": "Syntetické jádro navrhuje výplň 9. Vidí %n disk, při rychlosti disku %2.",
+			"few": "Syntetické jádro navrhuje výplň 9. Vidí %n disky, při rychlosti disku %2.",
+			"other": "Syntetické jádro navrhuje výplň 9. Vidí %n disků, při rychlosti disku %2."
+		},
+		"suggest.fill_disks_track": {
+			"one": "Syntetické jádro navrhuje výplň 9. Vidí %n disk a stopu disk1.cue, při rychlosti disku %2.",
+			"few": "Syntetické jádro navrhuje výplň 9. Vidí %n disky a stopu disk1.cue, při rychlosti disku %2.",
+			"other": "Syntetické jádro navrhuje výplň 9. Vidí %n disků a stopu disk1.cue, při rychlosti disku %2."
+		},
+		"suggest.nothing": "Syntetické jádro pro tuto hru nic nenavrhuje."
+	}
+}
