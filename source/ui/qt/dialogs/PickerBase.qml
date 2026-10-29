@@ -14,6 +14,11 @@ QtObject {
     property Window parentWindow: null
     // 1 once accepted, 0 otherwise, as Qt's dialogs have it
     property int result: 0
+    // a tick box the chooser itself carries, such as Include sub-folders:
+    // its label (none when empty), and whether it is ticked, before the
+    // dialog opens and as the person confirmed it after
+    property string checkBoxText
+    property bool checkBoxChecked: false
     readonly property bool visible: shown
     signal accepted()
     signal rejected()
@@ -48,13 +53,13 @@ QtObject {
         if (shown) return
         shown = true
         result = 0
-        request = asked
+        request = Object.assign({ checkBox: checkBoxText, checkBoxChecked: checkBoxChecked }, asked)
         // a run nobody watches (--headless) asks nobody outside it
         const portal = typeof portalChooser !== "undefined" && portalChooser !== null
             && !(typeof headlessRun !== "undefined" && headlessRun !== null && headlessRun.enabled)
         if (portal) {
             asking = true
-            if (portalChooser.ask(Object.assign({ title: title, window: windowShown() }, asked))) return
+            if (portalChooser.ask(Object.assign({ title: title, window: windowShown() }, request))) return
             asking = false
         }
         showBuiltin()
@@ -70,6 +75,8 @@ QtObject {
         builtin.name = request.name || ""
         builtin.nameFilters = request.nameFilters || []
         builtin.defaultSuffix = request.defaultSuffix || ""
+        builtin.checkBoxText = request.checkBox || ""
+        builtin.checkBoxChecked = !!request.checkBoxChecked
         builtin.open()
     }
     function finish(urls) {
@@ -83,6 +90,16 @@ QtObject {
             rejected()
         }
     }
+    // on Windows, a dialog with a tick box is Windows' own, shown by Chimera
+    // (Qt's takes no box); false when it could not be, and Qt's is shown
+    function systemWithBox(asked) {
+        if (checkBoxText === "" || typeof systemDialog === "undefined" || systemDialog === null || !systemDialog.available) return false
+        const answer = systemDialog.ask(Object.assign({ title: title, window: windowShown(), checkBox: checkBoxText, checkBoxChecked: checkBoxChecked }, asked))
+        if (answer.outcome === 2) return false
+        if (answer.outcome === 0) checkBoxChecked = answer.checkBoxChecked
+        finish(answer.outcome === 0 ? answer.files : [])
+        return true
+    }
     // hidden with no answer, as Qt's close()
     function end() {
         if (builtin && builtin.opened) {
@@ -94,9 +111,11 @@ QtObject {
 
     readonly property Connections portalAnswers: Connections {
         target: typeof portalChooser !== "undefined" ? portalChooser : null
-        function onAnswered(outcome, files) {
+        function onAnswered(outcome, files, checkBox) {
             if (!base.asking) return
             base.asking = false
+            // a chooser that did not carry the box leaves it as it was
+            if (outcome === 0 && checkBox >= 0) base.checkBoxChecked = checkBox === 1
             // the portal's chooser could not be shown: Chimera's instead
             if (outcome === 2) base.showBuiltin()
             else base.finish(outcome === 0 ? files : [])
@@ -104,7 +123,10 @@ QtObject {
     }
     readonly property Connections builtinAnswers: Connections {
         target: base.builtin
-        function onChosen(urls) { base.finish(urls) }
+        function onChosen(urls) {
+            if (base.checkBoxText !== "") base.checkBoxChecked = base.builtin.checkBoxChecked
+            base.finish(urls)
+        }
         function onCancelled() { base.finish([]) }
     }
 }

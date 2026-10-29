@@ -255,7 +255,7 @@ qt6 = import('qt6')
 qt_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2'], required: get_option('qt_ui'))
 if qt_dep.found()
   qt_moc = qt6.compile_moc(
-    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/menu_letters.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp', 'qt/picture_files.hpp', 'qt/pointer_capture.hpp', 'qt/button_router.hpp', 'qt/headless_run.hpp', 'qt/portal_file_chooser.hpp', 'qt/file_places.hpp'],
+    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/menu_letters.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp', 'qt/picture_files.hpp', 'qt/pointer_capture.hpp', 'qt/button_router.hpp', 'qt/headless_run.hpp', 'qt/portal_file_chooser.hpp', 'qt/file_places.hpp', 'qt/system_file_dialog.hpp'],
     include_directories: [vm_inc, engine_inc],
     dependencies: [qt_dep],
   )
@@ -299,6 +299,8 @@ if qt_dep.found()
     'qt/jump_list.cpp',
     'qt/portal_file_chooser.cpp',
     'qt/file_places.cpp',
+    'qt/system_file_dialog.cpp',
+    'qt/win32_file_dialog.cpp',
     qt_moc,
     qt_rcc,
     qt_dialogs_rcc,

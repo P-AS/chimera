@@ -737,6 +737,7 @@
 		"firmware_config.find": "Find:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Fundet",
+		"firmware_config.include_sub_folders": "Inkludér undermapper",
 		"firmware_config.release": "Udgave",
 		"firmware_config.rescan": "Søg igen",
 		"firmware_config.scan_a_folder_for_firmware_files": "Søg i en mappe efter firmwarefiler",

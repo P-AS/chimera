@@ -757,6 +757,7 @@
 		"firmware_config.find": "Caută:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Găsit",
+		"firmware_config.include_sub_folders": "Include subfolderele",
 		"firmware_config.release": "Versiune",
 		"firmware_config.rescan": "Scanează din nou",
 		"firmware_config.scan_a_folder_for_firmware_files": "Scanează un folder pentru fișiere firmware",

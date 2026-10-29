@@ -737,6 +737,7 @@
 		"firmware_config.find": "Cerca:",
 		"firmware_config.firmware": "Microprogramari",
 		"firmware_config.found": "Trobat",
+		"firmware_config.include_sub_folders": "Inclou les subcarpetes",
 		"firmware_config.release": "Versió",
 		"firmware_config.rescan": "Torna a explorar",
 		"firmware_config.scan_a_folder_for_firmware_files": "Explora una carpeta per trobar fitxers de microprogramari",

@@ -737,6 +737,7 @@
 		"firmware_config.find": "Finn:",
 		"firmware_config.firmware": "Fastvare",
 		"firmware_config.found": "Funnet",
+		"firmware_config.include_sub_folders": "Ta med undermapper",
 		"firmware_config.release": "Utgave",
 		"firmware_config.rescan": "Skann på nytt",
 		"firmware_config.scan_a_folder_for_firmware_files": "Skann en mappe etter fastvarefiler",

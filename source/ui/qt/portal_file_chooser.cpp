@@ -79,6 +79,8 @@ constexpr const char *kBus = "org.freedesktop.DBus";
  * Cancel: the window's own chooser is shown instead (shana answers every
  * Cancel with the same code, so a later one is a Cancel) */
 constexpr qint64 kNeverShownMs = 300;
+/* the id the one tick box is sent and read back under */
+constexpr const char *kCheckBoxId = "checkbox";
 
 constexpr int kTypeByte = 'y', kTypeBoolean = 'b', kTypeUint32 = 'u', kTypeString = 's', kTypeObjectPath = 'o';
 constexpr int kTypeArray = 'a', kTypeVariant = 'v', kTypeStruct = 'r', kTypeDictEntry = 'e';
@@ -503,6 +505,20 @@ bool PortalFileChooser::ask(const QVariantMap &request)
 	if (save && !name.isEmpty()) writer.entry("current_name", "s", [&] { writer.string(QFileInfo(name).fileName()); });
 	const QString start = request.value(QStringLiteral("folder")).toUrl().toLocalFile();
 	if (!start.isEmpty() && QFileInfo(start).isDir()) writer.entry("current_folder", "ay", [&] { writer.bytes(QDir::cleanPath(start)); });
+	/* a choice with no options is a tick box; its value is "true" or "false" */
+	const QString checkBox = request.value(QStringLiteral("checkBox")).toString();
+	if (!checkBox.isEmpty())
+		writer.entry("choices", "a(ssa(ss)s)", [&] {
+			writer.open(kTypeArray, "(ssa(ss)s)");
+			writer.open(kTypeStruct, nullptr);
+			writer.string(QString::fromLatin1(kCheckBoxId));
+			writer.string(checkBox);
+			writer.open(kTypeArray, "(ss)");
+			writer.close();
+			writer.string(request.value(QStringLiteral("checkBoxChecked")).toBool() ? QStringLiteral("true") : QStringLiteral("false"));
+			writer.close();
+			writer.close();
+		});
 	writer.close();
 
 	DBusMessage *reply = writer.send(connection, 5000);
@@ -563,9 +579,10 @@ void PortalFileChooser::poll()
 			return;
 		}
 		QList<QUrl> files;
+		int checked = -1;
 		if (lib()->message_iter_next(&iter) && lib()->message_iter_get_arg_type(&iter) == kTypeArray)
 		{
-			Iter entries, entry, value, item;
+			Iter entries, entry, value, item, pair;
 			lib()->message_iter_recurse(&iter, &entries);
 			while (lib()->message_iter_get_arg_type(&entries) == kTypeDictEntry)
 			{
@@ -584,16 +601,29 @@ void PortalFileChooser::poll()
 						lib()->message_iter_next(&item);
 					}
 				}
+				/* the choices as confirmed, a(ss): an id and its value */
+				else if (key == QStringLiteral("choices") && lib()->message_iter_get_arg_type(&value) == kTypeArray)
+				{
+					lib()->message_iter_recurse(&value, &item);
+					while (lib()->message_iter_get_arg_type(&item) == kTypeStruct)
+					{
+						lib()->message_iter_recurse(&item, &pair);
+						const QString id = stringAt(&pair);
+						lib()->message_iter_next(&pair);
+						if (id == QString::fromLatin1(kCheckBoxId)) checked = stringAt(&pair) == QStringLiteral("true") ? 1 : 0;
+						lib()->message_iter_next(&item);
+					}
+				}
 				lib()->message_iter_next(&entries);
 			}
 		}
-		finish(files.isEmpty() ? Cancelled : Chosen, files);
+		finish(files.isEmpty() ? Cancelled : Chosen, files, checked);
 		return;
 	}
 #endif
 }
 
-void PortalFileChooser::finish(int outcome, const QList<QUrl> &files)
+void PortalFileChooser::finish(int outcome, const QList<QUrl> &files, int checkBox)
 {
 	timer_.stop();
 	if (!pending_) return;
@@ -603,7 +633,7 @@ void PortalFileChooser::finish(int outcome, const QList<QUrl> &files)
 	closeBus(done->connection);
 #endif
 	if (done->window) done->window->requestActivate();
-	Q_EMIT answered(outcome, files);
+	Q_EMIT answered(outcome, files, checkBox);
 }
 
 } // namespace chimera::qt

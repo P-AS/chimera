@@ -717,6 +717,7 @@
 		"firmware_config.find": "찾기:",
 		"firmware_config.firmware": "펌웨어",
 		"firmware_config.found": "찾음",
+		"firmware_config.include_sub_folders": "하위 폴더 포함",
 		"firmware_config.release": "버전",
 		"firmware_config.rescan": "다시 검색",
 		"firmware_config.scan_a_folder_for_firmware_files": "폴더에서 펌웨어 파일 검색",

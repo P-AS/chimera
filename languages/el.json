@@ -737,6 +737,7 @@
 		"firmware_config.find": "Εύρεση:",
 		"firmware_config.firmware": "Υλικολογισμικό",
 		"firmware_config.found": "Βρέθηκε",
+		"firmware_config.include_sub_folders": "Συμπερίληψη υποφακέλων",
 		"firmware_config.release": "Έκδοση",
 		"firmware_config.rescan": "Νέα σάρωση",
 		"firmware_config.scan_a_folder_for_firmware_files": "Σάρωση φακέλου για αρχεία υλικολογισμικού",

@@ -31,8 +31,10 @@ PickerBase {
     }
 
     function open() {
+        const asked = { mode: "folder", folder: currentFolder.toString() }
         if (usesSystem) {
             if (shown) return
+            if (systemWithBox(asked)) return
             qtDialog.title = title
             if (currentFolder.toString() !== "") qtDialog.currentFolder = currentFolder
             if (parentWindow) qtDialog.parentWindow = parentWindow
@@ -41,7 +43,7 @@ PickerBase {
             qtDialog.open()
             return
         }
-        begin({ mode: "folder", folder: currentFolder.toString() })
+        begin(asked)
     }
     function close() {
         if (usesSystem) qtDialog.close()

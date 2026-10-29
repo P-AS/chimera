@@ -737,6 +737,7 @@
 		"firmware_config.find": "Zoeken:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Gevonden",
+		"firmware_config.include_sub_folders": "Submappen meenemen",
 		"firmware_config.release": "Versie",
 		"firmware_config.rescan": "Opnieuw zoeken",
 		"firmware_config.scan_a_folder_for_firmware_files": "Een map doorzoeken op firmwarebestanden",

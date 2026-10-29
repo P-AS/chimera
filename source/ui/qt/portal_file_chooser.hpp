@@ -59,20 +59,24 @@ public:
 	 * no clicks, keys or closing until it answers, and are still drawn. The
 	 * request: mode ("open", "openMany", "save" or "folder"), title,
 	 * nameFilters, folder (a URL), name (a save's file name), window (the
-	 * window it is over), defaultSuffix. False when the portal cannot be
-	 * asked: then nothing is answered. */
+	 * window it is over), defaultSuffix, and checkBox and checkBoxChecked: a
+	 * tick box the chooser carries (a portal "choice" with no options), such
+	 * as Include sub-folders. False when the portal cannot be asked: then
+	 * nothing is answered. */
 	Q_INVOKABLE bool ask(const QVariantMap &request);
 	/* the window an object of a window is shown in, or none */
 	Q_INVOKABLE QWindow *windowOf(QObject *object) const;
 
 Q_SIGNALS:
-	/* the answer to ask(): an Outcome, and the files (or the folder) chosen */
-	void answered(int outcome, const QList<QUrl> &files);
+	/* the answer to ask(): an Outcome, the files (or the folder) chosen, and
+	 * the tick box as it was confirmed: 1 ticked, 0 not, -1 when the chooser
+	 * did not carry it (termfilechooser draws none) */
+	void answered(int outcome, const QList<QUrl> &files, int checkBox);
 
 private:
 	struct Pending;
 	void poll();
-	void finish(int outcome, const QList<QUrl> &files = {});
+	void finish(int outcome, const QList<QUrl> &files = {}, int checkBox = -1);
 	std::unique_ptr<Pending> pending_;
 	QTimer timer_;
 };

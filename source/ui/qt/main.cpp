@@ -110,6 +110,7 @@
 #include "overlay_painter.hpp"
 #include "pointer_capture.hpp"
 #include "portal_file_chooser.hpp"
+#include "system_file_dialog.hpp"
 #include "file_places.hpp"
 #include "button_router.hpp"
 #include "jump_list.hpp"
@@ -1437,6 +1438,8 @@ int main(int argc, char **argv)
 	 * Chimera's own lists where there is none (dialogs/PickerBase.qml) */
 	qt::PortalFileChooser portalChooser;
 	qt::FilePlaces filePlaces;
+	/* Windows' own dialog, for one that carries a tick box (Qt's takes none) */
+	qt::SystemFileDialog systemDialog;
 	pictureFiles.say = [&session](const std::string &text) { session.status.set(text); };
 	QQmlApplicationEngine engine;
 	/* Qt picks the look of the dialogs it draws itself by the style's name,
@@ -1509,6 +1512,7 @@ int main(int argc, char **argv)
 	engine.rootContext()->setContextProperty(QStringLiteral("headlessRun"), &headlessRun);
 	engine.rootContext()->setContextProperty(QStringLiteral("portalChooser"), &portalChooser);
 	engine.rootContext()->setContextProperty(QStringLiteral("filePlaces"), &filePlaces);
+	engine.rootContext()->setContextProperty(QStringLiteral("systemDialog"), &systemDialog);
 	/* every menu item reads it, the style's own (style/MenuItem.qml) */
 	engine.rootContext()->setContextProperty(QStringLiteral("menuLetters"), &menuLetters);
 	/* another language chosen in Config > Language: the window's words change at once */

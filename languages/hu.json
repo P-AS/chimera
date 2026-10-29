@@ -737,6 +737,7 @@
 		"firmware_config.find": "Keresés:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Megtalálva",
+		"firmware_config.include_sub_folders": "Almappák belefoglalása",
 		"firmware_config.release": "Kiadás",
 		"firmware_config.rescan": "Újraolvasás",
 		"firmware_config.scan_a_folder_for_firmware_files": "Mappa átvizsgálása firmware-fájlokért",

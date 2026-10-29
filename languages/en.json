@@ -737,6 +737,7 @@
 		"firmware_config.find": "Find:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Found",
+		"firmware_config.include_sub_folders": "Include sub-folders",
 		"firmware_config.release": "Release",
 		"firmware_config.rescan": "Rescan",
 		"firmware_config.scan_a_folder_for_firmware_files": "Scan a folder for firmware files",

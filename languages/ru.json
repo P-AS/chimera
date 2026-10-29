@@ -757,6 +757,7 @@
 		"firmware_config.find": "Найти:",
 		"firmware_config.firmware": "Прошивка",
 		"firmware_config.found": "Найдено",
+		"firmware_config.include_sub_folders": "Включая вложенные папки",
 		"firmware_config.release": "Выпуск",
 		"firmware_config.rescan": "Повторить поиск",
 		"firmware_config.scan_a_folder_for_firmware_files": "Просмотреть папку на наличие файлов прошивки",

@@ -7,8 +7,8 @@ each, to the second.
 
   stand-in-portal.py <answer.json> <requests.jsonl> [<version>]
 
-The answer: {"response": 0, "uris": [...], "delay_ms": 50}. A missing file
-answers Cancel."""
+The answer: {"response": 0, "uris": [...], "choices": [["id", "value"]],
+"delay_ms": 50}. A missing file answers Cancel."""
 import json
 import sys
 
@@ -68,6 +68,8 @@ class Chooser(dbus.service.Object):
             results = {}
             if wanted.get("uris"):
                 results["uris"] = dbus.Array(wanted["uris"], signature="s")
+            if wanted.get("choices"):
+                results["choices"] = dbus.Array([dbus.Struct(c, signature="ss") for c in wanted["choices"]], signature="(ss)")
             request.Response(dbus.UInt32(wanted.get("response", 0)), dbus.Dictionary(results, signature="sv"))
             GLib.timeout_add(200, lambda: request.remove_from_connection() and False)
             return False

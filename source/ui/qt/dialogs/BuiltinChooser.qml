@@ -20,6 +20,10 @@ Dialog {
     property string name
     property var nameFilters: []
     property string defaultSuffix
+    // a tick box the dialog carries, such as Include sub-folders: its label
+    // (none when empty), and whether it is ticked
+    property string checkBoxText
+    property bool checkBoxChecked: false
     // files (or the one folder) picked; then the dialog closes
     signal chosen(var urls)
     signal cancelled()
@@ -327,6 +331,13 @@ Dialog {
 
         RowLayout {
             Layout.fillWidth: true
+            CheckBox {
+                objectName: "chooserCheckBox"
+                visible: chooser.checkBoxText !== ""
+                text: chooser.checkBoxText
+                checked: chooser.checkBoxChecked
+                onToggled: chooser.checkBoxChecked = checked
+            }
             Label {
                 Layout.fillWidth: true
                 text: chooser.picksFolder && chooser.note === "" ? qsTrId("file_chooser.picks_folder_shown") : chooser.note

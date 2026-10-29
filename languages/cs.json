@@ -757,6 +757,7 @@
 		"firmware_config.find": "Najít:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Nalezeno",
+		"firmware_config.include_sub_folders": "Zahrnout podsložky",
 		"firmware_config.release": "Verze",
 		"firmware_config.rescan": "Znovu prohledat",
 		"firmware_config.scan_a_folder_for_firmware_files": "Prohledat složku se soubory firmwaru",

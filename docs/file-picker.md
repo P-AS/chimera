@@ -7,7 +7,8 @@ names that Chimera's windows use (`title`, `fileMode`, `nameFilters`,
 `currentFolder`, `selectedFile`, `selectedFiles`, `selectedFolder`,
 `defaultSuffix`, `parentWindow`, `visible`, `result`, `open()`, `close()`,
 `accepted`, `rejected`), so a window does not know which dialog it got.
-Lua's `forms.openfile` uses the same `FileDialog`.
+Lua's `forms.openfile` uses the same `FileDialog`. Both also take
+`checkBoxText` and `checkBoxChecked`: a tick box in the dialog itself (below).
 
 Which dialog is shown:
 
@@ -105,6 +106,32 @@ the window's theme. Its places' names are drawn in the window's text colour,
 set on each row: a row that only inherits the theme kept the desktop's
 colour.
 
+## A tick box in the dialog itself (2026-10-29)
+
+Three windows scan a folder somebody points at: New Project's firmware page,
+Project Files, and Config > Firmware. Whether to look in the folder's
+sub-folders too is a choice about the folder being picked, so it is a tick
+box in the folder dialog, "Include sub-folders", ticked to begin with, as
+PR 275 made it in the Windows Forms frontend. New Project and Project Files
+had it as a box beside their Scan Folder button; Config > Firmware always
+looked in sub-folders and now asks too.
+
+A dialog carries a box when its `checkBoxText` is set. `checkBoxChecked`
+says whether it starts ticked and, after Accept, how the person left it.
+
+- **The desktop's chooser, through the portal:** the box goes as a portal
+  "choice" with no options (`a(ssa(ss)s)`, id `checkbox`, value `"true"` or
+  `"false"`), which the chooser draws as a tick box, and comes back in the
+  answer's `choices`. A chooser that does not draw it (termfilechooser) sends
+  none back, and the box stays as it was.
+- **Chimera's own chooser:** a tick box in its bottom row.
+- **Windows:** Qt's Windows dialog takes no controls of a caller's, so a
+  dialog with a box is Windows' own common item dialog shown by Chimera
+  (`win32_file_dialog.cpp`, through `system_file_dialog.cpp`), with the box
+  added by `IFileDialogCustomize::AddCheckButton`. A dialog without a box is
+  still Qt's. If the dialog cannot be made, Qt's is shown, without the box.
+- **macOS:** Qt's dialog, without the box.
+
 ## Tests
 
 `meson test -C build/meson-linux "file chooser"` runs
@@ -114,13 +141,16 @@ colour.
   dialog picks the folder shown. A typed path is gone to and picked, and a
   folder that is not there is said. The root, home and a GTK bookmark are
   among the places. Hidden files show when asked. A typed name is opened. A
-  save gets its suffix, and one over a file asks first.
+  save gets its suffix, and one over a file asks first. A dialog's tick box is
+  drawn, and unticked there it is unticked in the dialog.
 - With a stand-in portal (`stand-in-portal.py`, on a private bus of the
   test's own): the requests (title, filters, folder, name, several files, a
   folder) and the answers (a file, several, a save with its suffix added,
   Cancel, a chooser that never came up, a late "failed" answer as Cancel).
   It also checks that a key pressed in Chimera's window while the chooser is
-  open is thrown away, and one pressed after reaches it. This half is skipped,
+  open is thrown away, and one pressed after reaches it, and that a tick box
+  goes as a choice with no options and comes back as the person left it (or
+  as it was, from a chooser that does not draw it). This half is skipped,
   and says so, where `dbus-daemon` or Python's `dbus` and `gi` modules are
   missing.
 

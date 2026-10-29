@@ -757,6 +757,7 @@
 		"firmware_config.find": "Знайти:",
 		"firmware_config.firmware": "Прошивка",
 		"firmware_config.found": "Знайдено",
+		"firmware_config.include_sub_folders": "Включати підтеки",
 		"firmware_config.release": "Версія",
 		"firmware_config.rescan": "Сканувати знову",
 		"firmware_config.scan_a_folder_for_firmware_files": "Сканувати теку на файли прошивки",

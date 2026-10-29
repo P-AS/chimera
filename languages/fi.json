@@ -737,6 +737,7 @@
 		"firmware_config.find": "Etsi:",
 		"firmware_config.firmware": "Laiteohjelmisto",
 		"firmware_config.found": "Löytyi",
+		"firmware_config.include_sub_folders": "Mukaan alikansiot",
 		"firmware_config.release": "Julkaisu",
 		"firmware_config.rescan": "Etsi uudelleen",
 		"firmware_config.scan_a_folder_for_firmware_files": "Etsi laiteohjelmistotiedostoja kansiosta",

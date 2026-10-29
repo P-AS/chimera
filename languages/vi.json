@@ -717,6 +717,7 @@
 		"firmware_config.find": "Tìm:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Đã tìm thấy",
+		"firmware_config.include_sub_folders": "Bao gồm thư mục con",
 		"firmware_config.release": "Bản phát hành",
 		"firmware_config.rescan": "Quét lại",
 		"firmware_config.scan_a_folder_for_firmware_files": "Quét một thư mục để tìm tệp firmware",

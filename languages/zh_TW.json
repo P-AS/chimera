@@ -717,6 +717,7 @@
 		"firmware_config.find": "尋找：",
 		"firmware_config.firmware": "韌體",
 		"firmware_config.found": "已找到",
+		"firmware_config.include_sub_folders": "包含子資料夾",
 		"firmware_config.release": "版本",
 		"firmware_config.rescan": "重新掃描",
 		"firmware_config.scan_a_folder_for_firmware_files": "掃描資料夾以尋找韌體檔案",

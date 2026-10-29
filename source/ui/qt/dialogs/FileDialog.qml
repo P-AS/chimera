@@ -37,8 +37,16 @@ PickerBase {
         return s.substring(0, s.lastIndexOf("/"))
     }
     function open() {
+        const asked = {
+            mode: fileMode === FileDialog.SaveFile ? "save" : fileMode === FileDialog.OpenFiles ? "openMany" : "open",
+            folder: currentFolder.toString() !== "" ? currentFolder.toString() : "",
+            name: fileMode === FileDialog.SaveFile && selectedFile.toString() !== "" ? decodeURIComponent(selectedFile.toString().substring(selectedFile.toString().lastIndexOf("/") + 1)) : "",
+            nameFilters: nameFilters,
+            defaultSuffix: defaultSuffix,
+        }
         if (usesSystem) {
             if (shown) return
+            if (systemWithBox(asked)) return
             qtDialog.title = title
             qtDialog.fileMode = fileMode
             qtDialog.nameFilters = nameFilters
@@ -53,13 +61,8 @@ PickerBase {
         }
         // a file named as "file:///<name>" names no folder
         const fromFile = selectedFile.toString() === "" ? "" : folderOf(selectedFile)
-        begin({
-            mode: fileMode === FileDialog.SaveFile ? "save" : fileMode === FileDialog.OpenFiles ? "openMany" : "open",
-            folder: currentFolder.toString() !== "" ? currentFolder.toString() : (fromFile === "file://" ? "" : fromFile),
-            name: fileMode === FileDialog.SaveFile && selectedFile.toString() !== "" ? decodeURIComponent(selectedFile.toString().substring(selectedFile.toString().lastIndexOf("/") + 1)) : "",
-            nameFilters: nameFilters,
-            defaultSuffix: defaultSuffix,
-        })
+        if (asked.folder === "" && fromFile !== "file://") asked.folder = fromFile
+        begin(asked)
     }
     function close() {
         if (usesSystem) qtDialog.close()

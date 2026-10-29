@@ -717,6 +717,7 @@
 		"firmware_config.find": "Cari:",
 		"firmware_config.firmware": "Firmware",
 		"firmware_config.found": "Ditemukan",
+		"firmware_config.include_sub_folders": "Sertakan sub-folder",
 		"firmware_config.release": "Rilis",
 		"firmware_config.rescan": "Pindai Ulang",
 		"firmware_config.scan_a_folder_for_firmware_files": "Pindai folder untuk berkas firmware",

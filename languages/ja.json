@@ -717,6 +717,7 @@
 		"firmware_config.find": "検索:",
 		"firmware_config.firmware": "ファームウェア",
 		"firmware_config.found": "見つかったもの",
+		"firmware_config.include_sub_folders": "サブフォルダーを含める",
 		"firmware_config.release": "リリース",
 		"firmware_config.rescan": "再スキャン",
 		"firmware_config.scan_a_folder_for_firmware_files": "フォルダーからファームウェアファイルを探す",

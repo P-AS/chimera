@@ -11400,3 +11400,30 @@ choosing to one chooser alone, as PR 275 was tested. KDE's (6.8.2), GNOME's
 and LXQt's (1.4.0) all worked, and so did Chimera's own, shown for a portal
 with no file chooser. Not tried: Plasma, GNOME and COSMIC under their own
 desktops, an X11 session, Windows and macOS.
+
+## Include sub-folders is a box in the folder dialog (2026-10-29)
+
+New Project's firmware page and Project Files had an "Include sub-folders"
+box beside their Scan Folder button, and Config > Firmware always looked in
+sub-folders. A contributor asked for such options to be in the file picker
+itself, on Windows and on Linux, as PR 275 did for the Windows Forms
+frontend, which the owner merged. Nothing from the owner says otherwise:
+issue 368's sub-folder depth setting, which the owner chose not to add, is
+about how deep a scan goes, not where its box is.
+
+- `FileDialog` and `FolderDialog` take `checkBoxText` and `checkBoxChecked`.
+  The three windows' folder dialogs carry "Include sub-folders", ticked to
+  begin with; the boxes beside the buttons are gone.
+- Through the portal, the box is a choice with no options and is read back
+  from the answer. Chimera's own chooser draws it in its bottom row.
+- On Windows, Qt's dialog takes no controls of a caller's. A dialog with a
+  box is shown by Chimera as Windows' own common item dialog with the box
+  added (`IFileDialogCustomize`); a dialog without one is still Qt's.
+
+Measured: the file chooser test's new checks pass (59 with Chimera's
+chooser, 66 through the stand-in portal). With the choice not sent, the six
+checks of the request's choices failed; with Chimera's chooser not handing
+its box back, the check of the dialog's box failed. meson test 50/50, witness
+121 ok. The Windows dialog code was built with mingw-w64 and linked against
+ole32, shell32 and uuid; run under Wine, the folder dialog came up and
+stayed open. Windows itself, and the dialog's box under Wine, were not tried.

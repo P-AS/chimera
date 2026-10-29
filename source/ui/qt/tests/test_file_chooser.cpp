@@ -59,6 +59,7 @@ ApplicationWindow {
     property alias many: manyDialog
     property alias save: saveDialog
     property alias folder: folderDialog
+    property alias box: boxDialog
     property alias field: typed
     property int accepted: 0
     property int rejected: 0
@@ -80,6 +81,13 @@ ApplicationWindow {
         onRejected: win.rejected++
     }
     FolderDialog { id: folderDialog; onAccepted: win.accepted++; onRejected: win.rejected++ }
+    FolderDialog {
+        id: boxDialog
+        checkBoxText: "Include sub-folders"
+        checkBoxChecked: true
+        onAccepted: win.accepted++
+        onRejected: win.rejected++
+    }
 }
 )QML";
 
@@ -245,6 +253,31 @@ void portalCases(QObject *window)
 	CHECK(localOf(folderDialog->property("selectedFolder")) == folder);
 	CHECK(lastRequest().value("options").toObject().value("directory").toBool());
 
+	/* a tick box goes as a choice with no options, and comes back as the
+	 * person left it; a chooser that does not draw it leaves it as it was */
+	QObject *box = dialog(window, "box");
+	answer({{"response", 0}, {"uris", QJsonArray{QUrl::fromLocalFile(folder).toString()}}, {"choices", QJsonArray{QJsonArray{QStringLiteral("checkbox"), QStringLiteral("false")}}}});
+	QMetaObject::invokeMethod(box, "open");
+	CHECK(waitFor([&] { return counts("accepted") == 5; }));
+	const QJsonArray choices = lastRequest().value("options").toObject().value("choices").toArray();
+	const QJsonArray choice = choices.at(0).toArray();
+	CHECK(choices.size() == 1);
+	CHECK(choice.at(0).toString() == QStringLiteral("checkbox"));
+	CHECK(choice.at(1).toString() == QStringLiteral("Include sub-folders"));
+	CHECK(choice.at(2).isArray() && choice.at(2).toArray().isEmpty());
+	CHECK(choice.at(3).toString() == QStringLiteral("true"));
+	CHECK(!box->property("checkBoxChecked").toBool());
+	answer({{"response", 0}, {"uris", QJsonArray{QUrl::fromLocalFile(folder).toString()}}});
+	QMetaObject::invokeMethod(box, "open");
+	CHECK(waitFor([&] { return counts("accepted") == 6; }));
+	CHECK(lastRequest().value("options").toObject().value("choices").toArray().at(0).toArray().at(3).toString() == QStringLiteral("false"));
+	CHECK(!box->property("checkBoxChecked").toBool());
+	/* a dialog without one sends no choices */
+	answer({{"response", 0}, {"uris", QJsonArray{QUrl::fromLocalFile(folder).toString()}}});
+	QMetaObject::invokeMethod(folderDialog, "open");
+	CHECK(waitFor([&] { return counts("accepted") == 7; }));
+	CHECK(!lastRequest().value("options").toObject().contains("choices"));
+
 	/* a portal whose chooser could not come up (an answer that fails at once):
 	 * Chimera's own chooser instead, and its Cancel is the dialog's */
 	answer({{"response", 2}, {"delay_ms", 5}});
@@ -335,6 +368,26 @@ void builtinCases(QObject *window)
 		bookmark = bookmark || (p.toMap().value(QStringLiteral("name")).toString() == QStringLiteral("Test games") && localOf(p.toMap().value(QStringLiteral("url"))) == root + QStringLiteral("/sub"));
 	CHECK(bookmark);
 
+	/* a tick box is drawn in the chooser, ticked as the dialog says, and the
+	 * dialog takes it as the person left it; a dialog without one draws none */
+	QObject *box = dialog(window, "box");
+	box->setProperty("currentFolder", QUrl::fromLocalFile(root));
+	QMetaObject::invokeMethod(box, "open");
+	CHECK(waitFor([&] { return opened(box); }));
+	QObject *tick = part(box, "chooserCheckBox");
+	CHECK(tick && tick->property("visible").toBool());
+	CHECK(tick && tick->property("text").toString() == QStringLiteral("Include sub-folders"));
+	CHECK(tick && tick->property("checked").toBool());
+	if (tick)
+	{
+		QMetaObject::invokeMethod(tick, "toggle");
+		QMetaObject::invokeMethod(tick, "toggled");
+	}
+	press(box, "chooserAccept");
+	CHECK(waitFor([&] { return counts("accepted") == 3; }));
+	CHECK(!box->property("checkBoxChecked").toBool());
+	CHECK(chooser(folderDialog) && chooser(folderDialog)->property("checkBoxText").toString().isEmpty());
+
 	/* hidden files are shown when asked */
 	QObject *open = dialog(window, "open");
 	open->setProperty("nameFilters", QStringList{QStringLiteral("All files (*)")});
@@ -345,7 +398,7 @@ void builtinCases(QObject *window)
 	CHECK(waitFor([&] { return rows(open) == 4; }));
 	/* a name typed is opened */
 	type(open, "chooserName", QStringLiteral("file.txt"));
-	CHECK(waitFor([&] { return counts("accepted") == 3; }));
+	CHECK(waitFor([&] { return counts("accepted") == 4; }));
 	CHECK(localOf(open->property("selectedFile")) == root + QStringLiteral("/file.txt"));
 
 	/* a save: the default suffix added, and a file there asked about first */
@@ -354,7 +407,7 @@ void builtinCases(QObject *window)
 	QMetaObject::invokeMethod(save, "open");
 	CHECK(waitFor([&] { return opened(save); }));
 	type(save, "chooserName", QStringLiteral("new"));
-	CHECK(waitFor([&] { return counts("accepted") == 4; }));
+	CHECK(waitFor([&] { return counts("accepted") == 5; }));
 	CHECK(localOf(save->property("selectedFile")) == root + QStringLiteral("/new.json"));
 	QMetaObject::invokeMethod(save, "open");
 	CHECK(waitFor([&] { return opened(save); }));
@@ -363,7 +416,7 @@ void builtinCases(QObject *window)
 	CHECK(chooser(save)->property("note").toString().startsWith(QStringLiteral("file_chooser.replace_question")));
 	/* Save again is Replace */
 	press(save, "chooserAccept");
-	CHECK(waitFor([&] { return counts("accepted") == 5; }));
+	CHECK(waitFor([&] { return counts("accepted") == 6; }));
 	CHECK(localOf(save->property("selectedFile")) == root + QStringLiteral("/file.txt"));
 }
 } // namespace
