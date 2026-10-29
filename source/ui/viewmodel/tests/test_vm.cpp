@@ -7970,10 +7970,24 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	CHECK(wizard.run("startFrom", {game}, error).has_value() && wizard.core.get() == "Synth" && text("slots", 0, 7) == "walker.testrom");
 	CHECK(wizard.run("startFrom", {nofill}, error).has_value() && wizard.core.get() == "Synth" && text("slots", 0, 7) == "nofill.testrom");
 	CHECK(!wizard.run("startFrom", {(dir / "notes.txt").string()}, error) && error == "no installed core takes .txt files");
-	/* a core the last project was made with opens on its answers first */
+	/* a core the last project was made with opens on its answers first, but
+	 * another game's files are not this one's (issue 398): only the game */
 	CHECK(wizard.run("startFrom", {(dir / "disk3.dsk").string()}, error).has_value());
-	CHECK(wizard.core.get() == "Synth Slots" && wizard.machine.get() == 0 && text("slots", 0, 7) == "walker.testrom" && text("slots", 1, 7) == "disk3.dsk");
-	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9.\nThis project's own settings are kept.");
+	CHECK(wizard.core.get() == "Synth Slots" && wizard.machine.get() == 0 && text("slots", 0, 7) == "" && text("slots", 1, 7) == "disk3.dsk");
+	CHECK(wizard.suggestion.get() == "The synthetic core suggests a fill of 9. It sees 1 disk, at disk speed 1.\nApplied below: Initial RAM Fill.");
+	/* one of the last project's own files is the same game again, and brings
+	 * back the rest of its files: a board A project of the game and a disk,
+	 * then its disk dropped */
+	CHECK(wizard.run("addFile", {std::string("rom"), game}, error).has_value() && wizard.ready.get());
+	CHECK(wizard.run("create", {}, error).has_value());
+	CHECK(d.until([&] { return session.isOpen.get() && session.hasProject.get(); }, 60));
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	CHECK(wizard.run("startFrom", {(dir / "disk3.dsk").string()}, error).has_value());
+	CHECK(wizard.core.get() == "Synth Slots" && text("slots", 0, 7) == "walker.testrom" && text("slots", 1, 7) == "disk3.dsk");
+	std::ofstream(dir / "disk4.dsk") << "another board A game";
+	CHECK(wizard.run("startFrom", {(dir / "disk4.dsk").string()}, error).has_value());
+	CHECK(text("slots", 0, 7) == "" && text("slots", 1, 7) == "disk4.dsk");
 	/* nothing to make until everything is there */
 	CHECK(wizard.run("chooseCore", {std::string("Synth")}, error).has_value());
 	CHECK(!wizard.run("create", {(dir / "never.chimeraProject").string()}, error) && error == "not yet: Game: a file is needed");

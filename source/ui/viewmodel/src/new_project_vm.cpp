@@ -48,6 +48,16 @@ bool readsOnlySettings(const Json &c)
 	return false;
 }
 
+/* two names for one file: the same file on disk, or the same path when
+ * either is not there to ask */
+bool sameFile(const std::string &a, const std::string &b)
+{
+	std::error_code ec;
+	const bool same = fs::equivalent(a, b, ec);
+	if (!ec) return same;
+	return fs::path(a).lexically_normal() == fs::path(b).lexically_normal();
+}
+
 /* how many files a slot takes, in Chimera's words */
 std::string cardinalityOf(int64_t min, int64_t max)
 {
@@ -980,8 +990,9 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			return {};
 		});
 	command("startFrom", "starts the form from a game file, as Chimera does with a file dropped on its window: the core "
-		"that takes its kind of file (on the last project's answers when they are for that core), and the file in the slot "
-		"that takes it, in place of what that slot held when it holds no more", {"path"},
+		"that takes its kind of file (on the last project's answers when they are for that core: its files too only when "
+		"this file is one of them), and the file in the slot that takes it, in place of what that slot held when it holds "
+		"no more", {"path"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string path;
 			if (!arg(a, 0, path, error)) return {};
@@ -994,8 +1005,17 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			}
 			const auto &[name, package] = cores.front();
 			std::string e;
-			/* the last project's answers are worth having only for the same core */
-			if (session_.lastAnswers().coreName == name) run("openOnLastProject", {}, e);
+			/* the last project's answers are worth having only for the same core,
+			 * and its files only for the same game: one of its own files dropped
+			 * again brings back the rest (its other disks), and another game's
+			 * files are not this one's (issue 398) */
+			const SessionViewModel::ProjectAnswers &last = session_.lastAnswers();
+			if (last.coreName == name)
+			{
+				const bool sameGame = std::any_of(last.files.begin(), last.files.end(),
+					[&](const std::pair<std::string, std::string> &f) { return sameFile(f.second, path); });
+				run("openOnLastProject", {sameGame}, e);
+			}
 			if (package_ != package && !chooseCore(name, error, package)) return false;
 			/* the first slot that takes the kind, else the first */
 			const Slot *into = nullptr;
@@ -1020,9 +1040,12 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			return true;
 		});
 	command("openOnLastProject", "fills the form with the last project's answers, as Chimera's New Project opens: its core, "
-		"its settings, and its files that are still where they were found; its settings are its own, so what the core "
-		"would suggest is not put over them. False when no project was opened, or its core is not installed",
-		{}, [this](const Args &, std::string &error) -> Value {
+		"its settings, and its files that are still where they were found (left out when files is false); its settings "
+		"are its own, so what the core would suggest is not put over them. False when no project was opened, or its core "
+		"is not installed",
+		{"files"}, [this](const Args &a, std::string &error) -> Value {
+			bool withFiles = true;
+			if (!a.empty() && !arg(a, 0, withFiles, error)) return {};
 			const SessionViewModel::ProjectAnswers &last = session_.lastAnswers();
 			if (last.coreName.empty())
 			{
@@ -1049,7 +1072,7 @@ NewProjectViewModel::NewProjectViewModel(Dispatcher &dispatcher, SessionViewMode
 			std::error_code ec;
 			for (const auto &[slotId, path] : last.files)
 			{
-				if (!fs::is_regular_file(path, ec)) continue;
+				if (!withFiles || !fs::is_regular_file(path, ec)) continue;
 				/* a hand-written project may name no slot this package
 				 * declares: its game goes in the first */
 				const std::string into = slot(slotId) != nullptr || slots_.empty() ? slotId : slots_.front().id;
