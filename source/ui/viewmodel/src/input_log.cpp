@@ -22,6 +22,14 @@ std::string movieLineFromBar(const std::string &line)
 }
 
 
+bool decodeEntry(const ce_session *s, const std::string &line, Buttons &buttons, int32_t *axes)
+{
+	std::vector<uint8_t> states(static_cast<size_t>(ce_session_button_count(s)));
+	if (ce_session_movie_entry_decode(s, line.c_str(), states.data(), axes) != 0) return false;
+	buttons = Buttons::fromStates(states.data(), states.size());
+	return true;
+}
+
 /* The shared lock guards only which machine this is: the movie's own lock is
  * the engine's. */
 
@@ -31,21 +39,25 @@ int64_t InputLog::size() const
 	return s_ != nullptr ? ce_session_movie_length(s_) : 0;
 }
 
-uint64_t InputLog::at(int64_t frame) const
+Buttons InputLog::at(int64_t frame) const
 {
 	std::shared_lock lock(m_);
-	uint64_t mask = 0;
-	if (s_ != nullptr) ce_session_movie_get(s_, frame, &mask, nullptr);
-	return mask;
+	if (s_ == nullptr) return {};
+	std::vector<uint8_t> states(static_cast<size_t>(ce_session_button_count(s_)));
+	ce_session_movie_get(s_, frame, states.data(), nullptr);
+	return Buttons::fromStates(states.data(), states.size());
 }
 
-void InputLog::read(int64_t first, std::vector<uint64_t> &out) const
+void InputLog::read(int64_t first, std::vector<Buttons> &out) const
 {
 	std::shared_lock lock(m_);
+	std::vector<uint8_t> states(s_ != nullptr ? static_cast<size_t>(ce_session_button_count(s_)) : 0);
 	for (size_t i = 0; i < out.size(); i++)
 	{
-		out[i] = 0;
-		if (s_ != nullptr) ce_session_movie_get(s_, first + static_cast<int64_t>(i), &out[i], nullptr);
+		out[i].clear();
+		if (s_ == nullptr) continue;
+		ce_session_movie_get(s_, first + static_cast<int64_t>(i), states.data(), nullptr);
+		out[i] = Buttons::fromStates(states.data(), states.size());
 	}
 }
 
@@ -55,9 +67,9 @@ bool InputLog::bound() const
 	return s_ != nullptr;
 }
 
-bool InputLog::set(int64_t frame, uint64_t mask)
+bool InputLog::set(int64_t frame, const Buttons &buttons)
 {
-	return setRow(frame, mask, nullptr);
+	return setRow(frame, buttons, nullptr);
 }
 
 void InputLog::resize(int64_t frames)
@@ -66,18 +78,18 @@ void InputLog::resize(int64_t frames)
 	if (s_ != nullptr) ce_session_movie_resize(s_, frames);
 }
 
-bool InputLog::setRow(int64_t frame, uint64_t mask, const int32_t *axes)
+bool InputLog::setRow(int64_t frame, const Buttons &buttons, const int32_t *axes)
 {
 	std::shared_lock lock(m_);
 	if (s_ == nullptr) return false;
-	if (axes != nullptr) return ce_session_movie_set(s_, frame, mask, axes) == 0;
+	const std::vector<uint8_t> states = buttons.states(static_cast<size_t>(ce_session_button_count(s_)));
+	if (axes != nullptr) return ce_session_movie_set(s_, frame, states.data(), axes) == 0;
 	/* read, then written back with the half kept: one edit at a time, or
 	 * another's between the two would be lost */
 	std::lock_guard edit(edit_);
 	std::vector<int32_t> was(static_cast<size_t>(ce_session_axis_count(s_)));
-	uint64_t old = 0;
-	ce_session_movie_get(s_, frame, &old, was.empty() ? nullptr : was.data());
-	return ce_session_movie_set(s_, frame, mask, was.empty() ? nullptr : was.data()) == 0;
+	ce_session_movie_get(s_, frame, nullptr, was.empty() ? nullptr : was.data());
+	return ce_session_movie_set(s_, frame, states.data(), was.empty() ? nullptr : was.data()) == 0;
 }
 
 void InputLog::insert(int64_t frame, int64_t count)
@@ -141,9 +153,9 @@ bool InputLog::setAxesAt(int64_t frame, const int32_t *values)
 	std::shared_lock lock(m_);
 	if (s_ == nullptr) return false;
 	std::lock_guard edit(edit_);
-	uint64_t mask = 0;
-	ce_session_movie_get(s_, frame, &mask, nullptr);
-	return ce_session_movie_set(s_, frame, mask, values) == 0;
+	std::vector<uint8_t> states(static_cast<size_t>(ce_session_button_count(s_)));
+	ce_session_movie_get(s_, frame, states.data(), nullptr);
+	return ce_session_movie_set(s_, frame, states.data(), values) == 0;
 }
 
 std::string InputLog::text() const

@@ -1791,8 +1791,8 @@ bool overlay(const char *package, const char *rom)
 		axes[2].name = "P1 Paddle";
 		axes[2].neutral = 128;
 		const uint64_t mask = 1 | 4 | 8;
-		CHECK(SessionViewModel::inputDisplay(buttons, "PUABC", axes, mask, {5, 0, 128}) == " B      A    5, P      ");
-		CHECK(SessionViewModel::inputDisplay(buttons, "PUABC", axes, 0, {-1234, 7, 0}) == "      0, -1234,      7,");
+		CHECK(SessionViewModel::inputDisplay(buttons, "PUABC", axes, Buttons::first64(mask), {5, 0, 128}) == " B      A    5, P      ");
+		CHECK(SessionViewModel::inputDisplay(buttons, "PUABC", axes, Buttons::first64(0), {-1234, 7, 0}) == "      0, -1234,      7,");
 	}
 	ManualDispatcher d;
 	InputLog inputs;
@@ -2022,21 +2022,21 @@ bool autoholdAndAutofire(const char *package, const char *rom)
 	session.armAutohold(false);
 	CHECK(session.autoheld.get() == "P1 A" && !session.stickyArmed.get() && session.stickyText.get() == "Held: P1 A ");
 	CHECK(advance(2));
-	CHECK((inputs.at(0) >> 4 & 1) && (inputs.at(1) >> 4 & 1));
+	CHECK((inputs.at(0).low() >> 4 & 1) && (inputs.at(1).low() >> 4 & 1));
 	/* autofire: on a frame, off a frame */
 	session.armAutofire(true);
 	press("Down");
 	session.armAutofire(false);
 	CHECK(session.autofired.get() == "P1 Down" && session.stickyText.get() == "Held: P1 A Auto-P1 Down ");
 	CHECK(advance(4));
-	CHECK((inputs.at(2) >> 1 & 1) && !(inputs.at(3) >> 1 & 1) && (inputs.at(4) >> 1 & 1) && !(inputs.at(5) >> 1 & 1));
-	CHECK((inputs.at(5) >> 4 & 1));
+	CHECK((inputs.at(2).low() >> 1 & 1) && !(inputs.at(3).low() >> 1 & 1) && (inputs.at(4).low() >> 1 & 1) && !(inputs.at(5).low() >> 1 & 1));
+	CHECK((inputs.at(5).low() >> 4 & 1));
 	/* on two, off one */
 	session.autofireOn.set(2);
 	session.run("toggleAutofire", {std::string("P1 Down")}, error);
 	session.run("toggleAutofire", {std::string("P1 Down")}, error);
 	CHECK(advance(3));
-	CHECK((inputs.at(6) >> 1 & 1) && (inputs.at(7) >> 1 & 1) && !(inputs.at(8) >> 1 & 1));
+	CHECK((inputs.at(6).low() >> 1 & 1) && (inputs.at(7).low() >> 1 & 1) && !(inputs.at(8).low() >> 1 & 1));
 	/* armed again, the held one lets go */
 	session.armAutohold(true);
 	press(keyA);
@@ -2044,7 +2044,7 @@ bool autoholdAndAutofire(const char *package, const char *rom)
 	CHECK(session.autoheld.get().empty());
 	CHECK(session.run("clearAutohold", {}, error).has_value() && session.autofired.get().empty() && session.status.get() == "Autohold keys cleared");
 	CHECK(advance(1));
-	CHECK(inputs.at(9) == 0);
+	CHECK(inputs.at(9).low() == 0);
 	session.run("close", {}, error);
 	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
 	return true;
@@ -2987,10 +2987,10 @@ bool tastudioSettings(const char *package, const char *rom)
 	CHECK(numbered == "00002 " + lines[0] + "\n00003 " + lines[1] + "\n");
 	roll.copyFrameNumbers.set(false);
 	/* pasted from text: a line that is not a frame's input pastes nothing */
-	const uint64_t at10 = roll.frameBits(10), at11 = roll.frameBits(11), at2 = roll.frameBits(2), at3 = roll.frameBits(3);
+	const uint64_t at10 = roll.frameBits(10).low(), at11 = roll.frameBits(11).low(), at2 = roll.frameBits(2).low(), at3 = roll.frameBits(3).low();
 	CHECK(at2 != at10);
 	CHECK(!roll.run("pasteText", {int64_t{10}, std::string("12 nothing\n"), false}, error).has_value());
-	CHECK(roll.frameBits(10) == at10 && roll.frameBits(11) == at11);
+	CHECK(roll.frameBits(10).low() == at10 && roll.frameBits(11).low() == at11);
 	/* lines copied with their frame numbers paste as the frames they were, as Chimera's now does */
 	CHECK(PianoRollViewModel::withoutFrameNumber("00002 |..U.....|") == "|..U.....|" &&
 		PianoRollViewModel::withoutFrameNumber("  17   |A|") == "|A|" && PianoRollViewModel::withoutFrameNumber("17|A|") == "|A|" &&
@@ -2998,15 +2998,15 @@ bool tastudioSettings(const char *package, const char *rom)
 		PianoRollViewModel::withoutFrameNumber("x 2 |A|") == "x 2 |A|" && PianoRollViewModel::withoutFrameNumber("|..U.....|") == "|..U.....|");
 	error.clear();
 	CHECK(roll.run("pasteText", {int64_t{10}, numbered, false}, error).has_value() && error.empty());
-	CHECK(roll.frameBits(10) == at2 && roll.frameBits(11) == at3);
+	CHECK(roll.frameBits(10).low() == at2 && roll.frameBits(11).low() == at3);
 	roll.run("undo", {}, error);
-	CHECK(roll.frameBits(10) == at10 && roll.frameBits(11) == at11);
+	CHECK(roll.frameBits(10).low() == at10 && roll.frameBits(11).low() == at11);
 	error.clear();
 	CHECK(roll.run("pasteText", {int64_t{10}, plain, false}, error).has_value() && error.empty());
-	CHECK(roll.frameBits(10) == at2 && roll.frameBits(11) == at3 && inputs.size() == 20);
+	CHECK(roll.frameBits(10).low() == at2 && roll.frameBits(11).low() == at3 && inputs.size() == 20);
 	/* Windows line ends, put in */
 	CHECK(roll.run("pasteText", {int64_t{0}, lines[0] + "\r\n" + lines[1] + "\r\n", true}, error).has_value());
-	CHECK(inputs.size() == 22 && roll.frameBits(0) == at2 && roll.frameBits(1) == at3);
+	CHECK(inputs.size() == 22 && roll.frameBits(0).low() == at2 && roll.frameBits(1).low() == at3);
 	/* following the current frame, the four ways TAStudio scrolls to it */
 	{
 		auto seekTo = [&](int64_t f) {
@@ -3154,7 +3154,7 @@ bool tastudioSettings(const char *package, const char *rom)
 			for (int i = 0; i < n; i++) session.run("frameAdvance", {}, error);
 			d.until([&] { return session.frame.get() == end + n; }, 20);
 			std::string bits;
-			for (int64_t f = end; f < end + n; f++) bits += (inputs.at(f) >> 4 & 1) ? '1' : '0';
+			for (int64_t f = end; f < end + n; f++) bits += (inputs.at(f).low() >> 4 & 1) ? '1' : '0';
 			return bits;
 		};
 		CHECK(roll.run("toggleAutoHold", {a}, error) == Value(true));
@@ -4007,7 +4007,7 @@ bool machine(const char *package, const char *rom)
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 10));
 	session.key("X", false);
-	CHECK(inputs.size() == 1 && inputs.at(0) == (uint64_t{1} << 4));
+	CHECK(inputs.size() == 1 && inputs.at(0).low() == (uint64_t{1} << 4));
 	CHECK(appendedRows == 1);
 	CHECK(roll.currentFrame.get() == 1);
 
@@ -4042,22 +4042,22 @@ bool machine(const char *package, const char *rom)
 
 	/* a press on the cell flips it; a drag down the column gives the next cells the same */
 	auto held = roll.run("press", {int64_t{0}, int64_t{4}}, error);
-	CHECK(held && std::get<bool>(*held) == false && inputs.at(0) == 0);
+	CHECK(held && std::get<bool>(*held) == false && inputs.at(0).low() == 0);
 	roll.run("fill", {int64_t{10}}, error);
 	roll.run("press", {int64_t{2}, int64_t{7}}, error);
 	roll.run("drag", {int64_t{3}, int64_t{7}}, error);
 	roll.run("drag", {int64_t{4}, int64_t{7}}, error);
-	CHECK(inputs.at(2) == (uint64_t{1} << 7) && inputs.at(3) == (uint64_t{1} << 7) && inputs.at(4) == (uint64_t{1} << 7));
+	CHECK(inputs.at(2).low() == (uint64_t{1} << 7) && inputs.at(3).low() == (uint64_t{1} << 7) && inputs.at(4).low() == (uint64_t{1} << 7));
 	CHECK(changedRows >= 4);
 
 	/* the press and its drag are one edit: one undo takes them all back,
 	 * one redo does them again; an undone fill shortens the inputs again */
 	CHECK(roll.canUndo.get() && !roll.canRedo.get());
 	roll.run("undo", {}, error);
-	CHECK(inputs.at(2) == 0 && inputs.at(3) == 0 && inputs.at(4) == 0);
+	CHECK(inputs.at(2).low() == 0 && inputs.at(3).low() == 0 && inputs.at(4).low() == 0);
 	CHECK(roll.canRedo.get());
 	roll.run("redo", {}, error);
-	CHECK(inputs.at(2) == (uint64_t{1} << 7) && inputs.at(3) == (uint64_t{1} << 7) && inputs.at(4) == (uint64_t{1} << 7));
+	CHECK(inputs.at(2).low() == (uint64_t{1} << 7) && inputs.at(3).low() == (uint64_t{1} << 7) && inputs.at(4).low() == (uint64_t{1} << 7));
 	CHECK(!roll.canRedo.get());
 	roll.run("fill", {int64_t{25}}, error);
 	CHECK(inputs.size() == 25);
@@ -4070,7 +4070,7 @@ bool machine(const char *package, const char *rom)
 	roll.run("toggle", {int64_t{5}, int64_t{0}}, error);
 	CHECK(!roll.canRedo.get());
 	roll.run("undo", {}, error);
-	CHECK(inputs.at(5) == 0 && inputs.size() == 10);
+	CHECK(inputs.at(5).low() == 0 && inputs.size() == 10);
 
 	/* playing runs at the machine's own rate and plays what the log holds */
 	session.run("play", {}, error);
@@ -4083,7 +4083,7 @@ bool machine(const char *package, const char *rom)
 	const int64_t stopped = session.frame.get();
 	d.until([] { return false; }, 0.2);
 	CHECK(session.frame.get() == stopped);
-	CHECK(inputs.at(3) == (uint64_t{1} << 7)); /* played, not overwritten */
+	CHECK(inputs.at(3).low() == (uint64_t{1} << 7)); /* played, not overwritten */
 	CHECK(inputs.size() >= stopped);
 
 	/* seeking: back to a frame and forward again draws the same picture,
@@ -4138,10 +4138,10 @@ bool machine(const char *package, const char *rom)
 	 * edits span several frames: on some the game reads no input. */
 	{
 		const int64_t at = session.frame.get();
-		std::vector<uint64_t> kept(20);
+		std::vector<Buttons> kept(20);
 		inputs.read(0, kept);
 		auto flip = [&](int64_t first, int64_t last) {
-			for (int64_t f = first; f <= last; f++) inputs.set(f, inputs.at(f) ^ (uint64_t{1} << right)); /* straight into the engine's movie */
+			for (int64_t f = first; f <= last; f++) inputs.set(f, Buttons::first64(inputs.at(f).low() ^ (uint64_t{1} << right))); /* straight into the engine's movie */
 		};
 		auto replayed = [&](int64_t to) {
 			std::string e;
@@ -4231,13 +4231,13 @@ bool machine(const char *package, const char *rom)
 		session.run("seek", {int64_t{300}}, error);
 		CHECK(d.until([&] { return session.frame.get() == 300 && !session.running.get(); }, 30));
 		bool kept = session.recordingMode.get();
-		for (int64_t f = 100; f <= 199; f++) kept = kept && (inputs.at(f) >> right & 1) != 0;
-		CHECK(kept && (inputs.at(250) >> right & 1) == 0);
+		for (int64_t f = 100; f <= 199; f++) kept = kept && (inputs.at(f).low() >> right & 1) != 0;
+		CHECK(kept && (inputs.at(250).low() >> right & 1) == 0);
 		session.recordingMode.set(false);
 		session.unthrottled.set(false);
 		session.turboSeek.set(true);
 		session.greenzonePeriod.set(1);
-		for (int64_t f = 100; f <= 199; f++) inputs.set(f, inputs.at(f) & ~(uint64_t{1} << right));
+		for (int64_t f = 100; f <= 199; f++) inputs.set(f, Buttons::first64(inputs.at(f).low() & ~(uint64_t{1} << right)));
 		inputs.resize(at);
 		session.run("seek", {at}, error);
 		CHECK(d.until([&] { return session.frame.get() == at; }, 60));
@@ -4652,7 +4652,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(session.projectTitle.get() == "gridWalker.win");
 	CHECK(session.recentProjects.get() == (dir / "p.chimeraProject").string());
 	CHECK(roll.frameCount.get() == static_cast<int64_t>(entries.size()));
-	CHECK(inputs.at(0) == 0 && inputs.at(1) == (uint64_t{1} << 1)); /* "|.D......|" is P1 Down */
+	CHECK(inputs.at(0).low() == 0 && inputs.at(1).low() == (uint64_t{1} << 1)); /* "|.D......|" is P1 Down */
 
 	/* played to its end: the witness's memory, byte for byte */
 	const int64_t end = static_cast<int64_t>(entries.size());
@@ -4670,7 +4670,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	/* saved and opened again: the same inputs, and the same input text */
 	session.run("saveProject", {(dir / "saved.chimeraProject").string()}, error);
 	CHECK(d.until([&] { return session.projectPath.get() == (dir / "saved.chimeraProject").string(); }, 20));
-	std::vector<uint64_t> before(entries.size()), after(entries.size());
+	std::vector<Buttons> before(entries.size()), after(entries.size());
 	inputs.read(0, before);
 	CHECK(openIt(dir / "saved.chimeraProject"));
 	inputs.read(0, after);
@@ -4679,13 +4679,13 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 
 	/* File > Restart on a project: frame 0 again, the movie as edited */
 	{
-		const uint64_t was = inputs.at(40);
+		const uint64_t was = inputs.at(40).low();
 		roll.run("toggle", {int64_t{40}, int64_t{5}}, error);
 		const int64_t opensBefore = session.opens.get();
 		session.run("restart", {}, error);
 		CHECK(d.until([&] { return session.opens.get() > opensBefore; }, 30));
 		CHECK(session.isOpen.get() && session.frame.get() == 0 && session.projectPath.get() == (dir / "saved.chimeraProject").string());
-		CHECK(inputs.at(40) == (was ^ (uint64_t{1} << 5)));
+		CHECK(inputs.at(40).low() == (was ^ (uint64_t{1} << 5)));
 		roll.run("toggle", {int64_t{40}, int64_t{5}}, error);
 	}
 
@@ -4732,7 +4732,7 @@ bool project(const char *package, const char *rom, const std::string &movies, co
 	CHECK(openIt(dir / "p.chimeraProject"));
 	CHECK(inputs.at(10) == before[10]);
 	CHECK(openIt(dir / "saved.chimeraProject"));
-	CHECK(inputs.at(10) == (before[10] | (uint64_t{1} << 4)));
+	CHECK(inputs.at(10) == (before[10] | Buttons::first64(uint64_t{1} << 4)));
 	/* branches: the winning movie kept at its end, the movie spoiled, the
 	 * branch loaded - and the machine is where the winning movie leaves it.
 	 * With a project open a branch keeps its state in the cache folder, so
@@ -5098,7 +5098,7 @@ bool newProject(const char *package, const char *rom)
 	for (int i = 0; i < 5; i++) session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 5; }, 20));
 	session.key("Down", false);
-	std::vector<uint64_t> made(5);
+	std::vector<Buttons> made(5);
 	inputs.read(0, made);
 	session.run("saveProject", {}, error);
 	CHECK(d.until([&] { return session.status.get().rfind("Saved", 0) == 0; }, 20));
@@ -5113,10 +5113,10 @@ bool newProject(const char *package, const char *rom)
 	SessionViewModel session2(d, inputs2);
 	session2.run("openProject", {project.string(), std::string(package)}, error);
 	CHECK(d.until([&] { return session2.isOpen.get() && session2.projectPath.get() == project.string(); }, 60));
-	std::vector<uint64_t> back(5);
+	std::vector<Buttons> back(5);
 	inputs2.read(0, back);
 	CHECK(session2.projectTitle.get() == "down the corridor" && inputs2.size() == 5 && back == made);
-	CHECK(made[0] != 0); /* Down was held */
+	CHECK(made[0].any()); /* Down was held */
 	/* closed before its folder goes: Windows removes no file a machine has open */
 	session2.run("close", {}, error);
 	CHECK(d.until([&] { return !session2.isOpen.get(); }, 20));
@@ -5744,8 +5744,10 @@ bool pianoRollEditing(const char *package, const char *rom)
 	/* frame f holds button f % 8 */
 	for (int64_t f = 0; f < 10; f++) roll.run("paint", {f, f, f % 8, true}, error);
 	auto masks = [&] {
-		std::vector<uint64_t> m(static_cast<size_t>(inputs.size()));
-		inputs.read(0, m);
+		std::vector<Buttons> read(static_cast<size_t>(inputs.size()));
+		inputs.read(0, read);
+		std::vector<uint64_t> m;
+		for (const Buttons &b : read) m.push_back(b.low());
 		return m;
 	};
 	auto bit = [](int64_t b) { return uint64_t{1} << b; };
@@ -6237,7 +6239,7 @@ bool pianoRollAxes(const char *slotsPackage, const char *rom)
 	CHECK(dial(3) == 0 && dial(2) == 50);
 	/* a button pressed on the same frame keeps the dial */
 	roll.run("press", {int64_t{2}, int64_t{4}}, error);
-	CHECK(dial(2) == 50 && (inputs.at(2) >> 4 & 1) != 0);
+	CHECK(dial(2) == 50 && (inputs.at(2).low() >> 4 & 1) != 0);
 	/* frames taken out and put back keep their dials */
 	roll.run("deleteFrames", {int64_t{1}, int64_t{1}}, error);
 	CHECK(dial(1) == 50);
@@ -6435,7 +6437,7 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 	session.key("Down", true);
 	step();
 	session.key("Down", false);
-	CHECK(inputs.at(0) == (uint64_t{1} << down) && inputs.at(1) == 0);
+	CHECK(inputs.at(0).low() == (uint64_t{1} << down) && inputs.at(1).low() == 0);
 	/* what a key holds now, for the right click and the double click on the picture */
 	CHECK(controls.run("hasBinding", {std::string("K")}, error) == Value(true) &&
 		  controls.run("hasBinding", {std::string("WMouse R")}, error) == Value(false));
@@ -6504,7 +6506,7 @@ bool controlsAndHotkeys(const char *package, const char *rom)
 		session.key("Q", false);
 		step();
 		std::string pattern;
-		for (int64_t f = first; f < first + 6; f++) pattern += (inputs.at(f) >> a & 1) != 0 ? "1" : "0";
+		for (int64_t f = first; f < first + 6; f++) pattern += (inputs.at(f).low() >> a & 1) != 0 ? "1" : "0";
 		CHECK(pattern == "101010");
 		controls.run("loadDefaults", {}, error);
 		controls.run("save", {}, error);
@@ -6970,19 +6972,19 @@ bool recordingMode(const char *package, const char *rom)
 	CHECK(advance(5));
 	settle();
 	CHECK(inputs.size() == 5);
-	for (int64_t f = 0; f < 5; f++) CHECK(inputs.at(f) == 0);
+	for (int64_t f = 0; f < 5; f++) CHECK(inputs.at(f).low() == 0);
 	/* past the end autohold still reaches it */
 	session.run("toggleAutohold", {std::string("P1 A")}, error);
 	CHECK(advance(2));
 	settle();
-	CHECK(inputs.size() == 7 && inputs.at(5) == a && inputs.at(6) == a);
+	CHECK(inputs.size() == 7 && inputs.at(5).low() == a && inputs.at(6).low() == a);
 	session.run("toggleAutohold", {std::string("P1 A")}, error);
 	/* within the movie the frames are played as they are */
 	roll.run("toggle", {int64_t{2}, int64_t{4}}, error);
 	CHECK(seek(0));
 	CHECK(advance(4));
 	settle();
-	CHECK(inputs.at(1) == 0 && inputs.at(2) == a && inputs.at(3) == 0);
+	CHECK(inputs.at(1).low() == 0 && inputs.at(2).low() == a && inputs.at(3).low() == 0);
 	/* recording: a frame played becomes what is held, Down; frame 2's A goes */
 	CHECK(seek(2));
 	CHECK(roll.run("clearHistory", {}, error).has_value() && history->rowCount() == 0);
@@ -6990,7 +6992,7 @@ bool recordingMode(const char *package, const char *rom)
 	CHECK(session.recordingMode.get());
 	CHECK(advance(2));
 	settle();
-	CHECK(inputs.at(2) == down && inputs.at(3) == down);
+	CHECK(inputs.at(2).low() == down && inputs.at(3).low() == down);
 	CHECK(history->rowCount() == 2 && stepName(0) == "Record Frame: 2" && stepName(1) == "Record Frame: 3");
 	/* the frames a run records are one step, over the movie and past its end */
 	session.run("play", {}, error);
@@ -6998,21 +7000,21 @@ bool recordingMode(const char *package, const char *rom)
 	session.run("pause", {}, error);
 	CHECK(d.until([&] { return !session.running.get(); }, 5));
 	settle();
-	CHECK(inputs.size() >= 12 && inputs.at(5) == down && inputs.at(11) == down);
+	CHECK(inputs.size() >= 12 && inputs.at(5).low() == down && inputs.at(11).low() == down);
 	CHECK(history->rowCount() == 3 && stepName(2) == "Record Frame: 4");
 	/* undone at once: frames 4 to 6 as they were, the movie its 7 frames; and recording is over */
 	roll.run("undo", {}, error);
 	settle();
-	CHECK(inputs.size() == 7 && inputs.at(4) == 0 && inputs.at(5) == a && inputs.at(6) == a && inputs.at(3) == down);
+	CHECK(inputs.size() == 7 && inputs.at(4).low() == 0 && inputs.at(5).low() == a && inputs.at(6).low() == a && inputs.at(3).low() == down);
 	CHECK(!session.recordingMode.get());
 	/* a script's edit leaves recording on, an edit by hand ends it */
 	session.run("toggleRecording", {}, error);
 	roll.scriptEditing.set(true);
 	roll.run("toggle", {int64_t{1}, int64_t{4}}, error);
 	roll.scriptEditing.set(false);
-	CHECK(session.recordingMode.get() && inputs.at(1) == a);
+	CHECK(session.recordingMode.get() && inputs.at(1).low() == a);
 	roll.run("toggle", {int64_t{1}, int64_t{4}}, error);
-	CHECK(!session.recordingMode.get() && inputs.at(1) == 0);
+	CHECK(!session.recordingMode.get() && inputs.at(1).low() == 0);
 	/* a project opened is read only */
 	session.run("toggleRecording", {}, error);
 	session.key("Down", false);
@@ -9666,6 +9668,75 @@ bool coreManager(const char *package, const char *slotsPackage, const char *game
 /* a core that declares no virtual size has square pixels: its picture is shown
  * at its own shape, not at the shape of the largest picture it has room for
  * (a Flash game was drawn too wide); one that declares one is shown at that */
+/* A controller wider than the 64 buttons one number carries (issue 411:
+ * Ruffle's keyboard is 103 buttons, Mednafen's controllers 594). A key bound
+ * to a button past the 64th is recorded into the movie, the piano roll shows
+ * its cell and edits it, the movie's line has it, and a script's hold and
+ * autohold reach it, as for any other button. All of it stopped at the 64th. */
+bool wideButtons(const char *package, const char *rom)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	if (fs::file_size(package, ec) == 0 || ec)
+	{
+		std::printf("SKIP the wide controller: no package with more than 64 buttons\n");
+		return true;
+	}
+	ManualDispatcher d;
+	InputLog inputs;
+	SessionViewModel session(d, inputs);
+	session.turboSeek.set(true);
+	PianoRollViewModel roll(d, inputs, session);
+	std::string error;
+	const fs::path dir = fs::temp_directory_path() / ("chimera-test-wide-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+	fs::create_directories(dir);
+	fs::copy_file(rom, dir / "walker.testrom");
+	session.cacheFolder.set((dir / "cache").string());
+	openGame(session, package, (dir / "walker.testrom").string(), error);
+	CHECK(d.until([&] { return session.isOpen.get(); }, 60));
+	const std::vector<std::string> names = session.buttonNames();
+	CHECK(names.size() == 88);
+	const size_t wide = 80;
+	auto pressedIn = [&](int64_t frame) {
+		std::string out;
+		fromValue(session.run("movieInput", {frame}, error).value_or(Value()), out);
+		return out;
+	};
+	/* a key bound to it, held over a frame recorded */
+	std::vector<std::string> texts = session.bindingTexts();
+	texts.resize(names.size());
+	texts[wide] = "F9";
+	session.setBindingTexts(texts);
+	session.recordingMode.set(true);
+	session.key("F9", true);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 1; }, 10));
+	session.key("F9", false);
+	CHECK(inputs.size() == 1 && inputs.at(0).test(wide) && !inputs.at(0).test(wide - 1));
+	CHECK(pressedIn(0) == names[wide] + "\n");
+	/* the roll shows the cell and flips it, a step to undo */
+	CHECK(roll.frames().cell(0, static_cast<int32_t>(wide)) == Value(true));
+	roll.run("toggle", {int64_t{0}, static_cast<int64_t>(wide)}, error);
+	CHECK(!inputs.at(0).test(wide) && pressedIn(0).empty());
+	roll.run("undo", {}, error);
+	CHECK(inputs.at(0).test(wide));
+	/* a script's hold and autohold reach the buttons past it too (recording
+	 * again: an edit turns it off) */
+	session.recordingMode.set(true);
+	session.run("scriptHold", {names[wide + 1]}, error);
+	session.run("toggleAutohold", {names[wide + 2]}, error);
+	session.run("frameAdvance", {}, error);
+	CHECK(d.until([&] { return session.frame.get() == 2; }, 10));
+	CHECK(inputs.at(1).test(wide + 1) && inputs.at(1).test(wide + 2) && !inputs.at(1).test(wide));
+	std::string played;
+	fromValue(session.run("playedButtons", {}, error).value_or(Value()), played);
+	CHECK(played == names[wide + 1] + "\n" + names[wide + 2] + "\n");
+	session.run("close", {}, error);
+	CHECK(d.until([&] { return !session.isOpen.get(); }, 20));
+	fs::remove_all(dir, ec);
+	return true;
+}
+
 /* A core that mixes its sound at 48000 Hz is heard at 44100 (issue 372):
  * each frame hands the speakers 44100/48000 of what the core made, so the
  * sound keeps its pitch and nothing runs ahead to be dropped. The window
@@ -10020,6 +10091,7 @@ int main(int argc, char **argv)
 			if (argc >= 13) ranMachine = compileStep(argv[12], argv[2]) && ranMachine;
 			if (argc >= 14) ranMachine = squarePixels(argv[1], argv[13], argv[2]) && ranMachine;
 			if (argc >= 15) ranMachine = soundRate(argv[14], argv[2]) && ranMachine;
+			if (argc >= 16) ranMachine = wideButtons(argv[15], argv[2]) && ranMachine;
 			else std::printf("SKIP the compile step: no compiling package given\n");
 			if (argc >= 9) ranMachine = coreManager(argv[1], argv[6], argv[8]) && ranMachine;
 			else std::printf("SKIP the Firmware window: no package with many releases of one firmware given\n");

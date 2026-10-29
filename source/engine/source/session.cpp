@@ -4257,25 +4257,24 @@ void ce_session::nameColumns()
 	}
 }
 
-int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint64_t *buttons_out, int32_t *axes_out)
+int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint8_t *states_out, int32_t *axes_out)
 {
 	std::lock_guard<std::mutex> movieLocked(s->movieLock);
-	if (buttons_out != nullptr) *buttons_out = 0;
+	if (states_out != nullptr) std::fill(states_out, states_out + s->cfg.buttons.size(), uint8_t{0});
 	if (axes_out != nullptr)
 		for (size_t i = 0; i < s->cfg.axes.size(); i++) axes_out[i] = s->cfg.axes[i].neutral;
 	if (s->movie == nullptr || frame < 0 || frame >= ce_movie_log_count(s->movie)) return 1;
 	std::vector<uint8_t> states;
 	std::vector<int32_t> values;
 	if (!s->entries().parse(ce_movie_log_entry(s->movie, frame), states, values)) return -1;
-	if (buttons_out != nullptr)
-		for (size_t i = 0; i < states.size() && i < 64; i++)
-			if (states[i] != 0) *buttons_out |= uint64_t{1} << i;
+	if (states_out != nullptr)
+		for (size_t i = 0; i < states.size() && i < s->cfg.buttons.size(); i++) states_out[i] = states[i] != 0 ? 1 : 0;
 	if (axes_out != nullptr)
 		for (size_t i = 0; i < values.size(); i++) axes_out[i] = values[i];
 	return 0;
 }
 
-int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, const int32_t *axes)
+int32_t ce_session_movie_set(ce_session *s, int64_t frame, const uint8_t *pressed, const int32_t *axes)
 {
 	if (frame < 0) return -1;
 	std::lock_guard<std::mutex> movieLocked(s->movieLock);
@@ -4283,7 +4282,8 @@ int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, con
 	if (s->movieMode == 0) s->movieMode = 1;
 	s->nameColumns();
 	std::vector<uint8_t> states(s->cfg.buttons.size(), 0);
-	for (size_t i = 0; i < states.size() && i < 64; i++) states[i] = (buttons >> i) & 1u;
+	if (pressed != nullptr)
+		for (size_t i = 0; i < states.size(); i++) states[i] = pressed[i] != 0 ? 1 : 0;
 	s->coverInKey(states.data(), axes);
 	const int64_t count = ce_movie_log_count(s->movie);
 	if (frame > count)
@@ -4492,29 +4492,6 @@ extern "C" uint64_t ce_session_serial(const ce_session *s) { return s != nullptr
 const ce_movie_log *ce_session_movie_log(const ce_session *s) { return s->movie; }
 
 int32_t ce_session_movie_entry_decode(
-	const ce_session *s, const char *entry, uint64_t *buttons_out, int32_t *axes_out)
-{
-	if (entry == nullptr) return -1;
-	std::vector<uint8_t> states;
-	std::vector<int32_t> values;
-	if (!s->entries().parse(entry, states, values)) return -1;
-	if (buttons_out != nullptr)
-	{
-		uint64_t mask = 0;
-		for (size_t i = 0; i < states.size() && i < 64; i++)
-		{
-			if (states[i] != 0) mask |= 1ull << i;
-		}
-		*buttons_out = mask;
-	}
-	if (axes_out != nullptr)
-	{
-		for (size_t i = 0; i < values.size(); i++) axes_out[i] = values[i];
-	}
-	return 0;
-}
-
-int32_t ce_session_movie_entry_decode_wide(
 	const ce_session *s, const char *entry, uint8_t *states_out, int32_t *axes_out)
 {
 	if (entry == nullptr) return -1;

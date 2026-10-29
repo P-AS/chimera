@@ -1254,7 +1254,7 @@ int main(int argc, char **argv)
 			 * paddle - zero there is the stick held hard up-left). A run may
 			 * outlast its input source while recording (see --frames above);
 			 * it may not read past it. */
-			if (i < sourceFrames && ce_session_movie_entry_decode_wide(
+			if (i < sourceFrames && ce_session_movie_entry_decode(
 					session, ce_movie_log_entry(movie, i),
 					buttonCount != 0 ? states.data() : nullptr,
 					axisCount != 0 ? axes.data() : nullptr) != 0)

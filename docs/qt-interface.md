@@ -14,7 +14,10 @@ Chimera's window: Qt 6.12, QML views over C++ view models. The code is in
 - **The engine owns the movie** (owner, 2026-10-22). The window reads
   and edits a frame's input through the engine (`ce_session_movie_get`,
   `_set`, `_resize`, `_text`), which writes every line in the movie's own
-  columns; the window never writes one. Those calls may come from any
+  columns; the window never writes one. A frame's buttons go both ways as
+  one byte a button, every one of them, and the window keeps them as a set
+  of any width (vm::Buttons): a keyboard is a hundred keys and Mednafen's
+  controllers are 594 buttons (issue 411: everything stopped at the 64th). Those calls may come from any
   thread while another runs the machine: the movie has a lock of its own.
   An edit is honoured before the machine next moves: the engine drops the
   states after the earliest frame edited and, when the machine is already

@@ -424,6 +424,17 @@ ECL_EXPORT void SetAxis(int32_t index, int32_t value)
 	if (index >= 0 && index < 8) g_axes[index] = value;
 }
 
+/* A button past the 64 FrameAdvance's mask carries, as the engine hands one
+ * over when it changes. The synthetic game reads none, so they are only
+ * kept: the export is here so that a package made from this one may declare
+ * more than 64 buttons (the engine refuses such a package without it; issue
+ * 411). Invisible, and in no state, like the axes above. */
+ECL_INVISIBLE static uint8_t g_wideButtons[1024];
+ECL_EXPORT void SetButton(int32_t index, int32_t pressed)
+{
+	if (index >= 0 && index < 1024) g_wideButtons[index] = pressed != 0;
+}
+
 /* The registers group (the debugger's register box): R0-R7, which a debugger
  * may set, and the frame counter, which it may only read. */
 static const char *const g_registerNames[9] = {"R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "Frame"};

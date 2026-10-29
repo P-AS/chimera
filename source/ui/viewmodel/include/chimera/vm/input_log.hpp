@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "chimera/vm/buttons.hpp"
+
 struct ce_session;
 
 namespace chimera::vm {
@@ -24,20 +26,20 @@ public:
 	int64_t size() const;
 	/* whether a machine's movie is here (none: nothing to show or edit) */
 	bool bound() const;
-	/* a frame's buttons, one bit each (the first 64); nothing past the end */
-	uint64_t at(int64_t frame) const;
+	/* a frame's buttons, every one of them; nothing past the end */
+	Buttons at(int64_t frame) const;
 	/* frames first.. into out (as many as out holds) */
-	void read(int64_t first, std::vector<uint64_t> &out) const;
+	void read(int64_t first, std::vector<Buttons> &out) const;
 	/* sets a frame's buttons, keeping its axes; past the end lengthens the
 	 * movie. False with no machine open. */
-	bool set(int64_t frame, uint64_t mask);
+	bool set(int64_t frame, const Buttons &buttons);
 	void resize(int64_t frames);
 	/* empty frames put in at `frame`, or frames taken out from it (the lag
 	 * flags move with them) */
 	void insert(int64_t frame, int64_t count);
 	void remove(int64_t frame, int64_t count);
 	/* a whole frame: its buttons and its analog values (nullptr: as they are) */
-	bool setRow(int64_t frame, uint64_t mask, const int32_t *axes);
+	bool setRow(int64_t frame, const Buttons &buttons, const int32_t *axes);
 	/* an analog control's value when nothing is held */
 	void neutralAxes(int32_t *out) const;
 	/* whether the edits made from now on count as rerecords (off for the
@@ -84,6 +86,12 @@ private:
 	static constexpr uint8_t kNotRun = 2;
 	std::vector<uint8_t> lags_;
 };
+
+/* a movie's line read against the machine's controller: its buttons, every
+ * one of them, and its axes (axes: ce_session_axis_count values, or null);
+ * false when the line cannot be read */
+bool decodeEntry(const ce_session *s, const std::string &line, Buttons &buttons, int32_t *axes);
+
 
 /* a movie line read from its first '|', as Chimera reads
  * one (chimera 10b9668): whitespace and the digits 0-9 before it dropped - the

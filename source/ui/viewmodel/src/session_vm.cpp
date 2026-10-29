@@ -696,8 +696,8 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	stickyWatches_.push_back(autofireOff.changed.connect([this] { fireOffM_ = std::max<int64_t>(1, autofireOff.get()); }));
 	stickyWatches_.push_back(autofireSkipsLag.changed.connect([this] { fireSkipsLagM_ = autofireSkipsLag.get(); }));
 	command("clearAutohold", "no button held or fired by autohold and autofire any longer", {}, [this](const Args &, std::string &) -> Value {
-		autoholdMask_ = 0;
-		autofireMask_ = 0;
+		autoholdMask_.set({});
+		autofireMask_.set({});
 		stickyChanged();
 		status.set(tr("session.autohold_cleared"));
 		return {};
@@ -705,10 +705,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("toggleAutohold", "a button held by autohold, or no longer", {"button"}, [this](const Args &a, std::string &error) -> Value {
 		std::string name;
 		if (!arg(a, 0, name, error)) return {};
-		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+		for (size_t b = 0; b < buttonNames_.size(); b++)
 			if (buttonNames_[b] == name)
 			{
-				autoholdMask_ ^= uint64_t{1} << b;
+				autoholdMask_.flip(b);
 				stickyChanged();
 				return {};
 			}
@@ -718,12 +718,14 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 	command("toggleAutofire", "a button fired by autofire, or no longer", {"button"}, [this](const Args &a, std::string &error) -> Value {
 		std::string name;
 		if (!arg(a, 0, name, error)) return {};
-		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
+		for (size_t b = 0; b < buttonNames_.size(); b++)
 			if (buttonNames_[b] == name)
 			{
-				const uint64_t bit = uint64_t{1} << b;
-				autofireMask_ ^= bit;
-				submit([this, b] { fireAtM_[b] = 0; });
+				autofireMask_.flip(b);
+				submit([this, b] {
+					if (fireAtM_.size() <= b) fireAtM_.resize(b + 1, 0);
+					fireAtM_[b] = 0;
+				});
 				stickyChanged();
 				return {};
 			}
@@ -1142,11 +1144,11 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			onMachineWait([&](ce_session *s) {
 				if (s == nullptr || frame < 0 || frame >= ce_session_movie_length(s)) return;
 				std::vector<int32_t> axes(static_cast<size_t>(ce_session_axis_count(s)));
-				uint64_t buttons = 0;
+				std::vector<uint8_t> states(static_cast<size_t>(ce_session_button_count(s)));
 				/* 0 read; 1 past the end; -1 a line that cannot be read */
-				if (ce_session_movie_get(s, frame, &buttons, axes.empty() ? nullptr : axes.data()) != 0) return;
-				for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-					if (buttons >> b & 1) out += buttonNames_[b] + "\n";
+				if (ce_session_movie_get(s, frame, states.data(), axes.empty() ? nullptr : axes.data()) != 0) return;
+				for (size_t b = 0; b < buttonNames_.size() && b < states.size(); b++)
+					if (states[b] != 0) out += buttonNames_[b] + "\n";
 				for (size_t x = 0; x < axes.size() && x < axes_.size(); x++) out += axes_[x].name + "=" + std::to_string(axes[x]) + "\n";
 			});
 			return out;
@@ -1245,10 +1247,10 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			onMachineWait([&](ce_session *s) {
 				if (s == nullptr) return;
 				std::vector<int32_t> axes(static_cast<size_t>(ce_session_axis_count(s)));
-				uint64_t buttons = 0;
-				if (ce_session_movie_entry_decode(s, line.c_str(), &buttons, axes.empty() ? nullptr : axes.data()) != 0) return;
-				for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-					if (buttons >> b & 1) out += buttonNames_[b] + "\n";
+				Buttons buttons;
+				if (!decodeEntry(s, line, buttons, axes.empty() ? nullptr : axes.data())) return;
+				for (size_t b = 0; b < buttonNames_.size(); b++)
+					if (buttons.test(b)) out += buttonNames_[b] + "\n";
 				for (size_t x = 0; x < axes.size() && x < axes_.size(); x++) out += axes_[x].name + "=" + std::to_string(axes[x]) + "\n";
 			});
 			return out;
@@ -1274,24 +1276,24 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 		[this](const Args &, std::string &) -> Value { return borrowedM_.load(); });
 	command("playedButtons", "the buttons the core was handed on the frame just run (the movie's frame, which the engine plays), "
 		"a line each: Chimera's joypad.getwithmovie", {}, [this](const Args &, std::string &) -> Value {
-		const uint64_t mask = playedM_.load();
+		const Buttons played = playedM_.get();
 		std::string out;
-		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-			if (mask >> b & 1) out += buttonNames_[b] + "\n";
+		for (size_t b = 0; b < buttonNames_.size(); b++)
+			if (played.test(b)) out += buttonNames_[b] + "\n";
 		return out;
 	});
 	command("heldButtons", "the buttons held now (by keys, gamepads and autohold), a line each", {}, [this](const Args &, std::string &) -> Value {
-		const uint64_t mask = held_.load() | autoholdMask_.load() | scriptHeld_.load();
+		const Buttons held = held_.get() | autoholdMask_.get() | scriptHeld_.get();
 		std::string out;
-		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-			if (mask >> b & 1) out += buttonNames_[b] + "\n";
+		for (size_t b = 0; b < buttonNames_.size(); b++)
+			if (held.test(b)) out += buttonNames_[b] + "\n";
 		return out;
 	});
 	command("scriptHold", "buttons a script holds for the next frame run, a line each (Chimera's joypad.set)", {"buttons"},
 		[this](const Args &a, std::string &error) -> Value {
 			std::string list;
 			if (!arg(a, 0, list, error)) return {};
-			uint64_t mask = 0;
+			Buttons named;
 			std::istringstream in(list);
 			/* the machine's own names where a script asks on its thread */
 			const std::vector<std::string> &names = onMachineThread() ? buttonNamesM_ : buttonNames_;
@@ -1299,35 +1301,35 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			{
 				if (name.empty()) continue;
 				const auto it = std::find(names.begin(), names.end(), name);
-				if (it == names.end() || it - names.begin() >= 64)
+				if (it == names.end())
 				{
 					error = tr("session.no_button", {name});
 					return {};
 				}
-				mask |= uint64_t{1} << (it - names.begin());
+				named.set(static_cast<size_t>(it - names.begin()));
 			}
-			scriptHeld_.store(mask);
+			scriptHeld_.set(std::move(named));
 			return {};
 		});
 	command("scriptRelease", "buttons a script lets go for the next frame run, a line each, whoever holds them (Chimera's "
 		"joypad.set with false)", {"buttons"}, [this](const Args &a, std::string &error) -> Value {
 			std::string list;
 			if (!arg(a, 0, list, error)) return {};
-			uint64_t mask = 0;
+			Buttons named;
 			std::istringstream in(list);
 			const std::vector<std::string> &names = onMachineThread() ? buttonNamesM_ : buttonNames_;
 			for (std::string name; std::getline(in, name);)
 			{
 				if (name.empty()) continue;
 				const auto it = std::find(names.begin(), names.end(), name);
-				if (it == names.end() || it - names.begin() >= 64)
+				if (it == names.end())
 				{
 					error = tr("session.no_button", {name});
 					return {};
 				}
-				mask |= uint64_t{1} << (it - names.begin());
+				named.set(static_cast<size_t>(it - names.begin()));
 			}
-			scriptReleased_.store(mask);
+			scriptReleased_.set(std::move(named));
 			return {};
 		});
 	command("scriptAxis", "an analog control's value a script gives: for the next frame run, or held until let go (held; "
@@ -1364,19 +1366,19 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			/* read from its first '|', as Chimera's (a copied frame number, an indent) */
 			line = movieLineFromBar(line);
 			bool read = false;
-			uint64_t buttons = 0;
+			Buttons buttons;
 			std::vector<int32_t> values;
 			onMachineWait([&](ce_session *s) {
 				if (s == nullptr) return;
 				values.resize(static_cast<size_t>(ce_session_axis_count(s)));
-				read = ce_session_movie_entry_decode(s, line.c_str(), &buttons, values.empty() ? nullptr : values.data()) == 0;
+				read = decodeEntry(s, line, buttons, values.empty() ? nullptr : values.data());
 			});
 			if (!read)
 			{
 				error = tr("session.unreadable_line", {line});
 				return {};
 			}
-			scriptHeld_.store(buttons);
+			scriptHeld_.set(std::move(buttons));
 			std::lock_guard<std::mutex> lock(scriptAxesM_);
 			for (size_t i = 0; i < values.size(); i++) scriptAxesOnce_[i] = values[i];
 			return {};
@@ -1792,37 +1794,40 @@ void SessionViewModel::armAutofire(bool down)
 	stickyArmed.set(armed_ != 0);
 }
 
-void SessionViewModel::toggleSticky(uint64_t pressed)
+void SessionViewModel::toggleSticky(const Buttons &pressed)
 {
 	/* any thread: armed, the buttons just pressed change over */
 	const int armed = armed_.load();
-	if (armed == 0 || pressed == 0) return;
-	if (armed == 1) autoholdMask_ ^= pressed;
+	if (armed == 0 || !pressed.any()) return;
+	if (armed == 1) autoholdMask_.toggle(pressed);
 	else
 	{
-		autofireMask_ ^= pressed;
+		autofireMask_.toggle(pressed);
 		submit([this, pressed] {
-			for (int b = 0; b < 64; b++)
-				if (pressed >> b & 1) fireAtM_[static_cast<size_t>(b)] = 0;
+			pressed.each([this](size_t b) {
+				if (fireAtM_.size() <= b) fireAtM_.resize(b + 1, 0);
+				fireAtM_[b] = 0;
+			});
 		});
 	}
 }
 
 void SessionViewModel::stickyChanged()
 {
-	auto names = [this](uint64_t mask) {
+	const Buttons autoheldNow = autoholdMask_.get(), autofiredNow = autofireMask_.get();
+	auto names = [this](const Buttons &buttons) {
 		std::string out;
-		for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-			if (mask >> b & 1) out += (out.empty() ? "" : " ") + buttonNames_[b];
+		for (size_t b = 0; b < buttonNames_.size(); b++)
+			if (buttons.test(b)) out += (out.empty() ? "" : " ") + buttonNames_[b];
 		return out;
 	};
-	autoheld.set(names(autoholdMask_.load()));
-	autofired.set(names(autofireMask_.load()));
+	autoheld.set(names(autoheldNow));
+	autofired.set(names(autofiredNow));
 	std::string held;
-	for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-		if (autoholdMask_.load() >> b & 1) held += buttonNames_[b] + " ";
-	for (size_t b = 0; b < buttonNames_.size() && b < 64; b++)
-		if (autofireMask_.load() >> b & 1) held += tr("session.autofired_button", {buttonNames_[b]}) + " ";
+	for (size_t b = 0; b < buttonNames_.size(); b++)
+		if (autoheldNow.test(b)) held += buttonNames_[b] + " ";
+	for (size_t b = 0; b < buttonNames_.size(); b++)
+		if (autofiredNow.test(b)) held += tr("session.autofired_button", {buttonNames_[b]}) + " ";
 	std::string text = tr("session.held", {held});
 	stickyText.set(text);
 }
@@ -1835,22 +1840,22 @@ void SessionViewModel::key(const std::string &name, bool down)
 	/* armed: the buttons this key presses change over (and are pressed as well) */
 	if (down && armed_ != 0)
 	{
-		uint64_t pressed = 0;
+		Buttons pressed;
 		for (int b : bindings_.buttonsOf(name))
-			if (b < 64) pressed |= uint64_t{1} << b;
+			if (b >= 0) pressed.set(static_cast<size_t>(b));
 		toggleSticky(pressed);
 		stickyChanged();
 	}
-	uint64_t mask = 0;
+	Buttons held;
 	std::vector<std::string> keys;
 	for (const auto &[k, isDown] : keysDown_)
 		if (isDown)
 		{
 			keys.push_back(k);
 			for (int b : bindings_.buttonsOf(k))
-				if (b < 64) mask |= uint64_t{1} << b;
+				if (b >= 0) held.set(static_cast<size_t>(b));
 		}
-	held_.store(mask);
+	held_.set(std::move(held));
 	/* the keys held, for the autofire keys and the analog controls' keys, read by the machine's thread */
 	std::lock_guard<std::mutex> lock(keysHeldM_);
 	keysHeld_ = std::move(keys);
@@ -1960,12 +1965,12 @@ void SessionViewModel::setBindingTexts(std::vector<std::string> texts)
 	texts.resize(buttonNames_.size());
 	bindings_.setTexts(texts);
 	/* the keys held now hold what they hold now */
-	uint64_t mask = 0;
+	Buttons held;
 	for (const auto &[k, isDown] : keysDown_)
 		if (isDown)
 			for (int b : bindings_.buttonsOf(k))
-				if (b < 64) mask |= uint64_t{1} << b;
-	held_.store(mask);
+				if (b >= 0) held.set(static_cast<size_t>(b));
+	held_.set(std::move(held));
 	submit([this, texts] { bindingsM_.setTexts(texts); });
 }
 
@@ -4089,19 +4094,27 @@ void SessionViewModel::showFutureOnMachine()
 	int64_t played = 0;
 	bool drawn = false;
 	/* asked before each frame, as Chimera's (asked once more when the most is reached): true is enough */
+	/* the buttons past the 64 one number carries go to the machine one by one */
+	std::vector<uint8_t> states(static_cast<size_t>(ce_session_button_count(s_)));
 	while (!futureTurnM_(played) && played < most)
 	{
-		uint64_t buttons = 0;
-		if (ce_session_movie_get(s_, first + played, &buttons, axisCount != 0 ? axes.data() : nullptr) != 0)
+		if (ce_session_movie_get(s_, first + played, states.data(), axisCount != 0 ? axes.data() : nullptr) != 0)
 		{
-			buttons = 0;
+			std::fill(states.begin(), states.end(), uint8_t{0});
 			for (size_t i = 0; i < axisCount; i++) axes[i] = ce_session_axis_neutral(s_, static_cast<int64_t>(i));
 		}
 		for (size_t i = 0; i < axisCount; i++) ce_session_set_axis(s_, static_cast<int32_t>(i), axes[i]);
+		uint64_t first64 = 0;
+		for (size_t b = 0; b < states.size(); b++)
+		{
+			if (b < 64) first64 |= uint64_t{states[b] != 0} << b;
+			else ce_session_set_button(s_, static_cast<int32_t>(b), states[b]);
+		}
 		played++;
-		if (ce_session_frame_advance(s_, buttons, 1) < 0) break;
+		if (ce_session_frame_advance(s_, first64, 1) < 0) break;
 		drawn = true;
 	}
+	for (size_t b = 64; b < states.size(); b++) ce_session_set_button(s_, static_cast<int32_t>(b), 0);
 	/* the machine back where it was, the future's picture kept on screen */
 	ce_session_load_state(s_, state.data(), state.size());
 	if (drawn) publishPictureOnMachine();
@@ -5263,7 +5276,7 @@ void SessionViewModel::adoptOnMachine(ce_session *s, const std::string &package,
 		axesM_ = axes;
 		buttonNamesM_ = names;
 	}
-	autofireWasM_ = 0;
+	autofireWasM_.clear();
 	if (!padsM_) padsM_ = std::make_unique<Gamepads>();
 	padCount_ = 0;
 	std::string padText = padsM_->available() ? tr("session.no_gamepads") : padsM_->problem();
@@ -5588,10 +5601,10 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	const int64_t f = ce_session_frame(s_);
 	/* held: all the person's input this frame; sticky: the part of it autohold, autofire and the
 	 * Auto-hold columns give, which alone extends the movie when not recording */
-	uint64_t held = 0, sticky = 0;
+	Buttons held, sticky;
 	if (live)
 	{
-		uint64_t padMask = 0;
+		Buttons padHeld;
 		if (padsM_)
 		{
 			padsM_->poll(padHeld_, &padAxes_);
@@ -5602,7 +5615,7 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			}
 			for (const std::string &name : padHeld_)
 				for (int b : bindingsM_.buttonsOf(name))
-					if (b < 64) padMask |= uint64_t{1} << b;
+					if (b >= 0) padHeld.set(static_cast<size_t>(b));
 			const std::vector<std::string> open = padsM_->names();
 			if (open.size() != padCount_)
 			{
@@ -5613,13 +5626,13 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 			}
 		}
 		/* a pad is not heard while the window is behind another, unless asked */
-		if (!padsHeardM_.load()) padMask = 0;
+		if (!padsHeardM_.load()) padHeld.clear();
 		/* a script's buttons hold for one frame */
-		held = held_.load() | padMask | scriptHeld_.exchange(0);
+		held = held_.get() | padHeld | scriptHeld_.exchange({});
 		/* a pad's button pressed while autohold or autofire is armed changes over */
-		const uint64_t padPressed = padMask & ~padWasM_;
-		padWasM_ = padMask;
-		if (padPressed != 0 && armed_ != 0)
+		const Buttons padPressed = padHeld.without(padWasM_);
+		padWasM_ = padHeld;
+		if (padPressed.any() && armed_ != 0)
 		{
 			toggleSticky(padPressed);
 			later([this] { stickyChanged(); });
@@ -5633,37 +5646,40 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 				keys = keysHeld_;
 			}
 			if (padsHeardM_.load()) keys.insert(keys.end(), padHeld_.begin(), padHeld_.end());
-			uint64_t firingKeys = 0;
+			Buttons firingKeys;
 			for (const std::string &k : keys)
 				for (int b : autofireBindingsM_.buttonsOf(k))
-					if (b < 64) firingKeys |= uint64_t{1} << b;
-			const uint64_t started = firingKeys & ~autofireWasM_;
-			for (size_t b = 0; b < 64; b++)
-				if (started >> b & 1) autofireStartM_[b] = f;
+					if (b >= 0) firingKeys.set(static_cast<size_t>(b));
+			firingKeys.without(autofireWasM_).each([&](size_t b) {
+				if (autofireStartM_.size() <= b) autofireStartM_.resize(b + 1, 0);
+				autofireStartM_[b] = f;
+			});
 			autofireWasM_ = firingKeys;
 			const int64_t keyOn = fireOnM_.load(), keyPeriod = keyOn + fireOffM_.load();
-			for (size_t b = 0; b < 64; b++)
-				if (firingKeys >> b & 1 && keyPeriod > 0 && (f - autofireStartM_[b]) % keyPeriod < keyOn) held |= uint64_t{1} << b;
+			firingKeys.each([&](size_t b) {
+				if (keyPeriod > 0 && (f - autofireStartM_[b]) % keyPeriod < keyOn) held.set(b);
+			});
 			keysThisFrameM_ = std::move(keys);
 		}
 		/* what autohold holds, and what autofire presses this frame */
-		sticky |= autoholdMask_.load();
-		const uint64_t firing = autofireMask_.load();
+		sticky |= autoholdMask_.get();
 		const int64_t on = fireOnM_.load(), period = on + fireOffM_.load();
-		for (size_t b = 0; b < 64; b++)
-			if (firing >> b & 1 && fireAtM_[b] % period < on) sticky |= uint64_t{1} << b;
+		autofireMask_.get().each([&](size_t b) {
+			if (fireAtM_.size() <= b) fireAtM_.resize(b + 1, 0);
+			if (fireAtM_[b] % period < on) sticky.set(b);
+		});
 		/* the piano roll's Auto-hold columns: a button's pattern says whether it is pressed */
 		for (size_t i = 0; i < columnPatternsM_.size(); i++)
 		{
 			const ColumnPattern &cp = columnPatternsM_[i];
-			if (!cp.isAxis && !cp.values.empty() && cp.index >= 0 && cp.index < 64 && cp.values[columnAtM_[i] % cp.values.size()] != 0)
-				sticky |= uint64_t{1} << cp.index;
+			if (!cp.isAxis && !cp.values.empty() && cp.index >= 0 && cp.values[columnAtM_[i] % cp.values.size()] != 0)
+				sticky.set(static_cast<size_t>(cp.index));
 		}
 		held |= sticky;
 	}
 	/* a script's false lets a button go for the frame, held by a key, a pad or
 	 * autohold or not, as Chimera's override does (joypad.set) */
-	held &= ~scriptReleased_.exchange(0);
+	held = held.without(scriptReleased_.exchange({}));
 	/* What is held goes into the movie before the frame plays it. Recording, the frame becomes what is held, an
 	 * analog control left alone at rest, and a column hidden while hidden
 	 * columns are not edited keeps what it had. Not recording, a frame the
@@ -5674,11 +5690,11 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	 * its own. */
 	const bool recording = live && projectM_ != nullptr && recordingModeM_.load();
 	bool changed = false;
-	const uint64_t mask = recordMaskM_.load();
 	const size_t axisCount = static_cast<size_t>(ce_session_axis_count(s_));
 	axesBuf_.resize(axisCount);
-	uint64_t logged = 0;
-	const int32_t had = ce_session_movie_get(s_, f, &logged, axisCount ? axesBuf_.data() : nullptr);
+	statesBuf_.resize(static_cast<size_t>(ce_session_button_count(s_)));
+	const int32_t had = ce_session_movie_get(s_, f, statesBuf_.data(), axisCount ? axesBuf_.data() : nullptr);
+	const Buttons logged = Buttons::fromStates(statesBuf_.data(), statesBuf_.size());
 	if (had == 1 && !grow) return 0;
 	loggedAxes_ = axesBuf_;
 	if (live && !recording) held = sticky;
@@ -5735,13 +5751,18 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 					if (axis < axisCount && axisShown(axis)) axesBuf_[axis] = v;
 		scriptAxesOnce_.clear();
 	}
-	const uint64_t buttons = recording || had == 1 ? (logged & ~mask) | (held & mask) : logged;
+	/* recording changes only the buttons recording may change (the columns shown) */
+	Buttons buttons = logged;
+	if (recording || had == 1)
+		buttons = recordAllM_.load() ? held : logged.without(recordShownM_.get()) | (held & recordShownM_.get());
 	const bool axesChanged = axesBuf_ != loggedAxes_;
+	if (had == 1 || buttons != logged || axesChanged)
+		statesBuf_ = buttons.states(statesBuf_.size());
 	if (had == 1)
-		ce_session_movie_set(s_, f, buttons, axesChanged ? axesBuf_.data() : nullptr);
+		ce_session_movie_set(s_, f, statesBuf_.data(), axesChanged ? axesBuf_.data() : nullptr);
 	else if (buttons != logged || axesChanged)
 	{
-		ce_session_movie_set(s_, f, buttons, axisCount ? axesBuf_.data() : nullptr);
+		ce_session_movie_set(s_, f, statesBuf_.data(), axisCount ? axesBuf_.data() : nullptr);
 		greenEndM_ = std::min(greenEndM_, f);
 		forgetGameTimeAfterOnMachine(f);
 		changed = true;
@@ -5754,15 +5775,14 @@ int32_t SessionViewModel::stepOnMachine(bool live, bool render, bool grow)
 	}
 
 	/* what the core is handed this frame: the movie's frame, which the engine plays (joypad.getwithmovie) */
-	playedM_.store(buttons);
+	playedM_.set(buttons);
 	const int32_t lag = ce_session_movie_advance(s_, 0, nullptr, render ? 1 : 0);
 	/* autofire's patterns move on a frame, a lag frame not counted unless asked */
 	if (live && lag >= 0 && (lag == 0 || !fireSkipsLagM_.load()))
-	{
-		const uint64_t firing = autofireMask_.load();
-		for (size_t b = 0; b < 64; b++)
-			if (firing >> b & 1) fireAtM_[b]++;
-	}
+		autofireMask_.get().each([this](size_t b) {
+			if (fireAtM_.size() <= b) fireAtM_.resize(b + 1, 0);
+			fireAtM_[b]++;
+		});
 	/* and the Auto-hold columns' patterns, each by its own rule for lag frames */
 	if (live && lag >= 0)
 		for (size_t i = 0; i < columnPatternsM_.size(); i++)
@@ -6211,7 +6231,7 @@ void SessionViewModel::updateOverlay(int64_t f, int64_t changedFrom)
 			if (!neutral.empty()) inputs_.neutralAxes(neutral.data());
 			for (int64_t at = size - 1; at >= 0; at--)
 			{
-				bool pressed = inputs_.at(at) != 0;
+				bool pressed = inputs_.at(at).any();
 				if (!pressed && !axes.empty())
 				{
 					inputs_.axesAt(at, axes.data());
@@ -6250,7 +6270,7 @@ std::string SessionViewModel::inputDisplay(int64_t frame) const
 }
 
 std::string SessionViewModel::inputDisplay(const std::vector<std::string> &buttons, const std::string &mnemonics,
-	const std::vector<Axis> &axes, uint64_t mask, const std::vector<int32_t> &values)
+	const std::vector<Axis> &axes, const Buttons &pressed, const std::vector<int32_t> &values)
 {
 	/* a control's player: the number after "P" in its name, 0 for the console */
 	auto player = [](const std::string &name) {
@@ -6271,7 +6291,7 @@ std::string SessionViewModel::inputDisplay(const std::vector<std::string> &butto
 			if (player(buttons[b]) == p)
 			{
 				const char mn = b < mnemonics.size() ? mnemonics[b] : (buttons[b].empty() ? '?' : buttons[b].back());
-				out += b < 64 && (mask >> b & 1) ? mn : ' ';
+				out += pressed.test(b) ? mn : ' ';
 			}
 		for (size_t x = 0; x < axes.size() && x < values.size(); x++)
 			if (player(axes[x].name) == p)
@@ -6288,9 +6308,10 @@ std::string SessionViewModel::inputDisplay(const std::vector<std::string> &butto
 	return out;
 }
 
-void SessionViewModel::setRecordMask(uint64_t mask, std::vector<bool> axes)
+void SessionViewModel::setRecordMask(std::optional<Buttons> shown, std::vector<bool> axes)
 {
-	recordMaskM_.store(mask);
+	if (shown) recordShownM_.set(std::move(*shown));
+	recordAllM_.store(!shown);
 	submit([this, axes = std::move(axes)] { recordAxesM_ = axes; });
 }
 

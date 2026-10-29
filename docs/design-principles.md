@@ -11174,6 +11174,39 @@ built from this repository.
 Tested: both workflow files read as YAML; CI's jobs are the two witness
 jobs. The workflows themselves run on push.
 
+## Every button, not the first 64 (2026-10-29)
+
+Issue 411: in the new window, a Ruffle game's arrow keys and Space did
+nothing in recording mode. Ruffle's controller is a keyboard of 103 buttons
+and the arrows are the 83rd to 86th. The engine's calls for one frame of the
+movie (ce_session_movie_get and _set) and its line decoder gave and took the
+buttons as one 64-bit number, and the window kept what is held, autohold,
+autofire, a script's hold, the piano roll's rows and the undo history the
+same way. Every button past the 64th was dropped, and _set wrote it as let
+go, so recording also cleared those columns in a movie made elsewhere. 29 of
+the 57 packages have more than 64 buttons: computers' keyboards, and
+consoles with several players (DuckStation 204, PCSX2 191, MAME 491,
+Mednafen 594). The engine itself always played any number (its movie lines
+have a column a button, and ce_session_set_button hands a core the ones past
+64).
+
+The frame calls and the decoder now take one byte a button, every one of
+them (the decoder's wide twin became the only one, as nothing should use a
+narrower form), and the window carries buttons as a set of any width,
+vm::Buttons, shared between its threads behind a lock. Show Future, the one
+place the window runs frames itself, hands the buttons past 64 to the core
+one by one and lets them go after. The synthetic test core gained a
+SetButton export (it keeps the values and reads none), which the engine
+asks of a package with more than 64 buttons.
+
+Tested: view models opens a package of 88 buttons (the synthetic core's 8
+and 80 keys): a key bound to the 81st is recorded into the movie, the movie
+says it is pressed, the piano roll shows its cell and flips it (a step that
+undo takes back), and a script's hold and autohold of the 82nd and 83rd are
+recorded and handed to the core. With the frames read back as the first 64
+buttons, 5 of those checks failed. Every other check passed unchanged on the
+8-button synthetic core.
+
 ## A history of another machine leaves the greenzone as it was (2026-10-29)
 
 Found while testing issue 411. When the window opens a project it loads the

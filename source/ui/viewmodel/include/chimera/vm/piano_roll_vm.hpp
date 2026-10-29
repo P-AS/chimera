@@ -188,8 +188,8 @@ public:
 	Property<int64_t> axisValue{0};
 
 	/* the rows, for a view that draws its own cells (cells as bits, no Value) */
-	uint64_t frameBits(int64_t frame) const { return inputs_.at(frame); }
-	void readBits(int64_t first, std::vector<uint64_t> &out) const { inputs_.read(first, out); }
+	Buttons frameBits(int64_t frame) const { return inputs_.at(frame); }
+	void readBits(int64_t first, std::vector<Buttons> &out) const { inputs_.read(first, out); }
 	int32_t buttonCount() const;
 	RowModel &frames() { return frames_; }
 	const std::map<int64_t, Marker> &markers() const { return markers_; }
@@ -227,7 +227,7 @@ private:
 	private:
 		PianoRollViewModel &vm_;
 		mutable int64_t cachedRow_ = -1;
-		mutable uint64_t cachedBits_ = 0;
+		mutable Buttons cachedBits_;
 		mutable std::vector<int32_t> cachedAxes_;
 	};
 
@@ -289,12 +289,12 @@ private:
 	 * and the length before and after. */
 	struct Step
 	{
-		std::map<int64_t, std::pair<uint64_t, uint64_t>> frames;
+		std::map<int64_t, std::pair<Buttons, Buttons>> frames;
 		int64_t sizeBefore = 0, sizeAfter = 0;
 		/* frames put in (shiftCount > 0) or taken out (< 0) at shiftAt,
 		 * before the changes above; what was taken out, to put back */
 		int64_t shiftAt = -1, shiftCount = 0;
-		std::vector<uint64_t> removedButtons;
+		std::vector<Buttons> removedButtons;
 		std::vector<std::vector<int32_t>> removedAxes;
 		/* analog values a step set: frame -> (before, after) */
 		std::map<int64_t, std::pair<std::vector<int32_t>, std::vector<int32_t>>> axes;
@@ -324,7 +324,7 @@ private:
 	void historyChanged();
 	struct Row
 	{
-		uint64_t buttons = 0;
+		Buttons buttons;
 		std::vector<int32_t> axes;
 	};
 	/* the most steps kept (Chimera's default, a setting) */
@@ -381,7 +381,7 @@ private:
 	/* editing hidden columns is off and some are hidden: the buttons shown
 	 * (a bit each) and the analog controls shown */
 	bool limited() const;
-	uint64_t shownButtons() const;
+	Buttons shownButtons() const;
 	std::vector<bool> shownAxes() const;
 	/* the session told which columns recording may change */
 	void pushRecordMask();

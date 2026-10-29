@@ -18,6 +18,7 @@
 #include <thread>
 
 #include "chimera/vm/bindings.hpp"
+#include "chimera/vm/buttons.hpp"
 #include "chimera/vm/tr.hpp"
 #include "chimera/vm/gamepads.hpp"
 #include "chimera/vm/sound.hpp"
@@ -401,7 +402,7 @@ public:
 	 * pressed, a space for one not - then its analog controls, five places
 	 * and a comma off neutral, six spaces at it */
 	static std::string inputDisplay(const std::vector<std::string> &buttons, const std::string &mnemonics,
-		const std::vector<Axis> &axes, uint64_t mask, const std::vector<int32_t> &values);
+		const std::vector<Axis> &axes, const Buttons &pressed, const std::vector<int32_t> &values);
 	/* each button's keys ("Down, J1 POV0D"), by index: as they are, as the
 	 * package has them, and given again (the view's thread) */
 	const std::vector<std::string> &bindingTexts() const { return bindings_.texts(); }
@@ -434,7 +435,7 @@ public:
 	{
 		int64_t frame = 0, length = 0;
 		bool appended = false, running = false;
-		uint64_t before = 0, after = 0;
+		Buttons before, after;
 		std::vector<int32_t> axesBefore, axesAfter;
 	};
 	Signal<std::vector<RecordedFrame>> framesRecorded;
@@ -562,12 +563,10 @@ public:
 	/* The UI's thread: another view model changed the open project (its
 	 * markers, branches or details); it is unsaved until saved */
 	void markChanged();
-	/* The UI's thread: the buttons a key or pad held may write into the
-	 * movie (a bit each; all by default) - the piano roll's columns shown,
-	 * when hidden ones are not to be edited, as Chimera records */
-	/* the buttons and analog controls recording may change (the columns shown,
-	 * when hidden columns are not edited; axes empty: all) */
-	void setRecordMask(uint64_t mask, std::vector<bool> axes = {});
+	/* The UI's thread: the buttons and analog controls a key or pad held may
+	 * write into the movie - the piano roll's columns shown, when hidden ones
+	 * are not to be edited, as Chimera records (nullopt and axes empty: all) */
+	void setRecordMask(std::optional<Buttons> shown, std::vector<bool> axes = {});
 	void holdFastForward(bool down);
 	/* whether a key presses any of the machine's buttons */
 	bool keyIsBound(const std::string &name) const { return !bindings_.buttonsOf(name).empty(); }
@@ -841,10 +840,15 @@ private:
 	void projectSwitched();
 	void autosave();
 	std::atomic<bool> unsavedM_{false}, pauseAtEndM_{false};
-	std::atomic<uint64_t> recordMaskM_{~uint64_t{0}};
+	/* the buttons recording may change (Chimera's "allow editing hidden
+	 * columns" off): all, or only these */
+	std::atomic<bool> recordAllM_{true};
+	SharedButtons recordShownM_;
 	std::vector<bool> recordAxesM_;
 	std::atomic<bool> recordingModeM_{false};
 	std::vector<int32_t> loggedAxes_;
+	/* a frame's buttons as the engine reads and writes them, a byte each */
+	std::vector<uint8_t> statesBuf_;
 	Connection recordingWatch_;
 	std::atomic<int64_t> rewindStepM_{1}, rewindStepFastM_{4}, autosaveMsM_{1800000};
 	Clock::time_point autosaveDue_{};
@@ -1013,7 +1017,7 @@ private:
 	std::atomic<bool> scriptsDuringTurboM_{true};
 	std::atomic<bool> scriptRebootM_{false}, holdForScriptM_{false};
 	/* the buttons the core was handed on the frame just run */
-	std::atomic<uint64_t> playedM_{0};
+	SharedButtons playedM_;
 	/* lent to an encode, from the asking until it is given back */
 	std::atomic<bool> borrowedM_{false};
 	bool scriptsNowOnMachine() const { return !turboM_.load() || scriptsDuringTurboM_.load(); }
@@ -1211,8 +1215,9 @@ private:
 	std::vector<AnalogBind> analogBindsM_;
 	std::vector<Axis> axesM_;
 	std::vector<std::string> buttonNamesM_;
-	uint64_t autofireWasM_ = 0;
-	int64_t autofireStartM_[64] = {};
+	Buttons autofireWasM_;
+	/* the frame each button's autofire key went down, by its place */
+	std::vector<int64_t> autofireStartM_;
 	std::vector<std::pair<std::string, int>> padAxes_, padAxesCopy_;
 	/* the keys and pad inputs held this frame */
 	std::vector<std::string> keysThisFrameM_;
@@ -1224,25 +1229,25 @@ private:
 	size_t padCount_ = 0;
 	std::unique_ptr<Sound> soundM_;
 
-	std::atomic<uint64_t> held_{0};
+	SharedButtons held_;
 	/* buttons a script holds for the next frame run (Lua's joypad.set), let go after it */
-	std::atomic<uint64_t> scriptHeld_{0};
+	SharedButtons scriptHeld_;
 	/* what a script let go for the next frame (joypad.set with false) */
-	std::atomic<uint64_t> scriptReleased_{0};
+	SharedButtons scriptReleased_;
 	/* a script's analog values: for the next frame (joypad.setaxis), and held
 	 * until let go (joypad.setanalog), by the control's place */
 	std::mutex scriptAxesM_;
 	std::map<size_t, int32_t> scriptAxesOnce_, scriptAxesHeld_;
 	/* the sticky buttons, a bit each, and which arming is on (1 hold, 2 fire) */
-	std::atomic<uint64_t> autoholdMask_{0}, autofireMask_{0};
+	SharedButtons autoholdMask_, autofireMask_;
 	std::atomic<int> armed_{0};
 	std::atomic<int64_t> fireOnM_{1}, fireOffM_{1};
 	std::atomic<bool> fireSkipsLagM_{true};
 	/* each firing button's place in its pattern, and the pads' buttons held
 	 * at the last frame (a pad's press arms a toggle too) - the machine's */
-	std::array<int64_t, 64> fireAtM_{};
-	uint64_t padWasM_ = 0;
-	void toggleSticky(uint64_t pressed);
+	std::vector<int64_t> fireAtM_;
+	Buttons padWasM_;
+	void toggleSticky(const Buttons &pressed);
 	void stickyChanged();
 	std::vector<Connection> stickyWatches_;
 

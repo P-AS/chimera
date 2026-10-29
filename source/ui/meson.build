@@ -227,11 +227,22 @@ synth_48k = custom_target(
   build_always_stale: true,
   build_by_default: false,
 )
+# a controller wider than the 64 buttons one number carries: 80 keys after
+# the synthetic core's eight (issue 411)
+wide_buttons = '["Key 01", "Key 02", "Key 03", "Key 04", "Key 05", "Key 06", "Key 07", "Key 08", "Key 09", "Key 10", "Key 11", "Key 12", "Key 13", "Key 14", "Key 15", "Key 16", "Key 17", "Key 18", "Key 19", "Key 20", "Key 21", "Key 22", "Key 23", "Key 24", "Key 25", "Key 26", "Key 27", "Key 28", "Key 29", "Key 30", "Key 31", "Key 32", "Key 33", "Key 34", "Key 35", "Key 36", "Key 37", "Key 38", "Key 39", "Key 40", "Key 41", "Key 42", "Key 43", "Key 44", "Key 45", "Key 46", "Key 47", "Key 48", "Key 49", "Key 50", "Key 51", "Key 52", "Key 53", "Key 54", "Key 55", "Key 56", "Key 57", "Key 58", "Key 59", "Key 60", "Key 61", "Key 62", "Key 63", "Key 64", "Key 65", "Key 66", "Key 67", "Key 68", "Key 69", "Key 70", "Key 71", "Key 72", "Key 73", "Key 74", "Key 75", "Key 76", "Key 77", "Key 78", "Key 79", "Key 80"]'
+synth_wide = custom_target(
+  'synth-wide',
+  output: 'synth-wide.chimeraCore',
+  command: [find_program('python3'), files('viewmodel/tests/renamed-package.py'),
+    repo_root / 'build/Cores/synth-box.chimeraCore', 'Synth Wide', '@OUTPUT@', '', '', '', wide_buttons],
+  build_always_stale: true,
+  build_by_default: false,
+)
 test(
   'view models',
   test_vm,
   args: [repo_root / 'build/Cores/synth-box.chimeraCore', repo_root / 'tests/synth/roms/gridWalker.testrom',
-    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios, synth_compile, synth_square, synth_48k],
+    repo_root / 'tests/synth/movies', repo_root / 'tests/synth/goldens', synth_again, synth_slots, synth_hashed, synth_game, synth_keys, synth_plain_game, synth_bios, synth_compile, synth_square, synth_48k, synth_wide],
   # OpenAL's device that plays to nowhere: the sound check runs with no speakers;
   # the ffmpeg the build ships, for the encode
   # and the headless runner, which compile sessions are

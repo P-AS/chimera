@@ -1638,20 +1638,16 @@ CE_API int64_t ce_session_frame(const ce_session *s);
  * while another thread edits the movie: ce_session_movie_text is. */
 CE_API const ce_movie_log *ce_session_movie_log(const ce_session *s);
 
-/* Decodes one entry against THIS session's controller: buttons_out gets the
- * pressed-button mask (bit per button in config order), axes_out (may be null)
- * gets ce_session_axis_count values in config order, each axis the entry does
- * not carry left at its declared neutral. 0 on success, nonzero when the entry
- * runs out before the controller does or an axis field will not parse.
+/* Decodes one entry against THIS session's controller: states_out (may be
+ * null) gets ce_session_button_count bytes, 0/1 per button in config order -
+ * exact for any width (a keyboard is a hundred keys, Mednafen's controllers
+ * are 594: issue 411) - and axes_out (may be null) gets ce_session_axis_count
+ * values in config order, each axis the entry does not carry left at its
+ * declared neutral. 0 on success, nonzero when the entry runs out before the
+ * controller does or an axis field will not parse.
  * The inverse - generating an entry - is what record mode does; a caller that
  * wants an entry drives the movie rather than formatting one itself. */
 CE_API int32_t ce_session_movie_entry_decode(
-	const ce_session *s, const char *entry, uint64_t *buttons_out, int32_t *axes_out);
-
-/* The wide twin: states_out (may be null) gets ce_session_button_count
- * bytes, 0/1 per button in config order - the form a controller wider than
- * 64 buttons needs, and exact for any width. Same returns as above. */
-CE_API int32_t ce_session_movie_entry_decode_wide(
 	const ce_session *s, const char *entry, uint8_t *states_out, int32_t *axes_out);
 
 /* ---- the movie, edited frame by frame (the window, issue 142)
@@ -1672,15 +1668,16 @@ CE_API int32_t ce_session_movie_entry_decode_wide(
  * machine back on a stored frame before the edit and plays the movie up to
  * where it was - so the machine is always what the movie it has makes it. */
 
-/* A frame's buttons (bit per button in config order, the first 64) and axes
+/* A frame's buttons (states_out: ce_session_button_count bytes, 0/1 per
+ * button in config order, every one of them; may be NULL) and axes
  * (ce_session_axis_count values; may be NULL). 0 read; 1 past the movie's
  * end (nothing pressed, axes neutral); -1 the line cannot be read. */
-CE_API int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint64_t *buttons_out, int32_t *axes_out);
-/* Writes a frame's input (axes may be NULL for neutral). A frame past the end
- * lengthens the movie with empty frames up to it. A session with no movie
- * gets one, in play mode, naming its columns as a recording does. 0, or -1
- * for a frame before 0. */
-CE_API int32_t ce_session_movie_set(ce_session *s, int64_t frame, uint64_t buttons, const int32_t *axes);
+CE_API int32_t ce_session_movie_get(const ce_session *s, int64_t frame, uint8_t *states_out, int32_t *axes_out);
+/* Writes a frame's input: states (ce_session_button_count bytes; NULL for
+ * none pressed), axes (NULL for neutral). A frame past the end lengthens the
+ * movie with empty frames up to it. A session with no movie gets one, in play
+ * mode, naming its columns as a recording does. 0, or -1 for a frame before 0. */
+CE_API int32_t ce_session_movie_set(ce_session *s, int64_t frame, const uint8_t *states, const int32_t *axes);
 /* Shortens the movie, or lengthens it with empty frames. */
 CE_API void ce_session_movie_resize(ce_session *s, int64_t frames);
 /* `count` empty frames put in at `frame` (the frames from it move later),
