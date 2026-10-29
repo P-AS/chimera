@@ -528,6 +528,8 @@ if not meson.is_cross_build()
       ),
       # (the state container test finds libzstd the way the shipped library
       # does: beside its own binary, which in the build dir it is)
+      # RAM search takes 9 s here and 28 to 30 s on a CI runner
+      timeout: engine_test == 'ram_search' ? 120 : 30,
     )
   endforeach
 endif
