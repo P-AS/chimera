@@ -22,6 +22,11 @@ ApplicationWindow {
     property var askFirst: (then) => then()
     property Window mainWindow: null
     property var themeColor: (role, fallback) => fallback
+    // a Config > Paths folder for a file dialog to open in: games in ROM's,
+    // firmware in Firmware's, as Chimera's wizard (issue 402)
+    property var folderOf: null
+    // a game file picked: where the next game dialog opens, when Paths says so
+    property var gameChosen: null
     title: qsTrId("new_project.new_chimera_project")
     width: 620
     height: 480
@@ -118,16 +123,22 @@ ApplicationWindow {
         id: fileDialog
         title: qsTrId("new_project.choose_a_file")
         fileMode: FileDialog.OpenFiles
-        onAccepted: { for (const f of selectedFiles) win.run("addFile", [win.slotFor, f]) }
+        currentFolder: win.folderOf ? win.folderOf("ROM") : ""
+        onAccepted: {
+            if (win.gameChosen && selectedFiles.length > 0) win.gameChosen(selectedFiles[0])
+            for (const f of selectedFiles) win.run("addFile", [win.slotFor, f])
+        }
     }
     FileDialog {
         id: firmwareDialog
         property string need: ""
+        currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
         onAccepted: win.run("chooseFirmware", [firmwareDialog.need, selectedFile])
     }
     FolderDialog {
         id: scanDialog
         title: qsTrId("new_project.scan_a_folder_for_firmware")
+        currentFolder: win.folderOf ? win.folderOf("Firmware") : ""
         onAccepted: win.run("scanFolder", [selectedFolder, scanSubfolders.checked])
     }
     FileDialog {

@@ -44,6 +44,23 @@ bool samePlace(const std::string &a, const std::string &b)
 	return !one && !other ? x == y : a == b;
 }
 
+/* A game's name made fit for a file's, as Chimera makes it: '/' and '|'
+ * become '+', ':' becomes " -", '"' and what no file name may hold are left
+ * out, and so are dots at its end (the extension follows them) */
+std::string projectFileName(const std::string &name)
+{
+	std::string out;
+	for (const char c : name)
+	{
+		if (c == '/' || c == '|') out += '+';
+		else if (c == ':') out += " -";
+		else if (c == '"' || c == '<' || c == '>' || c == '\\' || c == '?' || c == '*' || static_cast<unsigned char>(c) < 32) continue;
+		else out += c;
+	}
+	while (!out.empty() && out.back() == '.') out.pop_back();
+	return out;
+}
+
 /* A zip of the files given, each stored as it is (the savedata export's,
  * for more than one file; a zip any unzipper opens) */
 uint32_t crc32Of(const std::vector<uint8_t> &bytes)
@@ -898,6 +915,16 @@ SessionViewModel::SessionViewModel(Dispatcher &dispatcher, InputLog &inputs)
 			});
 			return {};
 		});
+	command("suggestedProjectFile", "where Save Project As proposes the project goes, as Chimera's: its own file once it "
+		"has one, else the game's name in the folder given (the Movies folder), made fit for a file name", {"folder"},
+		[this](const Args &a, std::string &error) -> Value {
+			std::string folder;
+			if (!arg(a, 0, folder, error)) return {};
+			if (!projectPath.get().empty()) return projectPath.get();
+			const std::string name = projectFileName(gameName.get().empty() ? projectTitle.get() : gameName.get());
+			if (name.empty()) return folder;
+			return (std::filesystem::path(folder) / (name + ".chimeraProject")).string();
+		}, &hasProject);
 	command("saveBackup", "writes the project as it stands to the backup folder, named for it and the date and time, "
 		"as Chimera's Save Project Backup does; the project's own file is left as it is", {},
 		[this](const Args &, std::string &error) -> Value {

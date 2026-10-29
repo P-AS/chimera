@@ -1082,10 +1082,33 @@ int main(int argc, char **argv)
 	vm::PathsViewModel paths(dispatcher);
 	paths.programFolder.set(QCoreApplication::applicationDirPath().toStdString());
 	for (const char *name : {"base", "changed", "systems", "systemChanged", "recentForRoms", "lastRomFolder"}) config.keep(paths, name);
-	auto followPaths = [&paths, &session, &cores] {
+	/* the temporary folder the system gave, put back when Temp Files is emptied */
+	struct TempWas
+	{
+		const char *name;
+		bool set;
+		QByteArray value;
+	};
+	std::vector<TempWas> tempWas;
+	for (const char *name : {"TMPDIR", "TMP", "TEMP", "TEMPDIR"}) tempWas.push_back({name, qEnvironmentVariableIsSet(name), qgetenv(name)});
+	auto followPaths = [&paths, &session, &cores, &tempWas] {
 		session.backupFolder.set(paths.resolve("Movie backups"));
 		if (!qEnvironmentVariableIsSet("CHIMERA_FIRMWARE_DIR") && cores.firmwareFolder.get() != paths.resolve("Firmware"))
 			cores.firmwareFolder.set(paths.resolve("Firmware"));
+		/* the Movies folder is there for the project dialogs to open in, as
+		 * Chimera makes it (issue 399) */
+		std::error_code ec;
+		std::filesystem::create_directories(paths.resolve("Movies"), ec);
+		/* Temp Files, when set, is the whole program's temporary folder, as
+		 * Chimera's (issue 402); emptied, the system's own again */
+		const std::string temp = paths.tempFolder();
+		if (!temp.empty()) std::filesystem::create_directories(temp, ec);
+		for (const TempWas &t : tempWas)
+		{
+			if (!temp.empty()) qputenv(t.name, QString::fromStdString(temp).toLocal8Bit());
+			else if (t.set) qputenv(t.name, t.value);
+			else qunsetenv(t.name);
+		}
 	};
 	followPaths();
 	vm::Connection pathsFollowed = paths.moved.connect(followPaths);

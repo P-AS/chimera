@@ -202,6 +202,15 @@ PathsViewModel::PathsViewModel(Dispatcher &dispatcher) : ViewModel("paths", disp
 			while (!at.empty() && !fs::is_directory(at, ec) && at.has_parent_path() && at.parent_path() != at) at = at.parent_path();
 			return at.string();
 		});
+	command("gameChosen", "a game file picked in a dialog: its folder is where the last game came from, which the ROM "
+		"dialogs open in when recentForRoms", {"path"}, [this](const Args &a, std::string &error) -> Value {
+			std::string path;
+			if (!arg(a, 0, path, error)) return {};
+			std::error_code ec;
+			const fs::path whole = fs::absolute(path, ec);
+			lastRomFolder.set((ec ? fs::path(path) : whole).parent_path().string());
+			return {};
+		});
 	command("resetAll", "every folder back to Chimera's", {}, [this](const Args &, std::string &) -> Value {
 		changed.set("{}");
 		systemChanged.set("{}");
@@ -314,6 +323,11 @@ std::string PathsViewModel::resolve(const std::string &name) const
 		return absolute(path == "Tools" ? tools : (fs::path(tools) / path).string(), "");
 	}
 	return absolute(path, "");
+}
+
+std::string PathsViewModel::tempFolder() const
+{
+	return pathOf("Temp Files").empty() ? std::string() : resolve("Temp Files");
 }
 
 std::string PathsViewModel::resolveFor(const std::string &system, const std::string &name) const

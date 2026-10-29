@@ -226,6 +226,15 @@ ApplicationWindow {
         saveAsDialog.parentWindow = over ? over : root
         askSaveDialog.open()
     }
+    // Save Project As, as Chimera's: its own file once it has one, else the
+    // game's name in the Movies folder (issue 399)
+    function askSaveAs() {
+        const folder = root.paths.run("dialogFolder", ["Movies"]) || ""
+        const suggested = root.session.run("suggestedProjectFile", [folder]) || folder
+        saveAsDialog.currentFolder = root.pictureFiles.folderUrl(suggested === folder ? folder : suggested.replace(/[\\/][^\\/]*$/, ""))
+        if (suggested !== folder) saveAsDialog.selectedFile = root.pictureFiles.folderUrl(suggested)
+        saveAsDialog.open()
+    }
     function quitProgram() { root.leaveProject(() => { root.leaving = true; Qt.quit() }) }
     // a project started: the open one's changes asked about, then Chimera's
     // question when freezes are on (Yes keeps them, No switches them off,
@@ -358,7 +367,7 @@ ApplicationWindow {
                 if (root.session.projectPath !== "") root.openProject(root.session.projectPath)
             }
             else if (action === "Save Movie") {
-                if (root.session.hasProject) root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject")
+                if (root.session.hasProject) root.session.projectPath === "" ? root.askSaveAs() : root.session.run("saveProject")
             }
             else if (action === "Encode Video") root.encodeVideo()
             else if (action === "Larger Window" || action === "Smaller Window") {
@@ -425,8 +434,8 @@ ApplicationWindow {
                     }
                 }
                 // a project not saved yet asks where it goes
-                Action { text: qsTrId("main.save_project"); icon.source: "qrc:/chimera/menu/SaveProject.png"; shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? saveAsDialog.open() : root.session.run("saveProject") }
-                Action { text: qsTrId("main.save_project_as"); icon.source: "qrc:/chimera/menu/SaveProjectAs.png"; shortcut: "Ctrl+Shift+S"; enabled: root.session.hasProject; onTriggered: saveAsDialog.open() }
+                Action { text: qsTrId("main.save_project"); icon.source: "qrc:/chimera/menu/SaveProject.png"; shortcut: "Ctrl+S"; enabled: root.session.hasProject; onTriggered: root.session.projectPath === "" ? root.askSaveAs() : root.session.run("saveProject") }
+                Action { text: qsTrId("main.save_project_as"); icon.source: "qrc:/chimera/menu/SaveProjectAs.png"; shortcut: "Ctrl+Shift+S"; enabled: root.session.hasProject; onTriggered: root.askSaveAs() }
                 Action { text: qsTrId("main.save_project_backup"); icon.source: "qrc:/chimera/menu/SaveProjectBackup.png"; enabled: root.session.projectPath !== ""; onTriggered: root.session.run("saveBackup") }
                 // the open project's settings, changed: its machine starts again with them (issue 370)
                 Action { text: qsTrId("main.project_settings"); icon.source: "qrc:/chimera/menu/Customize.png"; enabled: root.session.hasProject && root.session.isOpen; onTriggered: { root.bring(projectSettingsWindow) } }
@@ -789,7 +798,7 @@ ApplicationWindow {
         }
         Shown {
             text: qsTrId("main.save_movie_as"); icon.source: "qrc:/chimera/menu/SaveMovie.png"; visible: root.session.hasProject
-            onTriggered: saveAsDialog.open()
+            onTriggered: root.askSaveAs()
         }
         ShownSeparator { visible: root.session.isOpen }
         Shown { text: qsTrId("main.screenshot"); icon.source: "qrc:/chimera/menu/Screenshot.png"; visible: root.session.isOpen; onTriggered: root.hotkeys.run("run", ["Screenshot"]) }
@@ -944,7 +953,10 @@ ApplicationWindow {
         toolWindows: root.toolWindows; mainWindow: root; gameProperties: root.gameProperties
         viewInHexEditor: root.viewInHexEditor
     }
-    NewProject { id: newProjectWindow; vm: root.newProject; askFirst: (then) => root.leaveProject(then, newProjectWindow); mainWindow: root; themeColor: root.osdColor; visible: false }
+    NewProject {
+        id: newProjectWindow; vm: root.newProject; askFirst: (then) => root.leaveProject(then, newProjectWindow); mainWindow: root; themeColor: root.osdColor; visible: false
+        folderOf: root.folderOf; gameChosen: (file) => root.paths.run("gameChosen", [file])
+    }
     // New Project pauses the machine while it is open, as Chimera's did, and
     // lets it run again when it closes without making a project (issue 392)
     property bool runAfterNewProject: false
@@ -1095,7 +1107,7 @@ ApplicationWindow {
     FileDialog {
         id: saveAsDialog
         title: qsTrId("main.save_the_project_as")
-        currentFolder: root.folderOf("Movies")
+        // its folder and file name are set as it opens (askSaveAs)
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTrId("main.chimera_projects_chimeraproject")]
         onAccepted: root.session.run("saveProject", [selectedFile])
@@ -1177,7 +1189,7 @@ ApplicationWindow {
                 onClicked: {
                     askSaveDialog.close()
                     root.afterSave = root.afterAsk
-                    if (root.session.projectPath === "") saveAsDialog.open()
+                    if (root.session.projectPath === "") root.askSaveAs()
                     else root.session.run("saveProject")
                 }
             }
@@ -1241,7 +1253,7 @@ ApplicationWindow {
                     const quit = () => { root.leaving = true; Qt.quit() }
                     if (!root.session.unsaved && root.session.projectPath !== "") { quit(); return }
                     root.afterSave = quit
-                    if (root.session.projectPath === "") saveAsDialog.open()
+                    if (root.session.projectPath === "") root.askSaveAs()
                     else root.session.run("saveProject")
                 }
             }

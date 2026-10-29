@@ -48,6 +48,9 @@ public:
 	/* a system's folder, as Chimera does: the system's own path of that
 	 * kind, else the system's base, else the global base */
 	std::string resolveFor(const std::string &system, const std::string &name) const;
+	/* the Temp Files folder made absolute, "" while it is not set (the
+	 * system's own temporary folder is used then) */
+	std::string tempFolder() const;
 	/* a path as it is set (changed or Chimera's) */
 	std::string pathOf(const std::string &name) const;
 	std::string pathOf(const std::string &system, const std::string &name) const;

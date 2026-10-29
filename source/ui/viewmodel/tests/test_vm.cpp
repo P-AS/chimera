@@ -1271,7 +1271,15 @@ void pathsConfig()
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program" / "lua").string());
 	paths.recentForRoms.set(false);
 	CHECK(fromValue(paths.run("dialogFolder", {std::string("ROM")}, error).value_or(Value()), got) && got == (dir / "program").string());
+	/* a game picked in a dialog is where the last game came from (issue 402) */
+	CHECK(paths.run("gameChosen", {(dir / "games" / "a game.nes").string()}, error).has_value() &&
+		paths.lastRomFolder.get() == (dir / "games").string());
+	/* Temp Files: nothing while it is not set (the system's own folder), the folder when it is */
+	CHECK(paths.tempFolder().empty());
+	CHECK(paths.run("setPath", {std::string("Temp Files"), std::string("./tmp")}, error).has_value() &&
+		paths.tempFolder() == (dir / "program" / "tmp").string());
 	CHECK(paths.run("resetAll", {}, error).has_value() && paths.changed.get() == "{}" && paths.resolve("Movies") == (dir / "program" / "movies").string());
+	CHECK(paths.tempFolder().empty());
 	removeTree(dir);
 }
 
@@ -7867,8 +7875,17 @@ bool newProjectWizard(const char *package, const char *rom, const char *slotsPac
 	session.run("frameAdvance", {}, error);
 	CHECK(d.until([&] { return session.frame.get() == 1; }, 20));
 	CHECK(!session.run("saveProject", {}, error) && error == "this project has not been saved yet: say where it goes");
+	/* Save Project As proposes the game's name in the folder given (the
+	 * Movies folder), and once saved the project's own file (issue 399) */
+	auto suggested = [&] {
+		std::string at;
+		fromValue(session.run("suggestedProjectFile", {(dir / "movies").string()}, error).value_or(Value()), at);
+		return at;
+	};
+	CHECK(suggested() == (dir / "movies" / "walker.chimeraProject").string());
 	CHECK(session.run("saveProject", {boardA.string()}, error).has_value());
 	CHECK(d.until([&] { return session.projectPath.get() == boardA.string(); }, 20));
+	CHECK(suggested() == boardA.string());
 	CHECK(std::regex_search(readFile(boardA), std::regex("\"gameLogo\"\\s*:\\s*\"on\"")));
 	/* the renderer, asked apart, is recorded like any setting */
 	CHECK(std::regex_search(readFile(boardA), std::regex("\"renderer\"\\s*:\\s*\"software\"")));
