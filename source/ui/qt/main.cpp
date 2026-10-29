@@ -111,7 +111,9 @@
 #include "jump_list.hpp"
 #include "single_instance.hpp"
 #include "headless_run.hpp"
+#include "key_filter.hpp"
 #include "key_names.hpp"
+#include "menu_letters.hpp"
 #include "picture_item.hpp"
 #include "piano_roll_item.hpp"
 #include "qml_view_model.hpp"
@@ -132,100 +134,6 @@ public:
 
 private:
 	QObject *context_;
-};
-
-/* Keys pressed in the window go to the machine, by Chimera's key names, and
- * to the hotkeys, named with the modifiers held as Chimera writes them
- * ("Ctrl+Shift+V"); both, as Chimera does by default. A key typed into a
- * text field is the field's. A window that loses the keyboard lets go of
- * every key it held. */
-class KeyFilter : public QObject
-{
-public:
-	KeyFilter(vm::SessionViewModel &session, vm::HotkeysViewModel &hotkeys, vm::HostInputViewModel &input)
-		: session_(session), hotkeys_(hotkeys), input_(input) {}
-
-	/* a pointer button over the picture, routed as a key is (no modifiers) */
-	void button(const QString &name, bool down)
-	{
-		if (down)
-		{
-			if (down_.count(name) != 0) return;
-			const auto route = vm::HotkeysViewModel::route(hotkeys_.keyPriority.get(), hotkeys_.boundTo(name.toStdString()),
-				session_.keyIsBound(name.toStdString()));
-			down_[name] = {name, route.hotkey, route.control};
-			if (route.control) session_.key(name.toStdString(), true);
-			if (route.hotkey) hotkeys_.key(name.toStdString(), true);
-		}
-		else if (const auto it = down_.find(name); it != down_.end())
-		{
-			if (it->second.control) session_.key(name.toStdString(), false);
-			if (it->second.hotkey) hotkeys_.key(name.toStdString(), false);
-			down_.erase(it);
-		}
-	}
-
-protected:
-	bool eventFilter(QObject *watched, QEvent *e) override
-	{
-		if (e->type() == QEvent::KeyPress || e->type() == QEvent::KeyRelease)
-		{
-			auto *k = static_cast<QKeyEvent *>(e);
-			auto *typing = qobject_cast<QQuickItem *>(QGuiApplication::focusObject());
-			const bool down = e->type() == QEvent::KeyPress;
-			if (down && typing != nullptr && typing->flags().testFlag(QQuickItem::ItemAcceptsInputMethod))
-				return QObject::eventFilter(watched, e);
-			if (!k->isAutoRepeat())
-			{
-				const QString name = qt::keyName(*k);
-				if (!name.isEmpty())
-				{
-					if (down)
-					{
-						/* the combination it was pressed with is the one let go;
-						 * Key Priority says which of the two it goes to */
-						const QString combo = qt::keyCombination(name, k->modifiers());
-						const auto route = vm::HotkeysViewModel::route(hotkeys_.keyPriority.get(),
-							hotkeys_.boundTo(combo.toStdString()), session_.keyIsBound(name.toStdString()));
-						down_[name] = {combo, route.hotkey, route.control};
-						/* what is held, whatever it is bound to, for Lua's input.get */
-						input_.key(name.toStdString(), true);
-						if (route.control) session_.key(name.toStdString(), true);
-						if (route.hotkey) hotkeys_.key(combo.toStdString(), true);
-					}
-					else if (const auto it = down_.find(name); it != down_.end())
-					{
-						if (it->second.control) session_.key(name.toStdString(), false);
-						input_.key(name.toStdString(), false);
-						if (it->second.hotkey) hotkeys_.key(it->second.combo.toStdString(), false);
-						down_.erase(it);
-					}
-				}
-			}
-		}
-		else if (e->type() == QEvent::FocusOut || e->type() == QEvent::WindowDeactivate)
-		{
-			for (const auto &[name, held] : down_)
-			{
-				if (held.control) session_.key(name.toStdString(), false);
-				if (held.hotkey) hotkeys_.key(held.combo.toStdString(), false);
-			}
-			down_.clear();
-			input_.releaseKeys();
-		}
-		return QObject::eventFilter(watched, e);
-	}
-
-private:
-	vm::SessionViewModel &session_;
-	vm::HotkeysViewModel &hotkeys_;
-	vm::HostInputViewModel &input_;
-	struct Held
-	{
-		QString combo;
-		bool hotkey = true, control = true;
-	};
-	std::map<QString, Held> down_;
 };
 
 #ifdef _WIN32
@@ -1229,6 +1137,9 @@ int main(int argc, char **argv)
 	qt::QmlViewModel hotkeysQml(hotkeys);
 	qt::KeyNamer keyNamer;
 	app.installEventFilter(&keyNamer);
+	/* the menus' letters, drawn while the keyboard works the menus (issue 405) */
+	qt::MenuLetters menuLetters;
+	app.installEventFilter(&menuLetters);
 	qt::ThemeColors themeColors;
 	qt::QmlViewModel helpQml(help);
 	/* Tools > MCP Server...: an AI agent working on the open project (docs/mcp-server.md) */
@@ -1569,6 +1480,8 @@ int main(int argc, char **argv)
 	engine.rootContext()->setContextProperty(QStringLiteral("localFiles"), &pictureFiles);
 	/* --headless, for every window: none is shown, and a dialog that opens ends the run */
 	engine.rootContext()->setContextProperty(QStringLiteral("headlessRun"), &headlessRun);
+	/* every menu item reads it, the style's own (style/MenuItem.qml) */
+	engine.rootContext()->setContextProperty(QStringLiteral("menuLetters"), &menuLetters);
 	/* another language chosen in Config > Language: the window's words change at once */
 	vm::Connection languageWatch = customize.language.changed.connect([&app, &engine, &customize] {
 		if (qt::useLanguage(app, QString::fromStdString(customize.language.get()))) engine.retranslate();
@@ -1625,7 +1538,7 @@ int main(int argc, char **argv)
 		session.vsyncTick();
 		if (session.wantsVsync()) window->update();
 	}, Qt::DirectConnection);
-	KeyFilter keys(session, hotkeys, hostInput);
+	qt::KeyFilter keys(session, hotkeys, hostInput);
 	buttonRouter.route = [&keys](const QString &name, bool down) { keys.button(name, down); };
 	window->installEventFilter(&keys);
 	/* TAStudio passes the keys on too, as Chimera's does: the machine's and the hotkeys */

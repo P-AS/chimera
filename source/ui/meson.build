@@ -244,7 +244,7 @@ qt6 = import('qt6')
 qt_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2'], required: get_option('qt_ui'))
 if qt_dep.found()
   qt_moc = qt6.compile_moc(
-    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp', 'qt/picture_files.hpp', 'qt/pointer_capture.hpp', 'qt/button_router.hpp', 'qt/headless_run.hpp'],
+    headers: ['qt/qml_view_model.hpp', 'qt/picture_item.hpp', 'qt/piano_roll_item.hpp', 'qt/key_names.hpp', 'qt/menu_letters.hpp', 'qt/theme_palette.hpp', 'qt/clipboard_relay.hpp', 'qt/picture_files.hpp', 'qt/pointer_capture.hpp', 'qt/button_router.hpp', 'qt/headless_run.hpp'],
     include_directories: [vm_inc, engine_inc],
     dependencies: [qt_dep],
   )
@@ -261,6 +261,8 @@ if qt_dep.found()
     'qt/picture_item.cpp',
     'qt/piano_roll_item.cpp',
     'qt/key_names.cpp',
+    'qt/key_filter.cpp',
+    'qt/menu_letters.cpp',
     'qt/single_instance.cpp',
     'qt/theme_palette.cpp',
     'qt/translations.cpp',
@@ -388,6 +390,21 @@ if qt_dep.found()
     override_options: ['cpp_std=c++20'],
   )
   test('key names', test_key_names, env: ['QT_QPA_PLATFORM=offscreen'], timeout: 60)
+  # a key a hotkey takes is not a menu's, and the menus' letters are drawn
+  # while the keyboard works them (issue 405); Qt's test module drives the
+  # keys, and the Windows Qt is built without it
+  qt_test_dep = dependency('qt6', modules: ['Core', 'Gui', 'Qml', 'Quick', 'QuickControls2', 'Test'], required: false)
+  if qt_test_dep.found()
+    test_key_filter = executable(
+      'test-key-filter',
+      ['qt/tests/test_key_filter.cpp', 'qt/key_filter.cpp', 'qt/key_names.cpp', 'qt/menu_letters.cpp',
+        qt6.compile_moc(headers: ['qt/key_names.hpp', 'qt/menu_letters.hpp'], dependencies: [qt_dep]), qt_rcc],
+      dependencies: [qt_test_dep, vm_dep],
+      override_options: ['cpp_std=c++20'],
+      cpp_args: ['-DQT_NO_KEYWORDS'],
+    )
+    test('key filter', test_key_filter, env: ['QT_QPA_PLATFORM=offscreen', 'ALSOFT_DRIVERS=null'], timeout: 60)
+  endif
   # single instance mode's hand-over of the files named, in Chimera's payload
   test_single_instance = executable(
     'test-single-instance',

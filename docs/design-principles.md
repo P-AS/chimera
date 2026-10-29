@@ -11124,3 +11124,32 @@ Tested in a scratch run of the window: the scale was 1.32 in the default
 window (632 pixels tall), 1 at 120, 1.5 at 720, and 1 again with the
 setting off. The window test loads the Display window under the strict
 QML check.
+
+## A key a hotkey takes is not a menu's (2026-10-29)
+
+Issue 405: in the new window, pressing a hotkey opened menus. Qt's menu bar
+takes Alt and a letter as the menu with that letter whatever else the key
+does, and on Windows it takes the keyboard to the menus when Alt is let go
+even after another key was pressed with it (Windows itself does not), after
+which plain keys open menus. Its letters were also underlined all the time.
+The old window gave the keys to the hotkeys first and passed only what they
+did not take to the menus, and Windows hid the letters until Alt.
+
+Now, in the main window and TAStudio, a combination a hotkey or a control
+takes is kept from Qt's shortcuts and menu letters and comes to them as a
+key; Alt+V with nothing bound to it still opens the View menu. A key
+pressed while Alt is held, or Alt that is itself bound, makes the menu bar
+forget it was waiting for Alt to be let go (it forgets at an event of the
+kind sent for it). The menus' letters are drawn from Alt pressed until a
+click, the focus leaving the menus, or Alt let go with no menu taken; the
+window's style draws them so (style/MenuBarItem.qml and MenuItem.qml, Qt's
+Fusion ones with that change), and the letters work either way. The key
+filter moved out of main.cpp into key_filter.cpp to be tested.
+
+Tested: key filter, in the window's own style with Qt's test keys: Alt+V
+opens the View menu while nothing takes it; with a hotkey bound to it the
+hotkey runs once and the menu stays shut (it opened with the override taken
+out); the View item is drawn "View" until Alt is pressed, "&View" after,
+and plain again after a click or Alt let go (each failed when broken).
+Qt's menu bar takes the keyboard on Alt let go only on Windows, so the
+forgetting was not tried: not tried on Windows.
