@@ -127,6 +127,29 @@ int main()
 		assert(texts.text("load.files\x1f" "1") == "1 Datei fehlt");
 		assert(lang::use("fr"));   /* the package has no French: its English */
 		assert(texts.text("slot.help") == "The disk.");
+		/* Neither the language in use nor English, nor a key the one table
+		 * there is lacks, nor a table that does not read, stops anything: any
+		 * table the package has gives the text (owner, 2026-10-29). */
+		{
+			std::map<std::string, std::string> only = {
+				{"languages/de.json", R"({"texts": {"slot.help": "Die Diskette.", "load.missing": "%1 fehlt in %2"}})"},
+				{"languages/es.json", R"({"texts": {"slot.help": "El disco."}})"},
+				{"languages/it.json", "not a table"},
+			};
+			auto onlyEntry = [&only](const std::string &name, std::string &bytes) {
+				auto it = only.find(name);
+				if (it == only.end()) return false;
+				bytes = it->second;
+				return true;
+			};
+			lang::PackageTexts some;
+			some.read(onlyEntry);
+			assert(some.text("slot.help") == "Die Diskette.");   /* French in use: German comes first of what there is */
+			assert(lang::use("es"));
+			assert(some.text("slot.help") == "El disco." && some.text("load.missing\x1f" "a\x1f" "b") == "a fehlt in b");
+			assert(lang::use("it"));
+			assert(some.text("slot.help") == "Die Diskette." && some.text("Not a key") == "Not a key");
+		}
 		assert(lang::use("en"));
 
 		/* the declarations: every text a key, given every argument it uses */

@@ -471,6 +471,7 @@ void PackageTexts::read(const std::function<bool(const std::string &, std::strin
 	raw_.clear();
 	code_.clear();
 	englishRead_ = false;
+	others_.clear();
 	for (const Language &l : languages())
 	{
 		std::string bytes;
@@ -542,6 +543,23 @@ std::string PackageTexts::resolveLocked(const std::string &message, char separat
 	{
 		entry = english_.find(key.c_str());
 		language = "en";
+	}
+	/* A package without the language in use, or without English either, is
+	 * not refused: any table it has will do (owner, 2026-10-29). */
+	for (const Language &l : languages())
+	{
+		if (entry != nullptr) break;
+		if (l.code == code || l.code == "en") continue;
+		auto raw = raw_.find(l.code);
+		if (raw == raw_.end()) continue;
+		auto [other, fresh] = others_.try_emplace(l.code);
+		if (fresh)
+		{
+			std::string error;
+			readTable(raw->second.data(), raw->second.size(), other->second, error);
+		}
+		entry = other->second.find(key.c_str());
+		language = l.code;
 	}
 	if (entry == nullptr) return message;
 	/* an argument that is a key itself, with its own arguments after 0x1E

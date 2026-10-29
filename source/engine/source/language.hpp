@@ -106,8 +106,9 @@ public:
 	 * file of the package by its name, as packageProblems' does */
 	void read(const std::function<bool(const std::string &, std::string &)> &entry);
 	/* one text in the language in use: from the package's table of it, else
-	 * from its English; a message that is no key of either comes back as it
-	 * is */
+	 * from its English, else from any other table it has, in the order
+	 * Chimera lists its languages (owner, 2026-10-29); a message that is no
+	 * key of any comes back as it is */
 	std::string text(const std::string &message) const;
 	/* every string value of a JSON document that is a key, its text, and the
 	 * rest of the document byte for byte (a number a parser would round
@@ -121,6 +122,7 @@ private:
 	mutable std::string code_;                 /* the language table_ is */
 	mutable Table table_, english_;
 	mutable bool englishRead_ = false;
+	mutable std::map<std::string, Table> others_;   /* code: the rest, read when first needed */
 	std::string textLocked(const std::string &message) const;
 	std::string resolveLocked(const std::string &message, char separator, const std::string &code) const;
 };

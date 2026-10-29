@@ -11021,3 +11021,20 @@ journal under the new id. Each was broken once and seen to fail (the first
 file's history was overwritten, as in the witness). meson test 47/47;
 witness 122/0 twice in the same work folder; the Windows build compiles.
 
+## A core's texts come from any table it has (user-decided, 2026-10-29)
+
+The owner: a core that lacks the language in use must not fail; it shows
+English, or whatever language it does have. The engine already showed a
+core's English when the core had no table for the language in use, or the
+table lacked a key, and showed a key as it is when no table had it. Now,
+when English lacks it too, the first table the package has that holds the
+key gives it, in the order Chimera lists its languages. A table that does
+not read is an empty one. Nothing refuses a package for its languages; only
+the test of installed packages (test-packages) holds a package to every
+language, as the 2026-10-28 rules ask.
+
+Tested: engine_language reads a package with only a German table, a Spanish
+one lacking a key and an Italian one that is not JSON: with French in use
+the German text, with Spanish the Spanish and, for the missing key, the
+German, with Italian the German. Broken once (the step left out) and seen
+to fail.
