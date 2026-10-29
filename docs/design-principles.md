@@ -11378,17 +11378,25 @@ there is no portal, and that dialog to fix the same points.
   shows. Issue 389 chose to fix Qt's dialog rather than write one of
   Chimera's own. Qt's dialog has no way in for the points above, so this
   goes the other way, and is the owner's to confirm.
-- The theme test set Fusion's style before the application was made. On
-  KDE, the platform theme then set Breeze's in its place, so the test drew
-  Breeze's controls, and its Lua form check failed on a KDE desktop whatever
-  the change. It now sets the style after the application, as the window
-  does.
+- The theme test set Fusion's style before the application was made. With
+  KDE's Qt platform theme in use (`QT_QPA_PLATFORMTHEME=kde`, which a KDE
+  desktop sets and other desktops can too), that theme then set Breeze's
+  style in its place, so the test drew Breeze's controls, and its Lua form
+  check failed whatever the change. It now sets the style after the
+  application, as the window does.
 
 Measured: the new file chooser test passes both halves, with Chimera's
 chooser (no bus) and through a stand-in portal on a private bus (52 and 54
 checks). With the input filter not installed, the two checks of a key
-pressed while the chooser is open failed. Against this desktop's own portal
-(KDE Plasma), a request was taken and its request object was at the path
-Chimera listens on; choosing a file in KDE's dialog by hand has not been
-tried here. GNOME's, GTK's and the others' choosers, Windows and macOS were
-not tried with this change.
+pressed while the chooser is open failed. Against the portal of the desktop
+it was built on (niri on Wayland, whose portal setup sends file choosing to
+KDE's chooser), a request was taken and its request object was at the path
+Chimera listens on.
+
+By hand, on niri on Wayland: the window was started on a private D-Bus
+session bus, whose desktop portal (xdg-desktop-portal 1.22.1) sent file
+choosing to one chooser alone, as PR 275 was tested. KDE's (6.8.2), GNOME's
+(51.0, with Nautilus 51.1), GTK's (1.15.3, with no pause), COSMIC's (1.10.0)
+and LXQt's (1.4.0) all worked, and so did Chimera's own, shown for a portal
+with no file chooser. Not tried: Plasma, GNOME and COSMIC under their own
+desktops, an X11 session, Windows and macOS.
