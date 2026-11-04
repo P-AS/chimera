@@ -10,7 +10,7 @@ name: macOS
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci-macos-test]
   pull_request:
   workflow_dispatch:
 
